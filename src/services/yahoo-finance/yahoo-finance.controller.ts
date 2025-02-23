@@ -14,4 +14,12 @@ export class YahooFinanceController {
   async getNews(): Promise<any> {
     return this.yahooFinanceService.getNews();
   }
+
+  @Get('calendar')
+  async getCalendarNews(
+    @Query('date') date: string,
+    @Query('language') language: string,
+  ): Promise<any> {
+    return this.yahooFinanceService.getCalendarNews(date, language);
+  }
 }

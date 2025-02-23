@@ -74,3 +74,23 @@ export interface CreateUserInput {
   password: string;
   role?: Role;
 }
+
+export enum TradingPhases {
+  PHASE_ONE = 1,
+  PHASE_TWO = 2,
+  PHASE_THREE = 3,
+  PHASE_FOUR = 4,
+  PHASE_FIVE = 5,
+  PHASE_SIX = 6,
+  PHASE_SEVEN = 7,
+  PHASE_EIGHT = 8,
+  PHASE_NINE = 9,
+  PHASE_TEN = 10,
+}
+
+export enum SubscriptionPlan {
+  FREE = 'Free',
+  BASIC = 'Basic',
+  PRO = 'Pro',
+  ENTERPRISE = 'Enterprise',
+}

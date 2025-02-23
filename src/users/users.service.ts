@@ -5,9 +5,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from './user.schema';
 import { CreateUserInput } from './user.dto';
+import { S3Service } from 'src/aws/s3/s3.service';
+
 @Injectable()
 export class UserService {
-  constructor(@InjectModel(User.name) private userModel: Model<User>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<User>,
+    private readonly s3Service: S3Service,
+  ) {}
 
   async findByEmail(email: string): Promise<User | null> {
     return this.userModel.findOne({ email }).exec();
@@ -19,15 +24,15 @@ export class UserService {
   }
 
   async findById(userId: string): Promise<User | null> {
-    return this.userModel.findOne({ id: userId }).exec();
+    return this.userModel.findOne({ _id: userId }).exec();
   }
 
   async updateUser(
     userId: string,
-    updateData: Partial<any>,
+    updateData: Record<string, any>,
   ): Promise<User | null> {
     return this.userModel
-      .findOneAndUpdate({ id: userId }, updateData, { new: true })
+      .findOneAndUpdate({ _id: userId }, updateData, { new: true }) // ✅ Use `_id`
       .exec();
   }
 
@@ -39,5 +44,25 @@ export class UserService {
     await this.userModel
       .findOneAndUpdate({ id: userId }, { recoveryToken: null })
       .exec();
+  }
+
+  async uploadProfileImage(userId: string, file: Express.Multer.File) {
+    const imageUrl = await this.s3Service.uploadProfileImage(file, userId);
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { profileImage: imageUrl },
+      { new: true },
+    );
+  }
+
+  async findByStripeCustomerId(customerId: string): Promise<User | null> {
+    return this.userModel.findOne({ stripeCustomerId: customerId }).exec();
+  }
+
+  async saveStripeCustomerId(
+    userId: string,
+    stripeCustomerId: string,
+  ): Promise<void> {
+    await this.userModel.findByIdAndUpdate(userId, { stripeCustomerId }).exec();
   }
 }

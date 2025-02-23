@@ -6,17 +6,27 @@ import axios from 'axios';
     {
       provide: 'YAHOO_FINANCE_AXIOS',
       useValue: axios.create({
-        baseURL: 'https://yahoo-finance15.p.rapidapi.com',
+        baseURL: process.env.YAHOO_FINANCE_BASE_URL,
         timeout: 5000,
         headers: {
           'Content-Type': 'application/json',
-          'x-rapidapi-key':
-            '62f6897179msh1c8bbf1c306fe14p1a7ae7jsnf971cd3d1d01', // Replace with your RapidAPI key
-          'x-rapidapi-host': 'yahoo-finance15.p.rapidapi.com',
+          'x-rapidapi-key': process.env.YAHOO_FINANCE_X_RAPIDAPI_KEY,
+          'x-rapidapi-host': process.env.YAHOO_FINANCE_X_RAPIDAPI_HOST,
+        },
+      }),
+    },
+    {
+      provide: 'OPEN_AI_AXIOS',
+      useValue: axios.create({
+        baseURL: process.env.OPENAI_BASE_URL,
+        timeout: 5000,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.OPENAI_KEY}`,
         },
       }),
     },
   ],
-  exports: ['YAHOO_FINANCE_AXIOS'],
+  exports: ['YAHOO_FINANCE_AXIOS', 'OPEN_AI_AXIOS'],
 })
 export class AxiosModule {}

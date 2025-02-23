@@ -2,12 +2,10 @@ import {
   Controller,
   Post,
   Body,
-  UseGuards,
-  Req,
   UnauthorizedException,
+  Get,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { CreateUserDto } from 'src/users/user.dto';
 
 @Controller('auth')
@@ -34,9 +32,8 @@ export class AuthController {
     return { message: 'Recovery email sent', token };
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Post('profile')
-  getProfile(@Req() req: any) {
-    return req.user;
+  @Get('signout')
+  async signout() {
+    return { message: 'Signout successful' };
   }
 }
