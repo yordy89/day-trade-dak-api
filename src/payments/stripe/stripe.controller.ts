@@ -1,6 +1,19 @@
-import { Controller, Post, Req, Res, Body, Headers } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Req,
+  Res,
+  Body,
+  Headers,
+  UseGuards,
+  Delete,
+  Param,
+} from '@nestjs/common';
 import { StripeService } from './stripe.service';
 import { Request, Response } from 'express';
+import { JwtAuthGuard } from 'src/guards/jwt-auth-guard';
+import { RequestWithUser } from 'src/auth/auth.interfaces';
+import { SubscriptionPlan } from 'src/users/user.dto';
 
 @Controller('payments')
 export class StripeController {
@@ -34,5 +47,17 @@ export class StripeController {
       console.error('Stripe Webhook Error:', error.message);
       response.status(400).send(`Webhook Error: ${error.message}`);
     }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('cancel/:subscription')
+  async cancelSubscription(
+    @Param('subscription') subscription: string,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.stripeService.cancelSubscription(
+      req.user._id,
+      subscription as SubscriptionPlan,
+    );
   }
 }

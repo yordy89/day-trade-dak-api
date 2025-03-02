@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
-import { CronService } from './cron.service';
 import { StripeModule } from 'src/payments/stripe/stripe.module';
+import { CronService } from './cron.service';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
-  imports: [StripeModule],
+  imports: [StripeModule, UsersModule],
   providers: [CronService],
 })
 export class CronModule {}

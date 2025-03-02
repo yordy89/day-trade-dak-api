@@ -14,12 +14,6 @@ async function bootstrap() {
     throw new Error('MONGO_URI is not defined in the environment variables');
   }
 
-  // Log important environment variables for debugging (remove in production)
-  console.log('MongoDB URI:', process.env.MONGO_URI);
-  console.log('JWT Secret:', process.env.JWT_SECRET);
-  console.log('Stripe Secret:', process.env.STRIPE_SECRET_KEY);
-  console.log('Stripe Webhook Secret:', process.env.STRIPE_WEBHOOK_SECRET);
-
   // Create the NestJS application
   const app = await NestFactory.create(AppModule);
 
@@ -38,7 +32,11 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true }));
 
   // Enable CORS
-  app.enableCors();
+  app.enableCors({
+    origin: '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+  });
 
   // Apply global validation pipe for DTOs
   app.useGlobalPipes(
@@ -50,9 +48,9 @@ async function bootstrap() {
   );
 
   // Start the application
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 4000;
   console.log(`🚀 Server is running on http://localhost:${port}`);
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 }
 
 bootstrap();

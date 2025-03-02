@@ -30,14 +30,15 @@ export class User extends Document {
   tradingPhase: number;
 
   @Prop({
-    type: [String],
-    enum: SubscriptionPlan,
-    default: [SubscriptionPlan.FREE],
+    type: [
+      {
+        plan: { type: String, enum: SubscriptionPlan, required: true },
+        expiresAt: { type: Date, required: false },
+      },
+    ],
+    default: [{ plan: SubscriptionPlan.FREE }],
   })
-  subscriptions: SubscriptionPlan[]; // ✅ Stores all active subscriptions
-
-  @Prop({ type: Date, required: false })
-  subscriptionExpiresAt?: Date; // ✅ Stores expiration for fixed subscriptions
+  subscriptions: { plan: SubscriptionPlan; expiresAt?: Date }[]; // ✅ Tracks expiration for each subscription
 
   @Prop({ type: [String], default: [] })
   activeSubscriptions: string[]; // ✅ Stores Stripe subscription IDs for recurring plans

@@ -4,9 +4,13 @@ import {
   Body,
   UnauthorizedException,
   Get,
+  UseGuards,
+  Put,
+  Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from 'src/users/user.dto';
+import { JwtAuthGuard } from 'src/guards/jwt-auth-guard';
 
 @Controller('auth')
 export class AuthController {
@@ -35,5 +39,19 @@ export class AuthController {
   @Get('signout')
   async signout() {
     return { message: 'Signout successful' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('update-password')
+  async updatePassword(
+    @Req() req,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    await this.authService.updatePassword(
+      req.user._id,
+      body.currentPassword,
+      body.newPassword,
+    );
+    return { message: 'Password updated successfully' };
   }
 }

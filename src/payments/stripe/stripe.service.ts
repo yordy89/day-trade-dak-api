@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import Stripe from 'stripe';
@@ -6,6 +11,7 @@ import { Transaction } from './transaction.schema';
 import { Model } from 'mongoose';
 import { UserService } from 'src/users/users.service';
 import { SubscriptionPlan } from 'src/users/user.dto';
+import { getLastDayOfMonth } from 'src/helpers/date';
 
 @Injectable()
 export class StripeService {
@@ -23,14 +29,10 @@ export class StripeService {
     );
   }
 
-  // **Create Checkout Session**
+  // ✅ **Create Checkout Session**
   async createCheckoutSession(userId: string, priceId: string) {
-    // ✅ Retrieve price details from Stripe
     const price = await this.stripe.prices.retrieve(priceId);
-
-    // ✅ Check if the price is recurring or one-time
     const isRecurring = price.recurring !== null;
-
     const subscriptionPlan = this.mapPriceIdToPlan(priceId);
 
     const session = await this.stripe.checkout.sessions.create({
@@ -45,7 +47,7 @@ export class StripeService {
     return { sessionId: session.id };
   }
 
-  // **Handle Webhook Event**
+  // ✅ **Handle Webhook Events**
   async handleWebhookEvent(signature: string, rawBody: Buffer) {
     const webhookSecret = this.configService.get<string>(
       'STRIPE_WEBHOOK_SECRET',
@@ -59,10 +61,7 @@ export class StripeService {
         webhookSecret,
       );
     } catch (err) {
-      this.logger.error(
-        '⚠️ Webhook signature verification failed.',
-        err.message,
-      );
+      this.logger.error('⚠️ Webhook verification failed.', err.message);
       throw new Error('Invalid webhook signature');
     }
 
@@ -91,7 +90,7 @@ export class StripeService {
     const priceId = session.metadata?.priceId;
     const amount = session.amount_total ? session.amount_total / 100 : 0;
     const currency = session.currency || 'usd';
-    const subscriptionId = session.subscription as string; // ✅ Exists for recurring payments
+    const subscriptionId = session.subscription as string;
 
     if (!userId || !priceId) {
       this.logger.warn('⚠️ Missing userId or priceId.');
@@ -107,7 +106,20 @@ export class StripeService {
     let expirationDate: Date | undefined;
 
     if (!subscriptionId) {
-      // ✅ Fetch one-time product details from Stripe
+      // ✅ Check if the user already has a transaction for this plan
+      const existingTransaction = await this.transactionModel.findOne({
+        userId,
+        plan: subscriptionPlan,
+      });
+
+      if (existingTransaction) {
+        this.logger.warn(
+          `⚠️ User ${userId} already has a transaction for ${subscriptionPlan}, skipping duplicate.`,
+        );
+        return;
+      }
+
+      // ✅ One-time purchase, set expiration date
       const priceDetails = await this.stripe.prices.retrieve(priceId);
       const productDetails = await this.stripe.products.retrieve(
         priceDetails.product as string,
@@ -120,17 +132,15 @@ export class StripeService {
         return;
       }
 
-      // ✅ Get expiration days from Stripe metadata
       const expirationDays = parseInt(
-        productDetails.metadata?.expiration_days || '7',
+        productDetails.metadata?.expiration_days || '30',
         10,
       );
-
       expirationDate = new Date();
       expirationDate.setDate(expirationDate.getDate() + expirationDays);
     }
 
-    // ✅ Always save a transaction
+    // ✅ Store transaction only if it does not exist
     await this.transactionModel.create({
       userId,
       amount,
@@ -138,75 +148,101 @@ export class StripeService {
       status: session.payment_status || 'unknown',
       plan: subscriptionPlan,
       subscriptionId: subscriptionId || undefined,
-      expiresAt: expirationDate, // ✅ Only for one-time payments
+      expiresAt: expirationDate, // ✅ Only for fixed-term plans
     });
 
-    // ✅ Update User Subscription
-    const updateData: Record<string, any> = {
-      $addToSet: { subscriptions: subscriptionPlan },
-    };
+    // ✅ Ensure Subscription is Updated in the User Object
+    // ✅ First, remove any existing subscription entry for the same plan
+    await this.userService.updateUser(userId, {
+      $pull: { subscriptions: { plan: subscriptionPlan } }, // ✅ Removes any existing subscription for the same plan
+    });
 
-    if (expirationDate) {
-      updateData.subscriptionExpiresAt = expirationDate; // ✅ Store expiration date for one-time subscriptions
-    } else if (subscriptionId) {
-      updateData.$addToSet = { activeSubscriptions: subscriptionId }; // ✅ Track active recurring subscriptions
-    }
+    // ✅ Second, add the new subscription entry
+    await this.userService.updateUser(userId, {
+      $push: {
+        subscriptions: { plan: subscriptionPlan, expiresAt: expirationDate }, // ✅ Adds the new subscription
+      },
 
-    await this.userService.updateUser(userId, updateData);
+      ...(subscriptionId
+        ? { $addToSet: { activeSubscriptions: subscriptionId } } // ✅ Adds to active subscriptions if recurring
+        : {}),
+    });
+
     this.logger.log(
       `✅ User ${userId} subscribed to ${subscriptionPlan} (Expires: ${expirationDate || 'Never'})`,
     );
   }
 
-  // ✅ **Handle Recurring Subscription Payments**
+  // ✅ **Handle Recurring Payments**
   private async handleRecurringPayment(invoice: Stripe.Invoice) {
     const customerId = invoice.customer as string;
-    const amountPaid = invoice.amount_paid / 100;
-    const currency = invoice.currency;
-    const invoiceId = invoice.id;
-
-    // ✅ Find user using `customerId`
     const user = await this.userService.findByStripeCustomerId(customerId);
+
     if (!user) {
       this.logger.warn(`⚠️ No user found for customer: ${customerId}`);
       return;
     }
 
-    // ✅ Ensure we don't duplicate recurring invoices
+    const amountPaid = invoice.amount_paid / 100;
+    const currency = invoice.currency;
+    const invoiceId = invoice.id;
+
+    // ✅ Ensure the invoice does not already exist
     const existingTransaction = await this.transactionModel.findOne({
       stripeSessionId: invoiceId,
     });
-    if (!existingTransaction) {
-      await this.transactionModel.create({
-        userId: user._id.toString(),
-        amount: amountPaid,
-        currency,
-        status: 'paid',
-        stripeSessionId: invoiceId,
-      });
-      this.logger.log(`✅ Recurring payment recorded for user ${user._id}`);
-    } else {
+
+    if (existingTransaction) {
       this.logger.warn(`⚠️ Invoice ${invoiceId} already processed`);
+      return;
     }
+
+    // ✅ Create new transaction for the recurring payment
+    await this.transactionModel.create({
+      userId: user._id.toString(),
+      amount: amountPaid,
+      currency,
+      status: 'paid',
+      stripeSessionId: invoiceId,
+    });
+
+    this.logger.log(`✅ Recurring payment recorded for user ${user._id}`);
   }
 
   // ✅ **Handle Subscription Cancellation**
   private async handleSubscriptionCanceled(subscription: Stripe.Subscription) {
     const customerId = subscription.customer as string;
-
-    // ✅ Find user using `customerId`
     const user = await this.userService.findByStripeCustomerId(customerId);
+
     if (!user) {
       this.logger.warn(`⚠️ No user found for customer: ${customerId}`);
       return;
     }
 
-    // ✅ Remove Subscription
-    await this.userService.updateUser(user._id as string, {
-      $pull: { subscriptions: { $in: Object.values(SubscriptionPlan) } }, // Remove all subscriptions
+    const subscriptionId = subscription.id;
+    const userSubscription = user.subscriptions.find(() =>
+      user.activeSubscriptions.includes(subscriptionId),
+    );
+
+    if (!userSubscription) {
+      this.logger.warn(`⚠️ No active subscription found for user ${user._id}`);
+      return;
+    }
+
+    // ✅ Set expiration date instead of immediate removal
+    userSubscription.expiresAt = new Date();
+    userSubscription.expiresAt.setMonth(
+      userSubscription.expiresAt.getMonth() + 1,
+    ); // Keep access until end of cycle
+
+    await this.userService.updateUser(user._id.toString(), {
+      subscriptions: user.subscriptions,
+      $pull: { activeSubscriptions: subscriptionId },
     });
 
-    this.logger.log(`⚠️ Subscription canceled for user ${user._id}`);
+    this.logger.log(
+      `⚠️ Subscription ${subscriptionId} for user ${user._id} will expire on ${userSubscription.expiresAt}`,
+    );
   }
 
   // ✅ **Map Stripe `priceId` to SubscriptionPlan Enum**
@@ -215,32 +251,53 @@ export class StripeService {
       price_1QvUMYJ1acFkbhNIBE0cU9AS: SubscriptionPlan.BASIC,
       price_1QvjYcJ1acFkbhNIe6LUwM4C: SubscriptionPlan.PRO,
       price_12131415: SubscriptionPlan.ENTERPRISE,
+      price_1Qy0JcJ1acFkbhNI4q0axjLX: SubscriptionPlan.MENTORSHIP,
     };
 
     return priceToPlanMap[priceId] || null;
   }
 
-  async removeExpiredSubscriptions() {
-    const now = new Date();
+  async cancelSubscription(userId: string, subscriptionPlan: SubscriptionPlan) {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
 
-    // ✅ Find expired transactions
-    const expiredTransactions = await this.transactionModel.find({
-      expiresAt: { $lte: now }, // Find transactions where expiration is past
-    });
+    // ✅ Find the Stripe Subscription ID associated with the plan
+    const subscriptionId = user.activeSubscriptions.find(() =>
+      user.subscriptions.some((sub) => sub.plan === subscriptionPlan),
+    );
 
-    for (const transaction of expiredTransactions) {
-      const user = await this.userService.findById(transaction.userId);
-      if (!user) continue;
+    if (!subscriptionId) {
+      throw new NotFoundException(
+        'No active subscription found for this plan.',
+      );
+    }
 
-      // ✅ Remove the expired subscription from the user
-      await this.userService.updateUser(user._id.toString(), {
-        $pull: { subscriptions: transaction.plan }, // Remove expired plan
-        subscriptionExpiresAt: null, // ✅ Clear expiration date
+    try {
+      // ✅ Cancel the subscription in Stripe
+      await this.stripe.subscriptions.cancel(subscriptionId);
+
+      // ✅ Update subscription expiration date (instead of removing it immediately)
+      user.subscriptions = user.subscriptions.map((sub) =>
+        sub.plan === subscriptionPlan
+          ? { ...sub, expiresAt: getLastDayOfMonth() } // ✅ Expire at the last day of the current month
+          : sub,
+      );
+
+      await this.userService.updateUser(userId, {
+        subscriptions: user.subscriptions,
+        $pull: { activeSubscriptions: subscriptionId }, // ✅ Remove from active subs
       });
 
       this.logger.log(
-        `⚠️ Subscription expired and removed for user ${user._id}`,
+        `✅ Subscription ${subscriptionPlan} canceled for user ${userId}`,
       );
+
+      return await this.userService.findById(userId);
+    } catch (error) {
+      this.logger.error('Error canceling subscription:', error.message);
+      throw new InternalServerErrorException('Failed to cancel subscription');
     }
   }
 }

@@ -93,4 +93,5 @@ export enum SubscriptionPlan {
   BASIC = 'Basic',
   PRO = 'Pro',
   ENTERPRISE = 'Enterprise',
+  MENTORSHIP = 'Mentorship',
 }

@@ -14,6 +14,7 @@ import { OpenaiModule } from './services/openai/openai.module';
 import { StripeModule } from './payments/stripe/stripe.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronModule } from './cron/cron.module';
+import { VideoModule } from './video/video.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { CronModule } from './cron/cron.module';
     OpenaiModule,
     StripeModule,
     CronModule,
+    VideoModule,
   ],
 })
 export class AppModule {}

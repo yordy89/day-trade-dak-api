@@ -1,4 +1,9 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { plainToInstance } from 'class-transformer';
@@ -16,7 +21,6 @@ export class AuthService {
     const user = await this.userService.findByEmail(email);
     if (user && (await bcrypt.compare(password, user.password))) {
       const { password, ...result } = user.toObject();
-      console.log(password);
       return result;
     }
     return null;
@@ -24,9 +28,15 @@ export class AuthService {
 
   async login(user: any) {
     const payload = { username: user.email, sub: user._id.toString() };
+
+    const userSubscriptions = user.subscriptions.map((sub) => sub.plan);
+
     return {
       access_token: this.jwtService.sign(payload),
-      user,
+      user: {
+        ...user,
+        subscriptions: userSubscriptions,
+      },
     };
   }
 
@@ -54,5 +64,29 @@ export class AuthService {
     user.recoveryToken = token;
     await user.save();
     return token;
+  }
+  async updatePassword(
+    userId: string,
+    oldPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('El usuario no existe');
+    }
+
+    const passwordMatches = await bcrypt.compare(oldPassword, user.password);
+    if (!passwordMatches) {
+      throw new BadRequestException('La contraseña actual no coincide');
+    }
+
+    if (newPassword.length < 8) {
+      throw new BadRequestException(
+        'La nueva contraseña debe tener al menos 8 caracteres',
+      );
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
   }
 }

@@ -1,8 +1,10 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
   Post,
+  Put,
   Req,
   UploadedFile,
   UseGuards,
@@ -30,11 +32,20 @@ export class UserController {
       return { message: 'User not found' };
     }
 
-    const { _id, password, ...userWithoutSensitiveData } = user.toObject
+    const { password, ...userWithoutSensitiveData } = user.toObject
       ? user.toObject()
       : user;
 
-    return userWithoutSensitiveData;
+    return {
+      ...userWithoutSensitiveData,
+      subscriptions: user.subscriptions.map((sub) => sub.plan),
+      activeSubscriptions: user.subscriptions
+        .filter((sub) => !sub.expiresAt) // ✅ Only return active subscriptions
+        .map((sub) => sub.plan),
+      expiredSubscriptions: user.subscriptions
+        .filter((sub) => sub.expiresAt) // ✅ Only return expired subscriptions
+        .map((sub) => sub.plan),
+    };
   }
 
   @Post(':userId/upload-profile-image')
@@ -44,5 +55,22 @@ export class UserController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     return this.userService.uploadProfileImage(userId, file);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('profile')
+  async updateProfile(
+    @Req() req: RequestWithUser,
+    @Body() body: { first_name?: string; last_name?: string },
+  ) {
+    const updatedUser = await this.userService.updateUser(req.user._id, body);
+    const { password, ...userWithoutSensitiveData } = updatedUser.toObject
+      ? updatedUser.toObject()
+      : updatedUser;
+
+    return {
+      ...userWithoutSensitiveData,
+      subscriptions: updatedUser.subscriptions.map((sub) => sub.plan),
+    };
   }
 }
