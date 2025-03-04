@@ -251,7 +251,7 @@ export class StripeService {
       price_1QvUMYJ1acFkbhNIBE0cU9AS: SubscriptionPlan.BASIC,
       price_1QvjYcJ1acFkbhNIe6LUwM4C: SubscriptionPlan.PRO,
       price_12131415: SubscriptionPlan.ENTERPRISE,
-      price_1Qy0JcJ1acFkbhNI4q0axjLX: SubscriptionPlan.MENTORSHIP,
+      price_1Qz2KuE0taYR7njR00NmGEJu: SubscriptionPlan.MENTORSHIP,
     };
 
     return priceToPlanMap[priceId] || null;
