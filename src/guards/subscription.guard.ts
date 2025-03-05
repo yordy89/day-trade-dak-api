@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { Role } from 'src/constants';
 import { SubscriptionPlan } from 'src/users/user.dto';
 import { UserService } from 'src/users/users.service';
 
@@ -41,11 +42,12 @@ export class SubscriptionGuard implements CanActivate {
     }
 
     // ✅ Check if user has at least one active required subscription
-    const hasValidSubscription = user.subscriptions.some(
-      (sub) =>
-        requiredPlans.includes(sub.plan) &&
-        (!sub.expiresAt || sub.expiresAt > new Date()), // ✅ Subscription is active (not expired)
-    );
+    const hasValidSubscription =
+      user.subscriptions.some(
+        (sub) =>
+          requiredPlans.includes(sub.plan) &&
+          (!sub.expiresAt || sub.expiresAt > new Date()), // ✅ Subscription is active (not expired)
+      ) || user.role === Role.ADMIN; // ✅ Allow access for admins
 
     if (!hasValidSubscription) {
       throw new ForbiddenException(
