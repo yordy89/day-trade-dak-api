@@ -13,10 +13,14 @@ import { CreateVideoDto, UpdateVideoDto } from './video.dto';
 import { JwtAuthGuard } from 'src/guards/jwt-auth-guard';
 import { SubscriptionGuard } from 'src/guards/subscription.guard';
 import { RequiresSubscription } from 'src/decorators/subscription.decorator';
+import { S3Service } from 'src/aws/s3/s3.service';
 
 @Controller('videos')
 export class VideoController {
-  constructor(private readonly videoService: VideoService) {}
+  constructor(
+    private readonly videoService: VideoService,
+    private readonly s3Service: S3Service,
+  ) {}
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard)
   @RequiresSubscription(SubscriptionPlan.MENTORSHIP)
@@ -36,5 +40,19 @@ export class VideoController {
   @Put(':id')
   updateVideo(@Param('id') id: string, @Body() updateVideoDto: UpdateVideoDto) {
     return this.videoService.update(id, updateVideoDto);
+  }
+
+  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @RequiresSubscription(SubscriptionPlan.CLASS)
+  @Get('classVideos')
+  async getAllClassVideos() {
+    return this.s3Service.listVideos();
+  }
+
+  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @RequiresSubscription(SubscriptionPlan.CLASS)
+  @Get('videos/:key')
+  async getVideo(@Param('key') key: string) {
+    return { videoUrl: await this.s3Service.getSignedUrl(`videos/${key}`) };
   }
 }

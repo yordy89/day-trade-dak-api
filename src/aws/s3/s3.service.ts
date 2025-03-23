@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -40,5 +46,36 @@ export class S3Service {
     await this.s3.send(new PutObjectCommand(uploadParams));
 
     return `https://${this.bucketName}.s3.${this.configService.get<string>('AWS_REGION')}.amazonaws.com/${fileKey}`;
+  }
+
+  async listVideos(): Promise<{ key: string; signedUrl: string }[]> {
+    const command = new ListObjectsV2Command({
+      Bucket: this.bucketName,
+      Prefix: `${this.configService.get<string>('AWS_S3_CLASS_VIDEO_FOLDER')}/`,
+    });
+
+    const { Contents } = await this.s3.send(command);
+
+    if (!Contents) return [];
+
+    const videos = await Promise.all(
+      Contents.filter((file) => file.Key && !file.Key.endsWith('/')).map(
+        async (file) => {
+          const signedUrl = await this.getSignedUrl(file.Key);
+          return { key: file.Key, signedUrl };
+        },
+      ),
+    );
+
+    return videos;
+  }
+
+  async getSignedUrl(key: string): Promise<string> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+    });
+
+    return getSignedUrl(this.s3, command, { expiresIn: 3600 }); // 🔹 1-hour expiry
   }
 }
