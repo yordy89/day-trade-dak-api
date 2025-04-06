@@ -175,6 +175,7 @@ export class StripeService {
 
   // ✅ **Handle Recurring Payments**
   private async handleRecurringPayment(invoice: Stripe.Invoice) {
+    console.log('Invoice:', invoice);
     const customerId = invoice.customer as string;
     const user = await this.userService.findByStripeCustomerId(customerId);
 
