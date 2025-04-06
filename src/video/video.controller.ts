@@ -14,6 +14,7 @@ import { JwtAuthGuard } from 'src/guards/jwt-auth-guard';
 import { SubscriptionGuard } from 'src/guards/subscription.guard';
 import { RequiresSubscription } from 'src/decorators/subscription.decorator';
 import { S3Service } from 'src/aws/s3/s3.service';
+import { VariableKeys } from 'src/constants';
 
 @Controller('videos')
 export class VideoController {
@@ -46,7 +47,14 @@ export class VideoController {
   @RequiresSubscription(SubscriptionPlan.CLASS)
   @Get('classVideos')
   async getAllClassVideos() {
-    return this.s3Service.listVideos();
+    return this.s3Service.listVideos(VariableKeys.AWS_ClASS_FOLDER);
+  }
+
+  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @RequiresSubscription(SubscriptionPlan.CLASS)
+  @Get('mentorshipVideos')
+  async getAllMentorshipVideos() {
+    return this.s3Service.listVideos(VariableKeys.AWS_MENTORSHIP_FOLDER);
   }
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard)

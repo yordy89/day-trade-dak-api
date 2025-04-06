@@ -8,6 +8,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
+import { VariableKeys } from 'src/constants';
 
 @Injectable()
 export class S3Service {
@@ -48,17 +49,17 @@ export class S3Service {
     return `https://${this.bucketName}.s3.${this.configService.get<string>('AWS_REGION')}.amazonaws.com/${fileKey}`;
   }
 
-  async listVideos(): Promise<{ key: string; signedUrl: string }[]> {
+  async listVideos(key: string): Promise<{ key: string; signedUrl: string }[]> {
     const command = new ListObjectsV2Command({
       Bucket: this.bucketName,
-      Prefix: `${this.configService.get<string>('AWS_S3_CLASS_VIDEO_FOLDER')}/`,
+      Prefix: `${this.configService.get<string>(key)}/`,
     });
 
     const { Contents } = await this.s3.send(command);
 
     if (!Contents) return [];
 
-    const videos = await Promise.all(
+    let videos = await Promise.all(
       Contents.filter((file) => file.Key && !file.Key.endsWith('/')).map(
         async (file) => {
           const signedUrl = await this.getSignedUrl(file.Key);
@@ -66,6 +67,24 @@ export class S3Service {
         },
       ),
     );
+
+    if (key === VariableKeys.AWS_ClASS_FOLDER) {
+      videos = videos
+        .map((video) => ({
+          ...video,
+          // Extract date string and convert to a real Date
+          date: new Date(
+            video.key
+              .split('/')
+              .pop()! // get filename
+              .replace('.mp4', '') // remove extension
+              .replace(/:/g, '-'), // convert MM:DD:YYYY to MM-DD-YYYY
+          ),
+        }))
+        .sort((a, b) => b.date.getTime() - a.date.getTime()) // Descending order (latest first)
+        .slice(0, 10) // Get only the first 10
+        .map(({ key, signedUrl }) => ({ key, signedUrl }));
+    }
 
     return videos;
   }
