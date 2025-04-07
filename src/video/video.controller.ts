@@ -51,7 +51,7 @@ export class VideoController {
   }
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard)
-  @RequiresSubscription(SubscriptionPlan.CLASS)
+  @RequiresSubscription(SubscriptionPlan.MENTORSHIP)
   @Get('mentorshipVideos')
   async getAllMentorshipVideos() {
     return this.s3Service.listVideos(VariableKeys.AWS_MENTORSHIP_FOLDER);
