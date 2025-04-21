@@ -7,6 +7,7 @@ import {
   UseGuards,
   Put,
   Req,
+  Param,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from 'src/users/user.dto';
@@ -49,9 +50,24 @@ export class AuthController {
   ) {
     await this.authService.updatePassword(
       req.user._id,
-      body.currentPassword,
       body.newPassword,
+      body.currentPassword,
     );
     return { message: 'Password updated successfully' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('admin/users/:userId/reset-password')
+  async adminResetPassword(
+    @Param('userId') userId: string,
+    @Body() body: { newPassword: string },
+  ) {
+    await this.authService.updatePassword(
+      userId,
+      body.newPassword,
+      undefined,
+      true,
+    );
+    return { message: 'Password reset successfully' };
   }
 }

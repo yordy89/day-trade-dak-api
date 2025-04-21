@@ -58,6 +58,13 @@ export class VideoController {
   }
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @RequiresSubscription(SubscriptionPlan.STOCK)
+  @Get('stockVideos')
+  async getAllStocksVideos() {
+    return this.s3Service.listVideos(VariableKeys.AWS_S3_STOCK_VIDEO_FOLDER);
+  }
+
+  @UseGuards(JwtAuthGuard, SubscriptionGuard)
   @RequiresSubscription(SubscriptionPlan.CLASS)
   @Get('videos/:key')
   async getVideo(@Param('key') key: string) {

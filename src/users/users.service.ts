@@ -1,6 +1,6 @@
 // src/user/user.service.ts
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from './user.schema';
@@ -68,5 +68,21 @@ export class UserService {
     stripeCustomerId: string,
   ): Promise<void> {
     await this.userModel.findByIdAndUpdate(userId, { stripeCustomerId }).exec();
+  }
+
+  async deleteUserFromAdmin(userId: string) {
+    const user = await this.userModel.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    // Optional: clean up related data (subscriptions, logs, etc.)
+    await this.userModel.deleteOne({ _id: userId });
+
+    return {
+      message: `User ${user.email} has been successfully deleted`,
+      userId,
+    };
   }
 }
