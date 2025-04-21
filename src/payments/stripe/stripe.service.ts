@@ -249,11 +249,11 @@ export class StripeService {
   // ✅ **Map Stripe `priceId` to SubscriptionPlan Enum**
   private mapPriceIdToPlan(priceId: string): SubscriptionPlan | null {
     const priceToPlanMap: { [key: string]: SubscriptionPlan } = {
-      // price_1Qz2KuE0taYR7njR00NmGEJu: SubscriptionPlan.MENTORSHIP, //this prod
-      price_1Qy0JcJ1acFkbhNI4q0axjLX: SubscriptionPlan.MENTORSHIP,
-      // price_1R5wSRE0taYR7njRd270eE8O: SubscriptionPlan.CLASS, // This is prod
-      price_1R5bWkJ1acFkbhNIFMuDqkMj: SubscriptionPlan.CLASS,
-      price_1RGOg5J1acFkbhNIBI6fd5l6: SubscriptionPlan.STOCK,
+      price_1Qz2KuE0taYR7njR00NmGEJu: SubscriptionPlan.MENTORSHIP, //this prod
+      // price_1Qy0JcJ1acFkbhNI4q0axjLX: SubscriptionPlan.MENTORSHIP, // This is dev
+      price_1R5wSRE0taYR7njRd270eE8O: SubscriptionPlan.CLASS, // This is prod
+      // price_1R5bWkJ1acFkbhNIFMuDqkMj: SubscriptionPlan.CLASS, // This is dev
+      // price_1RGOg5J1acFkbhNIBI6fd5l6: SubscriptionPlan.STOCK,
     };
 
     return priceToPlanMap[priceId] || null;
