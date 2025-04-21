@@ -95,4 +95,5 @@ export enum SubscriptionPlan {
   ENTERPRISE = 'Enterprise',
   MENTORSHIP = 'Mentorship',
   CLASS = 'Class',
+  STOCK = 'Stock',
 }

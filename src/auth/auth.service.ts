@@ -67,17 +67,23 @@ export class AuthService {
   }
   async updatePassword(
     userId: string,
-    oldPassword: string,
     newPassword: string,
+    oldPassword?: string,
+    skipValidation = false,
   ) {
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new NotFoundException('El usuario no existe');
     }
 
-    const passwordMatches = await bcrypt.compare(oldPassword, user.password);
-    if (!passwordMatches) {
-      throw new BadRequestException('La contraseña actual no coincide');
+    if (!skipValidation) {
+      const passwordMatches = await bcrypt.compare(
+        oldPassword || '',
+        user.password,
+      );
+      if (!passwordMatches) {
+        throw new BadRequestException('La contraseña actual no coincide');
+      }
     }
 
     if (newPassword.length < 8) {

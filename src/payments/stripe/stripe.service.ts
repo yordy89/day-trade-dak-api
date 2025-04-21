@@ -249,18 +249,21 @@ export class StripeService {
   // ✅ **Map Stripe `priceId` to SubscriptionPlan Enum**
   private mapPriceIdToPlan(priceId: string): SubscriptionPlan | null {
     const priceToPlanMap: { [key: string]: SubscriptionPlan } = {
-      price_1QvUMYJ1acFkbhNIBE0cU9AS: SubscriptionPlan.BASIC,
-      price_1QvjYcJ1acFkbhNIe6LUwM4C: SubscriptionPlan.PRO,
-      price_12131415: SubscriptionPlan.ENTERPRISE,
       price_1Qz2KuE0taYR7njR00NmGEJu: SubscriptionPlan.MENTORSHIP, //this prod
-      // price_1Qy0JcJ1acFkbhNI4q0axjLX: SubscriptionPlan.MENTORSHIP,
-      price_1R5wSRE0taYR7njRd270eE8O: SubscriptionPlan.CLASS,
+      // price_1Qy0JcJ1acFkbhNI4q0axjLX: SubscriptionPlan.MENTORSHIP, // This is dev
+      price_1R5wSRE0taYR7njRd270eE8O: SubscriptionPlan.CLASS, // This is prod
+      // price_1R5bWkJ1acFkbhNIFMuDqkMj: SubscriptionPlan.CLASS, // This is dev
+      // price_1RGOg5J1acFkbhNIBI6fd5l6: SubscriptionPlan.STOCK,
     };
 
     return priceToPlanMap[priceId] || null;
   }
 
-  async cancelSubscription(userId: string, subscriptionPlan: SubscriptionPlan) {
+  async cancelSubscription(
+    userId: string,
+    subscriptionPlan: SubscriptionPlan,
+    forceNow: boolean = false,
+  ) {
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -282,9 +285,11 @@ export class StripeService {
       await this.stripe.subscriptions.cancel(subscriptionId);
 
       // ✅ Update subscription expiration date (instead of removing it immediately)
+      const now = new Date();
+      const expiresAt = forceNow ? now : getLastDayOfMonth();
       user.subscriptions = user.subscriptions.map((sub) =>
         sub.plan === subscriptionPlan
-          ? { ...sub, expiresAt: getLastDayOfMonth() } // ✅ Expire at the last day of the current month
+          ? { ...sub, expiresAt } // ✅ Expire at the last day of the current month
           : sub,
       );
 

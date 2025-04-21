@@ -60,4 +60,17 @@ export class StripeController {
       subscription as SubscriptionPlan,
     );
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('admin/users/:userId/cancel/:plan')
+  async cancelUserSubscription(
+    @Param('userId') userId: string,
+    @Param('plan') plan: string,
+  ) {
+    return this.stripeService.cancelSubscription(
+      userId,
+      plan as SubscriptionPlan,
+      true,
+    );
+  }
 }

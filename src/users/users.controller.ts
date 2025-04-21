@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -18,6 +19,26 @@ import { FileInterceptor } from '@nestjs/platform-express';
 @Controller('user')
 export class UserController {
   constructor(private readonly userService: UserService) {}
+  @UseGuards(JwtAuthGuard)
+  @Get()
+  async getAllUsers() {
+    const users = await this.userService.findAll();
+    return users.map((user) => {
+      const { password, ...userWithoutSensitiveData } = user.toObject
+        ? user.toObject()
+        : user;
+      return {
+        ...userWithoutSensitiveData,
+        subscriptions: user.subscriptions.map((sub) => sub.plan),
+        activeSubscriptions: user.subscriptions
+          .filter((sub) => !sub.expiresAt) // ✅ Only return active subscriptions
+          .map((sub) => sub.plan),
+        expiredSubscriptions: user.subscriptions
+          .filter((sub) => sub.expiresAt) // ✅ Only return expired subscriptions
+          .map((sub) => sub.plan),
+      };
+    });
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get('profile')
@@ -72,5 +93,11 @@ export class UserController {
       ...userWithoutSensitiveData,
       subscriptions: updatedUser.subscriptions.map((sub) => sub.plan),
     };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('/admin/:userId')
+  async deleteUserFromAdmin(@Param('userId') userId: string) {
+    return this.userService.deleteUserFromAdmin(userId);
   }
 }
