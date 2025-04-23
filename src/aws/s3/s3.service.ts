@@ -5,15 +5,19 @@ import {
   GetObjectCommand,
   ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { getSignedUrl as getS3SignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import { VariableKeys } from 'src/constants';
+import * as fs from 'fs';
+import * as path from 'path';
+import { getSignedUrl as getCloudFrontSignedUrl } from '@aws-sdk/cloudfront-signer';
 
 @Injectable()
 export class S3Service {
   private s3: S3Client;
   private bucketName: string;
+  private useCloudFront: boolean;
 
   constructor(private readonly configService: ConfigService) {
     this.s3 = new S3Client({
@@ -27,7 +31,9 @@ export class S3Service {
     });
 
     this.bucketName = this.configService.get<string>('AWS_S3_BUCKET_NAME');
+    this.useCloudFront = !!this.configService.get<string>('CLOUDFRONT_DOMAIN');
   }
+
   async uploadProfileImage(
     file: Express.Multer.File,
     userId: string,
@@ -50,9 +56,10 @@ export class S3Service {
   }
 
   async listVideos(key: string): Promise<{ key: string; signedUrl: string }[]> {
+    const prefix = this.configService.get<string>(key);
     const command = new ListObjectsV2Command({
       Bucket: this.bucketName,
-      Prefix: `${this.configService.get<string>(key)}/`,
+      Prefix: `${prefix}/`,
     });
 
     const { Contents } = await this.s3.send(command);
@@ -72,17 +79,12 @@ export class S3Service {
       videos = videos
         .map((video) => ({
           ...video,
-          // Extract date string and convert to a real Date
           date: new Date(
-            video.key
-              .split('/')
-              .pop()! // get filename
-              .replace('.mp4', '') // remove extension
-              .replace(/:/g, '-'), // convert MM:DD:YYYY to MM-DD-YYYY
+            video.key.split('/').pop()!.replace('.mp4', '').replace(/:/g, '-'),
           ),
         }))
-        .sort((a, b) => b.date.getTime() - a.date.getTime()) // Descending order (latest first)
-        .slice(0, 10) // Get only the first 10
+        .sort((a, b) => b.date.getTime() - a.date.getTime())
+        .slice(0, 10)
         .map(({ key, signedUrl }) => ({ key, signedUrl }));
     }
 
@@ -90,11 +92,32 @@ export class S3Service {
   }
 
   async getSignedUrl(key: string): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: this.bucketName,
-      Key: key,
-    });
+    if (this.useCloudFront) {
+      const cloudFrontDomain =
+        this.configService.get<string>('CLOUDFRONT_DOMAIN');
+      const keyPairId = this.configService.get<string>(
+        'CLOUDFRONT_KEY_PAIR_ID',
+      );
+      const privateKey = fs.readFileSync(
+        path.resolve(__dirname, '../../../pk-APKAW5BDRBYFYKXAVZP5.pem'),
+        'utf8',
+      );
 
-    return getSignedUrl(this.s3, command, { expiresIn: 3600 }); // 🔹 1-hour expiry
+      const fullUrl = `https://${cloudFrontDomain}/${key}`;
+      const expires = Math.floor(Date.now() / 1000) + 60 * 60 * 12;
+
+      const signedUrl = getCloudFrontSignedUrl({
+        url: fullUrl,
+        keyPairId,
+        privateKey,
+        dateLessThan: new Date(expires * 1000).toISOString(),
+      });
+
+      console.log('✅ Signed CloudFront URL generated!');
+      return signedUrl;
+    }
+
+    const command = new GetObjectCommand({ Bucket: this.bucketName, Key: key });
+    return getS3SignedUrl(this.s3, command, { expiresIn: 3600 });
   }
 }
