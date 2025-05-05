@@ -14,10 +14,14 @@ import { Request, Response } from 'express';
 import { JwtAuthGuard } from 'src/guards/jwt-auth-guard';
 import { RequestWithUser } from 'src/auth/auth.interfaces';
 import { SubscriptionPlan } from 'src/users/user.dto';
+import { EventRegistrationsService } from 'src/event/event-registration.service';
 
 @Controller('payments')
 export class StripeController {
-  constructor(private readonly stripeService: StripeService) {}
+  constructor(
+    private readonly stripeService: StripeService,
+    private eventRegistrationsService: EventRegistrationsService,
+  ) {}
 
   // **Create a checkout session**
   @Post('checkout')
@@ -25,6 +29,27 @@ export class StripeController {
     @Body() body: { userId: string; priceId: string },
   ) {
     return this.stripeService.createCheckoutSession(body.userId, body.priceId);
+  }
+
+  @Post('vip-event-checkout')
+  async createVipEventCheckoutSession(
+    @Body()
+    body: {
+      eventId: string;
+      priceId: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phoneNumber?: string;
+      promoCode?: string;
+    },
+  ) {
+    await this.eventRegistrationsService.validateNotRegistered(
+      body.eventId,
+      body.email,
+    );
+
+    return this.stripeService.createVipEventCheckoutSession(body);
   }
 
   // **Stripe Webhook Handling**

@@ -1,15 +1,24 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Event, EventSchema } from './event.schema';
-import { EventService } from './event.service';
-import { EventController } from './event.controller';
+import { Event, EventSchema } from './schemas/event.schema';
+import {
+  EventRegistration,
+  EventRegistrationSchema,
+} from './schemas/eventRegistration.schema';
+import { EventsService } from './event.service';
+import { EventsController } from './event.controller';
+import { EventRegistrationsController } from './event-registration.controller';
+import { EventRegistrationsService } from './event-registration.service';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Event.name, schema: EventSchema }]), // Register Model
+    MongooseModule.forFeature([
+      { name: Event.name, schema: EventSchema },
+      { name: EventRegistration.name, schema: EventRegistrationSchema }, // 👉 Add second schema here
+    ]),
   ],
-  controllers: [EventController],
-  providers: [EventService],
-  exports: [EventService], // Make sure to export if needed in other modules
+  controllers: [EventsController, EventRegistrationsController],
+  providers: [EventsService, EventRegistrationsService],
+  exports: [EventsService, EventRegistrationsService],
 })
 export class EventModule {}
