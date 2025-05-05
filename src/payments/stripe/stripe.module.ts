@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { TransactionSchema } from './transaction.schema';
 import { UsersModule } from 'src/users/users.module';
 import { AuthModule } from 'src/auth/auth.module';
+import { EventModule } from 'src/event/event.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AuthModule } from 'src/auth/auth.module';
     ]),
     UsersModule,
     AuthModule,
+    EventModule,
   ],
   controllers: [StripeController],
   providers: [StripeService],

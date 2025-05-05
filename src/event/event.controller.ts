@@ -1,36 +1,25 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Body,
-  Param,
-  Put,
-} from '@nestjs/common';
-import { EventService } from './event.service';
-import { CreateEventDto, UpdateEventDto } from './event.dto';
+// src/events/events.controller.ts
 
-@Controller('calendar')
-export class EventController {
-  constructor(private readonly eventService: EventService) {}
+import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { EventsService } from './event.service';
+import { CreateEventDto } from './dto/create-event.dto';
+
+@Controller('events')
+export class EventsController {
+  constructor(private readonly eventsService: EventsService) {}
+
+  @Post('')
+  create(@Body() createEventDto: CreateEventDto) {
+    return this.eventsService.create(createEventDto);
+  }
 
   @Get()
-  getAllEvents() {
-    return this.eventService.findAll();
+  findAll() {
+    return this.eventsService.findAll();
   }
 
-  @Post()
-  createEvent(@Body() eventDto: CreateEventDto) {
-    return this.eventService.createEvent(eventDto);
-  }
-
-  @Put(':id')
-  updateEvent(@Param('id') id: string, @Body() updateEventDto: UpdateEventDto) {
-    return this.eventService.updateEvent(id, updateEventDto);
-  }
-
-  @Delete(':id')
-  deleteEvent(@Param('id') id: string) {
-    return this.eventService.remove(id);
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.eventsService.findOne(id);
   }
 }

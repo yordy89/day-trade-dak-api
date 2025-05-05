@@ -12,6 +12,7 @@ import { Model } from 'mongoose';
 import { UserService } from 'src/users/users.service';
 import { SubscriptionPlan } from 'src/users/user.dto';
 import { getLastDayOfMonth } from 'src/helpers/date';
+import { EventRegistrationsService } from 'src/event/event-registration.service';
 
 @Injectable()
 export class StripeService {
@@ -21,6 +22,7 @@ export class StripeService {
   constructor(
     private configService: ConfigService,
     private userService: UserService,
+    private eventRegistrationsService: EventRegistrationsService,
     @InjectModel(Transaction.name) private transactionModel: Model<Transaction>,
   ) {
     this.stripe = new Stripe(
@@ -45,6 +47,65 @@ export class StripeService {
     });
 
     return { sessionId: session.id };
+  }
+
+  async createVipEventCheckoutSession(body: {
+    eventId: string;
+    priceId: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phoneNumber?: string;
+    promoCode?: string;
+  }) {
+    const {
+      eventId,
+      priceId,
+      firstName,
+      lastName,
+      email,
+      phoneNumber,
+      promoCode,
+    } = body;
+
+    let promotionCodeId: string | undefined = undefined;
+
+    if (promoCode) {
+      const promoCodeResult = await this.stripe.promotionCodes.list({
+        code: promoCode,
+        active: true,
+      });
+
+      if (promoCodeResult.data.length === 0) {
+        throw new Error(`Invalid or inactive promotion code: ${promoCode}`);
+      }
+
+      promotionCodeId = promoCodeResult.data[0].id;
+    }
+
+    const session = await this.stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      line_items: [{ price: priceId, quantity: 1 }],
+      discounts: promotionCodeId
+        ? [{ promotion_code: promotionCodeId }]
+        : undefined,
+      success_url: `${this.configService.get<string>('FRONTEND_URL')}/events/thank-you`,
+      cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/events/${eventId}`,
+      customer_email: email,
+      metadata: {
+        eventId,
+        firstName,
+        lastName,
+        email,
+        phoneNumber: phoneNumber || '',
+        isVip: 'true',
+        paymentStatus: 'paid',
+        promoCode,
+      },
+    });
+
+    return { url: session.url };
   }
 
   // ✅ **Handle Webhook Events**
@@ -91,6 +152,24 @@ export class StripeService {
     const amount = session.amount_total ? session.amount_total / 100 : 0;
     const currency = session.currency || 'usd';
     const subscriptionId = session.subscription as string;
+
+    if (session.metadata?.eventId && session.metadata?.isVip === 'true') {
+      await this.eventRegistrationsService.create({
+        eventId: session.metadata.eventId,
+        firstName: session.metadata.firstName,
+        lastName: session.metadata.lastName,
+        email: session.metadata.email,
+        phoneNumber: session.metadata.phoneNumber,
+        promoCode: session.metadata.promoCode,
+        isVip: true,
+        paymentStatus: 'paid',
+      });
+
+      this.logger.log(
+        `✅ VIP registration completed for ${session.metadata.email}`,
+      );
+      return;
+    }
 
     if (!userId || !priceId) {
       this.logger.warn('⚠️ Missing userId or priceId.');
