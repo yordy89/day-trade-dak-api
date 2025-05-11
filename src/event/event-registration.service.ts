@@ -10,25 +10,38 @@ import {
 import { CreateEventRegistrationDto } from './dto/create-event-registration.dto';
 
 import { BadRequestException } from '@nestjs/common';
+import { EmailService } from 'src/email/email.service';
 
 @Injectable()
 export class EventRegistrationsService {
   constructor(
     @InjectModel(EventRegistration.name)
     private eventRegistrationModel: Model<EventRegistrationDocument>,
+    private readonly emailService: EmailService,
   ) {}
 
   async create(createEventRegistrationDto: CreateEventRegistrationDto) {
-    const { eventId, email } = createEventRegistrationDto;
+    const { eventId, email, firstName } = createEventRegistrationDto;
 
-    await this.validateNotRegistered(eventId, email); // ✅ New line
+    try {
+      await this.validateNotRegistered(eventId, email); // ✅ New line
 
-    const createdRegistration = new this.eventRegistrationModel({
-      ...createEventRegistrationDto,
-      email: email.toLowerCase(),
-    });
+      const createdRegistration = new this.eventRegistrationModel({
+        ...createEventRegistrationDto,
+        email: email.toLowerCase(),
+      });
 
-    return createdRegistration.save();
+      const saved = await createdRegistration.save();
+
+      await this.emailService.sendEventRegistrationTemplate(
+        email,
+        firstName,
+        2,
+      );
+      return saved;
+    } catch (error) {
+      throw new BadRequestException(error);
+    }
   }
 
   async validateNotRegistered(eventId: string, email: string) {

@@ -15,6 +15,7 @@ import { StripeModule } from './payments/stripe/stripe.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronModule } from './cron/cron.module';
 import { VideoModule } from './video/video.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { VideoModule } from './video/video.module';
     StripeModule,
     CronModule,
     VideoModule,
+    EmailModule,
   ],
 })
 export class AppModule {}

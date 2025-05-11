@@ -34,6 +34,27 @@ export class S3Service {
     this.useCloudFront = !!this.configService.get<string>('CLOUDFRONT_DOMAIN');
   }
 
+  // async uploadProfileImage(
+  //   file: Express.Multer.File,
+  //   userId: string,
+  // ): Promise<string> {
+  //   const folderPath = this.configService.get<string>(
+  //     'AWS_S3_PROFILE_IMAGE_FOLDER',
+  //   );
+  //   const fileKey = `${folderPath}/${userId}/${uuidv4()}-${file.originalname}`;
+
+  //   const uploadParams = {
+  //     Bucket: this.bucketName,
+  //     Key: fileKey,
+  //     Body: file.buffer,
+  //     ContentType: file.mimetype,
+  //   };
+
+  //   await this.s3.send(new PutObjectCommand(uploadParams));
+
+  //   return `https://${this.bucketName}.s3.${this.configService.get<string>('AWS_REGION')}.amazonaws.com/${fileKey}`;
+  // }
+
   async uploadProfileImage(
     file: Express.Multer.File,
     userId: string,
@@ -41,6 +62,8 @@ export class S3Service {
     const folderPath = this.configService.get<string>(
       'AWS_S3_PROFILE_IMAGE_FOLDER',
     );
+    const cloudFrontDomain =
+      this.configService.get<string>('CLOUDFRONT_DOMAIN');
     const fileKey = `${folderPath}/${userId}/${uuidv4()}-${file.originalname}`;
 
     const uploadParams = {
@@ -52,7 +75,8 @@ export class S3Service {
 
     await this.s3.send(new PutObjectCommand(uploadParams));
 
-    return `https://${this.bucketName}.s3.${this.configService.get<string>('AWS_REGION')}.amazonaws.com/${fileKey}`;
+    // Return CloudFront URL instead of S3 URL
+    return `https://${cloudFrontDomain}/${fileKey}`;
   }
 
   async listVideos(key: string): Promise<{ key: string; signedUrl: string }[]> {

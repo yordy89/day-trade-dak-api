@@ -9,6 +9,7 @@ import { EventsService } from './event.service';
 import { EventsController } from './event.controller';
 import { EventRegistrationsController } from './event-registration.controller';
 import { EventRegistrationsService } from './event-registration.service';
+import { EmailModule } from 'src/email/email.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { EventRegistrationsService } from './event-registration.service';
       { name: Event.name, schema: EventSchema },
       { name: EventRegistration.name, schema: EventRegistrationSchema }, // 👉 Add second schema here
     ]),
+    EmailModule,
   ],
   controllers: [EventsController, EventRegistrationsController],
   providers: [EventsService, EventRegistrationsService],
