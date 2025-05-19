@@ -57,9 +57,7 @@ export class EventRegistrationsService {
     }
   }
 
-  findByEvent(eventId: string) {
-    return this.eventRegistrationModel
-      .find({ eventId: new Types.ObjectId(eventId) })
-      .exec();
+  async findByEvent(eventId: string) {
+    return this.eventRegistrationModel.find({ eventId }).exec();
   }
 }
