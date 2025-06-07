@@ -335,6 +335,8 @@ export class StripeService {
       // price_1RGOg5J1acFkbhNIBI6fd5l6: SubscriptionPlan.STOCK,
       // price_1RNIS6J1acFkbhNIyPeQVOAS: SubscriptionPlan.PSICOTRADING, // This is dev
       price_1RMx9KE0taYR7njRSoew9Cq1: SubscriptionPlan.PSICOTRADING, // This is prod
+      // price_1RX2hDJ1acFkbhNIq4mDa1Js: SubscriptionPlan.MONEYPEACE, // This is dev
+      price_1RX5z8E0taYR7njRaC7mXbqn: SubscriptionPlan.MONEYPEACE, // This is prod
     };
 
     return priceToPlanMap[priceId] || null;

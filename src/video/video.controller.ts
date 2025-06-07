@@ -74,6 +74,27 @@ export class VideoController {
   }
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @RequiresSubscription(SubscriptionPlan.MONEYPEACE)
+  @Get('cursos/curso1')
+  async getAllCurso1Videos() {
+    const videos = await this.s3Service.listVideos(
+      VariableKeys.AWS_S3_CURSO_1_FOLDER,
+    );
+
+    const sorted = videos.sort((a, b) => {
+      const extractOrder = (key: string): number => {
+        const filename = key.split('/').pop(); // get only the filename
+        const match = filename?.match(/^(\d+)_/); // ✅ match number before underscore
+        return match ? parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
+      };
+
+      return extractOrder(a.key) - extractOrder(b.key);
+    });
+
+    return sorted;
+  }
+
+  @UseGuards(JwtAuthGuard, SubscriptionGuard)
   @RequiresSubscription(SubscriptionPlan.CLASS)
   @Get('videos/:key')
   async getVideo(@Param('key') key: string) {

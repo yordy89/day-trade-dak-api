@@ -97,4 +97,5 @@ export enum SubscriptionPlan {
   CLASS = 'Class',
   STOCK = 'Stock',
   PSICOTRADING = 'Psicotrading',
+  MONEYPEACE = 'MoneyPeace',
 }
