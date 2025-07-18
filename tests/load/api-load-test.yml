@@ -1,0 +1,86 @@
+config:
+  target: 'http://localhost:4000/api/v1'
+  phases:
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 120
+      arrivalRate: 10
+      name: "Ramp up load"
+    - duration: 300
+      arrivalRate: 20
+      name: "Sustained load"
+    - duration: 60
+      arrivalRate: 30
+      name: "Peak load"
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+  processor: "./load-test-processor.js"
+  variables:
+    testEmail: "loadtest_{{ $randomNumber(1, 999999) }}@example.com"
+    testPassword: "Test123!@#"
+
+scenarios:
+  - name: "User Registration and Login Flow"
+    weight: 30
+    flow:
+      - post:
+          url: "/auth/signup"
+          json:
+            email: "{{ testEmail }}"
+            password: "{{ testPassword }}"
+            firstName: "Load"
+            lastName: "Test{{ $randomNumber(1, 999) }}"
+          capture:
+            - json: "$.access_token"
+              as: "authToken"
+      - think: 2
+      - post:
+          url: "/auth/login"
+          json:
+            email: "{{ testEmail }}"
+            password: "{{ testPassword }}"
+          capture:
+            - json: "$.access_token"
+              as: "authToken"
+          expect:
+            - statusCode: 201
+
+  - name: "Authenticated User Flow"
+    weight: 50
+    flow:
+      - function: "generateAuthToken"
+      - get:
+          url: "/users/profile"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+      - think: 1
+      - get:
+          url: "/videos/list"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+      - think: 2
+      - get:
+          url: "/events"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+
+  - name: "Company Search Flow"
+    weight: 20
+    flow:
+      - get:
+          url: "/companies"
+          expect:
+            - statusCode: 200
+      - think: 1
+      - get:
+          url: "/companies?search=AAPL"
+          expect:
+            - statusCode: 200

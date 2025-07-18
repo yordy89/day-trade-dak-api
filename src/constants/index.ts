@@ -6,6 +6,7 @@ export enum TradeType {
 export enum Role {
   USER = 'user',
   ADMIN = 'admin',
+  SUPER_ADMIN = 'super_admin',
 }
 
 export enum VariableKeys {
@@ -14,4 +15,5 @@ export enum VariableKeys {
   AWS_S3_STOCK_VIDEO_FOLDER = 'AWS_S3_STOCK_VIDEO_FOLDER',
   AWS_S3_PSICOTRADING_VIDEO_FOLDER = 'AWS_S3_PSICOTRADING_VIDEO_FOLDER',
   AWS_S3_CURSO_1_FOLDER = 'AWS_S3_CURSO_1_FOLDER',
+  AWS_S3_CLASSES_VIDEO_FOLDER = 'AWS_S3_CLASS_COURSE_CLASS',
 }

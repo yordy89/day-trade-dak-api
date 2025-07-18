@@ -7,6 +7,7 @@ import {
   EventRegistration,
   EventRegistrationDocument,
 } from './schemas/eventRegistration.schema';
+import { Event, EventDocument } from './schemas/event.schema';
 import { CreateEventRegistrationDto } from './dto/create-event-registration.dto';
 
 import { BadRequestException } from '@nestjs/common';
@@ -17,6 +18,8 @@ export class EventRegistrationsService {
   constructor(
     @InjectModel(EventRegistration.name)
     private eventRegistrationModel: Model<EventRegistrationDocument>,
+    @InjectModel(Event.name)
+    private eventModel: Model<EventDocument>,
     private readonly emailService: EmailService,
   ) {}
 
@@ -59,5 +62,9 @@ export class EventRegistrationsService {
 
   async findByEvent(eventId: string) {
     return this.eventRegistrationModel.find({ eventId }).exec();
+  }
+
+  async findEventById(eventId: string): Promise<EventDocument | null> {
+    return this.eventModel.findById(eventId).exec();
   }
 }
