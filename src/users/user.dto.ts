@@ -1,5 +1,6 @@
 import { Exclude } from 'class-transformer';
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -51,6 +52,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(Role)
   role?: Role;
+
+  @IsOptional()
+  @IsBoolean()
+  allowLiveMeetingAccess?: boolean;
 }
 
 export class UserEntity {
@@ -89,13 +94,19 @@ export enum TradingPhases {
 }
 
 export enum SubscriptionPlan {
-  FREE = 'Free',
-  BASIC = 'Basic',
-  PRO = 'Pro',
-  ENTERPRISE = 'Enterprise',
-  MENTORSHIP = 'Mentorship',
-  CLASS = 'Class',
-  STOCK = 'Stock',
+  // Community Subscriptions (Weekly)
+  LIVE_WEEKLY_MANUAL = 'LiveWeeklyManual',
+  LIVE_WEEKLY_RECURRING = 'LiveWeeklyRecurring',
+
+  // Recurring Monthly Subscriptions
+  MASTER_CLASES = 'MasterClases',
+  LIVE_RECORDED = 'LiveRecorded',
   PSICOTRADING = 'Psicotrading',
-  MONEYPEACE = 'MoneyPeace',
+
+  // One-Time Purchases
+  CLASSES = 'Classes',
+  PEACE_WITH_MONEY = 'PeaceWithMoney',
+  MASTER_COURSE = 'MasterCourse',
+  COMMUNITY_EVENT = 'CommunityEvent',
+  VIP_EVENT = 'VipEvent',
 }

@@ -3,16 +3,32 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import Stripe from 'stripe';
-import { Transaction } from './transaction.schema';
+import {
+  Transaction,
+  BillingCycle,
+  PaymentMethod,
+  PaymentStatus,
+  TransactionType,
+} from './transaction.schema';
+import {
+  SubscriptionHistory,
+  SubscriptionAction,
+} from './subscription-history.schema';
+import { WebhookEvent, WebhookEventStatus } from './webhook-event.schema';
 import { Model } from 'mongoose';
 import { UserService } from 'src/users/users.service';
 import { SubscriptionPlan } from 'src/users/user.dto';
+import { SubscriptionPlan as SubscriptionPlanSchema, SubscriptionPlanDocument } from 'src/subscriptions/subscription-plan.schema';
 import { getLastDayOfMonth } from 'src/helpers/date';
 import { EventRegistrationsService } from 'src/event/event-registration.service';
+import { Event } from 'src/event/schemas/event.schema';
+import { PricingService } from './pricing.service';
+import { EmailService } from 'src/email/email.service';
 
 @Injectable()
 export class StripeService {
@@ -23,7 +39,16 @@ export class StripeService {
     private configService: ConfigService,
     private userService: UserService,
     private eventRegistrationsService: EventRegistrationsService,
+    private pricingService: PricingService,
+    private emailService: EmailService,
     @InjectModel(Transaction.name) private transactionModel: Model<Transaction>,
+    @InjectModel(SubscriptionHistory.name)
+    private subscriptionHistoryModel: Model<SubscriptionHistory>,
+    @InjectModel(WebhookEvent.name)
+    private webhookEventModel: Model<WebhookEvent>,
+    @InjectModel(Event.name) private eventModel: Model<Event>,
+    @InjectModel(SubscriptionPlanSchema.name) 
+    private subscriptionPlanModel: Model<SubscriptionPlanDocument>,
   ) {
     this.stripe = new Stripe(
       this.configService.get<string>('STRIPE_SECRET_KEY'),
@@ -35,15 +60,46 @@ export class StripeService {
   async createCheckoutSession(userId: string, priceId: string) {
     const price = await this.stripe.prices.retrieve(priceId);
     const isRecurring = price.recurring !== null;
-    const subscriptionPlan = this.mapPriceIdToPlan(priceId);
+    const subscriptionPlan = await this.mapPriceIdToPlan(priceId);
+    
+    // Get BNPL methods based on amount and currency
+    const bnplMethods = this.getBNPLMethods(price.unit_amount / 100, price.currency, isRecurring);
+    
+    this.logger.log(`Creating checkout session with payment methods: ${['card', ...bnplMethods].join(', ')}`);
+    this.logger.log(`Amount: ${price.unit_amount / 100} ${price.currency}, Recurring: ${isRecurring}`);
+
+    // Get or create Stripe customer
+    const user = await this.userService.findById(userId);
+    let customerId = user.stripeCustomerId;
+
+    if (!customerId) {
+      const customer = await this.stripe.customers.create({
+        email: user.email,
+        name: `${user.firstName} ${user.lastName}`,
+        metadata: { userId },
+      });
+      customerId = customer.id;
+      await this.userService.updateUser(userId, {
+        stripeCustomerId: customerId,
+      });
+    }
 
     const session = await this.stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      payment_method_types: ['card', ...bnplMethods] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
       mode: isRecurring ? 'subscription' : 'payment',
-      success_url: `${this.configService.get<string>('FRONTEND_URL')}/dashboard/subscription/success?subscription=${subscriptionPlan}`,
-      cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/dashboard/subscription/plans`,
+      customer: customerId,
+      success_url: `${this.configService.get<string>('FRONTEND_URL')}/payment/success?session_id={CHECKOUT_SESSION_ID}&plan=${subscriptionPlan}`,
+      cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/pricing`,
       line_items: [{ price: priceId, quantity: 1 }],
-      metadata: { userId, priceId }, // ✅ Store userId & priceId
+      // BNPL requires shipping address collection
+      shipping_address_collection: bnplMethods.length > 0 ? {
+        allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
+      } : undefined,
+      // Phone number collection is required for some BNPL methods
+      phone_number_collection: bnplMethods.length > 0 ? {
+        enabled: true,
+      } : undefined,
+      metadata: { userId, priceId, plan: subscriptionPlan }, // ✅ Store userId, priceId & plan
     });
 
     return { sessionId: session.id };
@@ -82,9 +138,13 @@ export class StripeService {
 
       promotionCodeId = promoCodeResult.data[0].id;
     }
+    
+    // Get price details to determine BNPL eligibility
+    const price = await this.stripe.prices.retrieve(priceId);
+    const bnplMethods = this.getBNPLMethods(price.unit_amount / 100, price.currency, false);
 
     const session = await this.stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      payment_method_types: ['card', ...bnplMethods] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
       mode: 'payment',
       line_items: [{ price: priceId, quantity: 1 }],
       discounts: promotionCodeId
@@ -93,6 +153,14 @@ export class StripeService {
       success_url: `${this.configService.get<string>('FRONTEND_URL')}/events/thank-you`,
       cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/events/${eventId}`,
       customer_email: email,
+      // BNPL requires shipping address collection
+      shipping_address_collection: bnplMethods.length > 0 ? {
+        allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
+      } : undefined,
+      // Phone number collection is required for some BNPL methods
+      phone_number_collection: bnplMethods.length > 0 ? {
+        enabled: true,
+      } : undefined,
       metadata: {
         eventId,
         firstName,
@@ -108,8 +176,376 @@ export class StripeService {
     return { url: session.url };
   }
 
+  // ✅ **Create Event Checkout Session (NEW)**
+  async createEventCheckoutSession(body: {
+    eventId: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phoneNumber?: string;
+    additionalInfo?: object;
+    userId?: string;
+  }) {
+    const {
+      eventId,
+      firstName,
+      lastName,
+      email,
+      phoneNumber,
+      additionalInfo,
+      userId,
+    } = body;
+
+    // Get event details
+    let event;
+
+    // Handle special case for master course default
+    if (eventId === 'master-course-default') {
+      // Create a virtual event for master course checkout
+      // This is used when no specific event is created in the database
+      event = {
+        _id: 'master-course-default',
+        name: 'Master Trading Course',
+        title: 'Curso Intensivo de Trading',
+        type: 'master_course',
+        price: 2999.99,
+        requiresActiveSubscription: false,
+        isActive: true,
+      };
+    } else {
+      event = await this.eventRegistrationsService.findEventById(eventId);
+      if (!event) {
+        throw new NotFoundException('Event not found');
+      }
+    }
+
+    // Check if user needs active subscription (only for community events)
+    // Temporarily disabled subscription restrictions - anyone can pay
+    // if (event.requiresActiveSubscription && userId) {
+    //   const user = await this.userService.findById(userId);
+
+    //   // For community events, check specifically for Live Semanal subscriptions
+    //   if (event.type === 'community_event') {
+    //     const hasLiveSemanalSubscription = user?.subscriptions?.some(
+    //       (sub) =>
+    //         sub.plan === SubscriptionPlan.LIVE_WEEKLY_MANUAL ||
+    //         sub.plan === SubscriptionPlan.LIVE_WEEKLY_RECURRING,
+    //     );
+
+    //     if (!hasLiveSemanalSubscription) {
+    //       throw new BadRequestException(
+    //         'This event requires an active Live Semanal subscription',
+    //       );
+    //     }
+    //   }
+    // } else if (event.requiresActiveSubscription && !userId) {
+    //   // For community events without userId, we can't verify subscription
+    //   if (event.type === 'community_event') {
+    //     throw new BadRequestException(
+    //       'Please log in to register for community events',
+    //     );
+    //   }
+    // }
+
+    // Check event capacity
+    if (event.capacity > 0 && event.currentRegistrations >= event.capacity) {
+      throw new BadRequestException('Event is at full capacity');
+    }
+
+    // Reuse existing products from Stripe dashboard
+    let productId: string | undefined;
+
+    try {
+      if (event.type === 'master_course') {
+        // Search for existing MASTER_COURSE product
+        const products = await this.stripe.products.list({ limit: 100 });
+        const masterCourseProduct = products.data.find(
+          (p) => p.name === 'MASTER_COURSE',
+        );
+        productId = masterCourseProduct?.id;
+      } else if (event.type === 'community_event') {
+        // Search for existing COMMUNITY_EVENT product
+        const products = await this.stripe.products.list({ limit: 100 });
+        const communityEventProduct = products.data.find(
+          (p) => p.name === 'COMMUNITY_EVENT',
+        );
+        productId = communityEventProduct?.id;
+      }
+    } catch (error) {
+      console.error('Error searching for products:', error);
+    }
+
+    // Create price
+    let price;
+    if (productId) {
+      // Create a one-time price for the existing product
+      price = await this.stripe.prices.create({
+        currency: 'usd',
+        unit_amount: Math.round(event.price * 100), // Convert to cents
+        product: productId,
+      });
+    } else {
+      // Only create inline product for non-standard events
+      // This should rarely happen if MASTER_COURSE and COMMUNITY_EVENT products exist
+      console.warn(
+        `No product found for event type: ${event.type}. Creating inline product.`,
+      );
+      price = await this.stripe.prices.create({
+        currency: 'usd',
+        unit_amount: Math.round(event.price * 100), // Convert to cents
+        product_data: {
+          name: event.title || event.name,
+          metadata: {
+            eventType: event.type || 'general',
+          },
+        },
+      });
+    }
+    
+    // Get BNPL methods based on the event price
+    const eventPrice = event.price || 0;
+    const bnplMethods = this.getBNPLMethods(eventPrice, 'usd', false);
+    
+    this.logger.log(`Creating event checkout for ${event.name || event.title}`);
+    this.logger.log(`Event price: $${eventPrice} USD`);
+    this.logger.log(`Payment methods: ${['card', ...bnplMethods].join(', ')}`);
+
+    const session = await this.stripe.checkout.sessions.create({
+      payment_method_types: ['card', ...bnplMethods] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+      mode: 'payment',
+      line_items: [{ price: price.id, quantity: 1 }],
+      success_url:
+        event.type === 'master_course'
+          ? `${this.configService.get<string>('FRONTEND_URL')}/master-course/success?session_id={CHECKOUT_SESSION_ID}`
+          : `${this.configService.get<string>('FRONTEND_URL')}/community-event/success?session_id={CHECKOUT_SESSION_ID}&event=${eventId}`,
+      cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/${event.type === 'master_course' ? 'master-course' : 'community-event'}`,
+      customer_email: email,
+      // BNPL requires shipping address collection
+      shipping_address_collection: {
+        allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
+      },
+      // Phone number collection is required for some BNPL methods
+      phone_number_collection: {
+        enabled: true,
+      },
+      metadata: {
+        eventRegistration: 'true',
+        eventId,
+        eventType: event.type,
+        firstName,
+        lastName,
+        email,
+        phoneNumber: phoneNumber || '',
+        userId: userId || '',
+        additionalInfo: JSON.stringify(additionalInfo || {}),
+        registrationType: event.requiresActiveSubscription
+          ? 'member_exclusive'
+          : 'paid',
+      },
+    });
+
+    return { url: session.url, sessionId: session.id };
+  }
+
+  // ✅ **Create Enhanced Checkout Session with BNPL and Conditional Pricing**
+  async createEnhancedCheckoutSession(
+    userId: string,
+    plan: SubscriptionPlan,
+    options?: {
+      paymentMethods?: string[];
+      metadata?: Record<string, string>;
+      successUrl?: string;
+      cancelUrl?: string;
+    },
+  ) {
+    // Validate subscription eligibility
+    const eligibility =
+      await this.pricingService.validateSubscriptionEligibility(userId, plan);
+    if (!eligibility.eligible) {
+      throw new BadRequestException(eligibility.reason);
+    }
+
+    // Calculate price with conditional pricing
+    const calculatedPrice = await this.pricingService.calculatePrice(
+      userId,
+      plan,
+    );
+
+    // Get or create Stripe customer
+    const user = await this.userService.findById(userId);
+    let customerId = user.stripeCustomerId;
+
+    if (!customerId) {
+      const customer = await this.stripe.customers.create({
+        email: user.email,
+        name: `${user.firstName} ${user.lastName}`,
+        metadata: { userId },
+      });
+      customerId = customer.id;
+      await this.userService.updateUser(userId, {
+        stripeCustomerId: customerId,
+      });
+    }
+
+    // Determine billing cycle and mode
+    const isRecurring = [
+      SubscriptionPlan.MASTER_CLASES,
+      SubscriptionPlan.LIVE_RECORDED,
+      SubscriptionPlan.PSICOTRADING,
+      SubscriptionPlan.LIVE_WEEKLY_RECURRING,
+    ].includes(plan);
+
+    const isWeekly = [
+      SubscriptionPlan.LIVE_WEEKLY_MANUAL,
+      SubscriptionPlan.LIVE_WEEKLY_RECURRING,
+    ].includes(plan);
+
+    // Configure payment methods including BNPL
+    const paymentMethods = options?.paymentMethods || ['card'];
+    const bnplMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = [];
+
+    if (paymentMethods.includes('klarna')) bnplMethods.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+    if (paymentMethods.includes('afterpay_clearpay'))
+      bnplMethods.push('afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+    if (paymentMethods.includes('affirm')) bnplMethods.push('affirm' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+
+    // Create line items
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+
+    if (calculatedPrice.isFree) {
+      // Free subscription (e.g., CLASS with Live subscription)
+      lineItems.push({
+        price_data: {
+          currency: calculatedPrice.currency,
+          product_data: {
+            name: `${plan} Subscription (Free with Live)`,
+            description: calculatedPrice.discountReason,
+          },
+          unit_amount: 0,
+          ...(isRecurring && {
+            recurring: {
+              interval: isWeekly ? 'week' : 'month',
+            },
+          }),
+        },
+        quantity: 1,
+      });
+    } else {
+      // Paid subscription
+      const priceId = await this.pricingService.getPriceIdForPlan(plan);
+
+      if (priceId.startsWith('price_')) {
+        // Use existing price ID
+        lineItems.push({
+          price: priceId,
+          quantity: 1,
+        });
+      } else {
+        // Create price data on the fly (for new plans without price IDs yet)
+        lineItems.push({
+          price_data: {
+            currency: calculatedPrice.currency,
+            product_data: {
+              name: `${plan} Subscription`,
+              ...(calculatedPrice.discountReason && {
+                description: calculatedPrice.discountReason,
+              }),
+            },
+            unit_amount: Math.round(calculatedPrice.finalPrice * 100),
+            ...(isRecurring && {
+              recurring: {
+                interval: isWeekly ? 'week' : 'month',
+              },
+            }),
+          },
+          quantity: 1,
+        });
+      }
+    }
+
+    // Create checkout session
+    const session = await this.stripe.checkout.sessions.create({
+      payment_method_types: ['card', ...bnplMethods] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+      mode: isRecurring ? 'subscription' : 'payment',
+      customer: customerId,
+      line_items: lineItems,
+      success_url:
+        options?.successUrl ||
+        `${this.configService.get<string>('FRONTEND_URL')}/payment/success?session_id={CHECKOUT_SESSION_ID}&plan=${plan}`,
+      cancel_url:
+        options?.cancelUrl ||
+        `${this.configService.get<string>('FRONTEND_URL')}/pricing`,
+      // BNPL requires shipping address collection
+      shipping_address_collection: bnplMethods.length > 0 ? {
+        allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
+      } : undefined,
+      // Phone number collection is required for some BNPL methods
+      phone_number_collection: bnplMethods.length > 0 ? {
+        enabled: true,
+      } : undefined,
+      metadata: {
+        userId: userId.toString(),
+        plan,
+        originalPrice: calculatedPrice.originalPrice.toString(),
+        finalPrice: calculatedPrice.finalPrice.toString(),
+        discount: calculatedPrice.discount.toString(),
+        billingCycle: isWeekly ? BillingCycle.WEEKLY : BillingCycle.MONTHLY,
+        ...options?.metadata,
+      },
+      subscription_data: isRecurring
+        ? {
+            metadata: {
+              userId: userId.toString(),
+              plan,
+              billingCycle: isWeekly
+                ? BillingCycle.WEEKLY
+                : BillingCycle.MONTHLY,
+            },
+          }
+        : undefined,
+      allow_promotion_codes: true,
+      billing_address_collection: 'required',
+      // Enable tax collection if needed
+      automatic_tax: {
+        enabled: false, // Set to true if you have Stripe Tax configured
+      },
+    });
+
+    return {
+      sessionId: session.id,
+      url: session.url,
+      calculatedPrice,
+    };
+  }
+
+  // ✅ **Create Weekly Manual Subscription**
+  async createWeeklyManualSubscription(userId: string) {
+    const plan = SubscriptionPlan.LIVE_WEEKLY_MANUAL;
+    const session = await this.createEnhancedCheckoutSession(userId, plan, {
+      metadata: {
+        subscriptionType: 'manual_weekly',
+        expiresInDays: '7',
+      },
+    });
+
+    return session;
+  }
+
+  // ✅ **Create Weekly Recurring Subscription**
+  async createWeeklyRecurringSubscription(userId: string) {
+    const plan = SubscriptionPlan.LIVE_WEEKLY_RECURRING;
+    const session = await this.createEnhancedCheckoutSession(userId, plan, {
+      metadata: {
+        subscriptionType: 'recurring_weekly',
+      },
+    });
+
+    return session;
+  }
+
   // ✅ **Handle Webhook Events**
   async handleWebhookEvent(signature: string, rawBody: Buffer) {
+    this.logger.log('📥 Webhook received');
     const webhookSecret = this.configService.get<string>(
       'STRIPE_WEBHOOK_SECRET',
     );
@@ -121,38 +557,297 @@ export class StripeService {
         signature,
         webhookSecret,
       );
+      this.logger.log(`✅ Webhook verified: ${event.type}`);
     } catch (err) {
       this.logger.error('⚠️ Webhook verification failed.', err.message);
       throw new Error('Invalid webhook signature');
     }
 
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await this.handleCheckoutCompleted(
-          event.data.object as Stripe.Checkout.Session,
-        );
-        break;
-      case 'invoice.payment_succeeded':
-        await this.handleRecurringPayment(event.data.object as Stripe.Invoice);
-        break;
-      case 'customer.subscription.deleted':
-        await this.handleSubscriptionCanceled(
-          event.data.object as Stripe.Subscription,
-        );
-        break;
-      default:
-        this.logger.warn(`ℹ️ Unhandled event type: ${event.type}`);
+    // Check if we've already processed this event
+    const existingEvent = await this.webhookEventModel.findOne({
+      stripeEventId: event.id,
+    });
+
+    if (existingEvent) {
+      this.logger.warn(`⚠️ Event ${event.id} already processed`);
+      return;
+    }
+
+    // Log the webhook event
+    const webhookEvent = await this.webhookEventModel.create({
+      stripeEventId: event.id,
+      eventType: event.type,
+      status: WebhookEventStatus.RECEIVED,
+      eventData: event.data.object,
+    });
+
+    try {
+      // Update status to processing
+      webhookEvent.status = WebhookEventStatus.PROCESSING;
+      await webhookEvent.save();
+
+      switch (event.type) {
+        case 'checkout.session.completed':
+          await this.handleCheckoutCompleted(
+            event.data.object as Stripe.Checkout.Session,
+          );
+          break;
+        case 'invoice.payment_succeeded':
+          await this.handleRecurringPayment(
+            event.data.object as Stripe.Invoice,
+          );
+          break;
+        case 'customer.subscription.deleted':
+          await this.handleSubscriptionCanceled(
+            event.data.object as Stripe.Subscription,
+          );
+          break;
+        case 'customer.subscription.updated':
+          await this.handleSubscriptionUpdated(
+            event.data.object as Stripe.Subscription,
+          );
+          break;
+        case 'invoice.payment_failed':
+          await this.handlePaymentFailed(event.data.object as Stripe.Invoice);
+          break;
+        case 'payment_intent.payment_failed':
+          await this.handlePaymentIntentFailed(
+            event.data.object as Stripe.PaymentIntent,
+          );
+          break;
+        default:
+          this.logger.warn(`ℹ️ Unhandled event type: ${event.type}`);
+          webhookEvent.status = WebhookEventStatus.IGNORED;
+          await webhookEvent.save();
+          return;
+      }
+
+      // Mark as processed
+      webhookEvent.status = WebhookEventStatus.PROCESSED;
+      webhookEvent.processedAt = new Date();
+      await webhookEvent.save();
+    } catch (error) {
+      // Log error and mark as failed
+      this.logger.error(`Error processing webhook event ${event.id}:`, error);
+      webhookEvent.status = WebhookEventStatus.FAILED;
+      webhookEvent.errorMessage = error.message;
+      webhookEvent.errorStack = error.stack;
+      await webhookEvent.save();
+      throw error;
+    }
+  }
+
+  // ✅ **Handle Event Registration (NEW)**
+  private async handleEventRegistration(session: Stripe.Checkout.Session) {
+    this.logger.log('🎟️ Processing event registration');
+
+    const {
+      eventId,
+      eventType,
+      firstName,
+      lastName,
+      email,
+      phoneNumber,
+      userId,
+      additionalInfo,
+      registrationType,
+    } = session.metadata || {};
+
+    if (!eventId || !email) {
+      this.logger.error('Missing required event registration data');
+      return;
+    }
+
+    try {
+      // Parse additional info if present
+      const parsedAdditionalInfo = additionalInfo
+        ? JSON.parse(additionalInfo)
+        : {};
+
+      let actualEventId = eventId;
+      let event;
+
+      // Special handling for master-course-default
+      if (eventId === 'master-course-default') {
+        // Try to find an active master course event
+        const events = await this.eventModel
+          .find({
+            type: 'master_course',
+            isActive: true,
+          })
+          .exec();
+
+        if (events.length > 0) {
+          event = events[0];
+          actualEventId = event._id.toString();
+          this.logger.log(`Found master course event: ${actualEventId}`);
+        } else {
+          // If no event exists, log error but continue to create transaction
+          this.logger.error('No active master course event found in database');
+          // Don't return here - we still want to create a transaction
+        }
+      } else {
+        // For regular events, fetch the event
+        event = await this.eventRegistrationsService.findEventById(eventId);
+      }
+
+      // Create event registration (if we have a valid event)
+      let registration: any;
+      if (event && actualEventId !== 'master-course-default') {
+        registration = await this.eventRegistrationsService.create({
+          eventId: actualEventId,
+          firstName,
+          lastName,
+          email,
+          phoneNumber,
+          isVip: false,
+          userId: userId || undefined,
+          additionalInfo: parsedAdditionalInfo,
+          registrationType: registrationType || 'paid',
+          paymentStatus: 'paid',
+          amountPaid: session.amount_total ? session.amount_total / 100 : 0,
+          stripeSessionId: session.id,
+        });
+
+        // Update event registration count
+        event.currentRegistrations = (event.currentRegistrations || 0) + 1;
+        await event.save();
+      }
+
+      // Create transaction record for financial tracking
+      const amount = session.amount_total ? session.amount_total / 100 : 0;
+      const currency = session.currency || 'usd';
+
+      // Determine the plan based on event type
+      let plan = SubscriptionPlan.COMMUNITY_EVENT; // Default for events
+      if (eventType === 'master_course') {
+        plan = SubscriptionPlan.MASTER_COURSE; // We'll need to add this to the enum
+      }
+
+      const transaction = await this.transactionModel.create({
+        userId: userId || undefined,
+        amount,
+        currency,
+        status:
+          session.payment_status === 'paid'
+            ? PaymentStatus.SUCCEEDED
+            : PaymentStatus.PENDING,
+        plan,
+        type: TransactionType.EVENT_PAYMENT,
+        stripeSessionId: session.id,
+        stripeCustomerId: session.customer as string,
+        stripePaymentIntentId: session.payment_intent as string,
+        paymentMethod: this.mapStripePaymentMethodType(
+          session.payment_method_types?.[0] || 'card',
+        ),
+        billingCycle: BillingCycle.ONE_TIME,
+        metadata: {
+          eventId: actualEventId,
+          eventType: eventType || 'general',
+          eventName: event?.name || 'Master Trading Course',
+          firstName,
+          lastName,
+          email,
+          phoneNumber,
+          registrationType,
+        },
+      });
+
+      this.logger.log(
+        `✅ Event registration completed for ${email} - Event: ${actualEventId}, Transaction: ${transaction._id}`,
+      );
+
+      // Grant Classes access for Master Course registrations
+      if (eventType === 'master_course' && userId) {
+        try {
+          this.logger.log(
+            `🎓 Granting Classes access for Master Course registration - User: ${userId}`,
+          );
+
+          // Add CLASSES subscription with 15-day expiration
+          const expirationDate = new Date();
+          expirationDate.setDate(expirationDate.getDate() + 15);
+
+          await this.userService.updateUser(userId, {
+            $push: {
+              subscriptions: {
+                plan: SubscriptionPlan.CLASSES,
+                expiresAt: expirationDate,
+              },
+            },
+          });
+
+          this.logger.log(
+            `✅ Classes access granted successfully for user ${userId} until ${expirationDate}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to grant Classes access for user ${userId}:`,
+            error,
+          );
+        }
+      }
+
+      // Send email notification
+      if (this.emailService) {
+        try {
+          const event = await this.eventModel.findById(eventId);
+          if (event) {
+            await this.emailService.sendEventRegistrationEmail(email, {
+              firstName,
+              eventName: event.name || event.title,
+              eventType: eventType as
+                | 'master_course'
+                | 'community_event'
+                | 'vip_event',
+              eventDate: event.date ? new Date(event.date) : undefined,
+              eventTime: (event as any).time,
+              eventLocation:
+                event.location ||
+                ((event as any).isOnline ? 'Evento en línea' : undefined),
+              eventDescription: event.description,
+              ticketNumber: registration?._id?.toString() || session.id,
+              isPaid: registrationType === 'paid',
+              amount: session.amount_total
+                ? session.amount_total / 100
+                : undefined,
+              currency: session.currency,
+            });
+          } else {
+            // Fallback to old template if event not found
+            await this.emailService.sendEventRegistrationTemplate(
+              email,
+              firstName,
+              2,
+            );
+          }
+        } catch (emailError) {
+          this.logger.error(
+            'Failed to send event registration email:',
+            emailError,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error('Error processing event registration:', error);
+      throw error;
     }
   }
 
   // ✅ **Handle First-Time Checkout Completion**
   private async handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+    this.logger.log('🎯 Processing checkout.session.completed event');
+    this.logger.log(`Session ID: ${session.id}`);
+    this.logger.log(`Metadata: ${JSON.stringify(session.metadata)}`);
+
     const userId = session.metadata?.userId;
-    const priceId = session.metadata?.priceId;
+    const plan = session.metadata?.plan as SubscriptionPlan;
     const amount = session.amount_total ? session.amount_total / 100 : 0;
     const currency = session.currency || 'usd';
     const subscriptionId = session.subscription as string;
+    const paymentMethod = session.payment_method_types?.[0] || 'card';
 
+    // Handle VIP event registration
     if (session.metadata?.eventId && session.metadata?.isVip === 'true') {
       await this.eventRegistrationsService.create({
         eventId: session.metadata.eventId,
@@ -171,85 +866,191 @@ export class StripeService {
       return;
     }
 
-    if (!userId || !priceId) {
-      this.logger.warn('⚠️ Missing userId or priceId.');
+    // Handle general event registration (NEW)
+    if (session.metadata?.eventRegistration === 'true') {
+      await this.handleEventRegistration(session);
       return;
     }
 
-    const subscriptionPlan = this.mapPriceIdToPlan(priceId);
-    if (!subscriptionPlan) {
-      this.logger.warn(`⚠️ Unknown priceId: ${priceId}`);
+    if (!userId || !plan) {
+      this.logger.warn('⚠️ Missing userId or plan.');
       return;
     }
 
     let expirationDate: Date | undefined;
+    let nextBillingDate: Date | undefined;
+    const billingCycle =
+      (session.metadata?.billingCycle as BillingCycle) || BillingCycle.ONE_TIME;
 
-    if (!subscriptionId) {
-      // ✅ Check if the user already has a transaction for this plan
-      const existingTransaction = await this.transactionModel.findOne({
-        userId,
-        plan: subscriptionPlan,
-      });
-
-      if (existingTransaction) {
-        this.logger.warn(
-          `⚠️ User ${userId} already has a transaction for ${subscriptionPlan}, skipping duplicate.`,
-        );
-        return;
-      }
-
-      // ✅ One-time purchase, set expiration date
-      const priceDetails = await this.stripe.prices.retrieve(priceId);
-      const productDetails = await this.stripe.products.retrieve(
-        priceDetails.product as string,
-      );
-
-      if (priceDetails.recurring) {
-        this.logger.warn(
-          `⚠️ Expected a one-time price, but got a recurring price.`,
-        );
-        return;
-      }
-
-      const expirationDays = parseInt(
-        productDetails.metadata?.expiration_days || '30',
-        10,
-      );
+    // Set expiration dates based on plan type
+    if (plan === SubscriptionPlan.PEACE_WITH_MONEY) {
+      // 60-day fixed access
       expirationDate = new Date();
-      expirationDate.setDate(expirationDate.getDate() + expirationDays);
+      expirationDate.setDate(expirationDate.getDate() + 60);
+    } else if (plan === SubscriptionPlan.LIVE_WEEKLY_MANUAL) {
+      // 7-day manual renewal
+      expirationDate = new Date();
+      expirationDate.setDate(expirationDate.getDate() + 7);
+    } else if (plan === SubscriptionPlan.CLASSES) {
+      // 15-day fixed access for Classes
+      expirationDate = new Date();
+      expirationDate.setDate(expirationDate.getDate() + 15);
+    } else if (
+      plan === SubscriptionPlan.LIVE_WEEKLY_RECURRING &&
+      subscriptionId
+    ) {
+      // Weekly recurring - set next billing date
+      nextBillingDate = new Date();
+      nextBillingDate.setDate(nextBillingDate.getDate() + 7);
     }
 
-    // ✅ Store transaction only if it does not exist
-    await this.transactionModel.create({
+    // Extract pricing information from metadata
+    const originalPrice = parseFloat(
+      session.metadata?.originalPrice || amount.toString(),
+    );
+    const finalPrice = parseFloat(
+      session.metadata?.finalPrice || amount.toString(),
+    );
+    const discount = parseFloat(session.metadata?.discount || '0');
+
+    // Create transaction record
+    const transaction = await this.transactionModel.create({
       userId,
       amount,
       currency,
-      status: session.payment_status || 'unknown',
-      plan: subscriptionPlan,
+      status:
+        session.payment_status === 'paid'
+          ? PaymentStatus.SUCCEEDED
+          : PaymentStatus.PENDING,
+      plan,
       subscriptionId: subscriptionId || undefined,
-      expiresAt: expirationDate, // ✅ Only for fixed-term plans
+      stripeSessionId: session.id,
+      stripeCustomerId: session.customer as string,
+      paymentMethod: this.mapStripePaymentMethodType(paymentMethod),
+      billingCycle,
+      expiresAt: expirationDate,
+      nextBillingDate,
+      originalPrice,
+      finalPrice,
+      discountApplied: discount,
+      metadata: {
+        sessionMetadata: session.metadata,
+        paymentIntentId: session.payment_intent,
+      },
     });
 
-    // ✅ Ensure Subscription is Updated in the User Object
-    // ✅ First, remove any existing subscription entry for the same plan
+    // Record subscription history
+    await this.subscriptionHistoryModel.create({
+      userId,
+      transactionId: transaction._id,
+      plan,
+      action: SubscriptionAction.CREATED,
+      stripeSubscriptionId: subscriptionId,
+      stripeEventId: session.id,
+      price: finalPrice,
+      discountApplied: discount,
+      currency,
+      effectiveDate: new Date(),
+      expirationDate,
+      metadata: session.metadata,
+    });
+
+    // Update user subscription
     await this.userService.updateUser(userId, {
-      $pull: { subscriptions: { plan: subscriptionPlan } }, // ✅ Removes any existing subscription for the same plan
+      $pull: { subscriptions: { plan } },
     });
 
-    // ✅ Second, add the new subscription entry
+    // Get subscription details from Stripe if it's a recurring subscription
+    let currentPeriodEnd = null;
+    let subscriptionStatus = 'active';
+    if (subscriptionId) {
+      try {
+        const stripeSubscription =
+          await this.stripe.subscriptions.retrieve(subscriptionId);
+        currentPeriodEnd = new Date(
+          stripeSubscription.current_period_end * 1000,
+        );
+        subscriptionStatus = stripeSubscription.status;
+      } catch (error) {
+        this.logger.error(
+          `Failed to retrieve subscription ${subscriptionId}:`,
+          error,
+        );
+      }
+    }
+
     await this.userService.updateUser(userId, {
       $push: {
-        subscriptions: { plan: subscriptionPlan, expiresAt: expirationDate }, // ✅ Adds the new subscription
+        subscriptions: {
+          plan,
+          expiresAt: expirationDate,
+          stripeSubscriptionId: subscriptionId || null,
+          createdAt: new Date(),
+          currentPeriodEnd: currentPeriodEnd || expirationDate,
+          status: subscriptionStatus,
+        },
       },
-
       ...(subscriptionId
-        ? { $addToSet: { activeSubscriptions: subscriptionId } } // ✅ Adds to active subscriptions if recurring
+        ? { $addToSet: { activeSubscriptions: subscriptionId } }
         : {}),
     });
 
     this.logger.log(
-      `✅ User ${userId} subscribed to ${subscriptionPlan} (Expires: ${expirationDate || 'Never'})`,
+      `✅ User ${userId} subscribed to ${plan} (Expires: ${expirationDate || 'Never'})`,
     );
+
+    // Send payment confirmation email
+    try {
+      const user = await this.userService.findById(userId);
+      if (user) {
+        // Get plan name for email
+        const planNames: Record<string, string> = {
+          [SubscriptionPlan.LIVE_WEEKLY_MANUAL]: 'Live Semanal',
+          [SubscriptionPlan.LIVE_WEEKLY_RECURRING]: 'Live Semanal Auto',
+          [SubscriptionPlan.MASTER_CLASES]: 'Master Clases',
+          [SubscriptionPlan.LIVE_RECORDED]: 'Live Grabados',
+          [SubscriptionPlan.PSICOTRADING]: 'PsicoTrading',
+          [SubscriptionPlan.CLASSES]: 'Clases',
+          [SubscriptionPlan.PEACE_WITH_MONEY]: 'Paz con el Dinero',
+          [SubscriptionPlan.MASTER_COURSE]: 'Master Course',
+          [SubscriptionPlan.COMMUNITY_EVENT]: 'Community Event',
+          [SubscriptionPlan.VIP_EVENT]: 'VIP Event',
+        };
+
+        const isRecurring = [
+          SubscriptionPlan.LIVE_WEEKLY_RECURRING,
+          SubscriptionPlan.MASTER_CLASES,
+          SubscriptionPlan.LIVE_RECORDED,
+          SubscriptionPlan.PSICOTRADING,
+        ].includes(plan);
+
+        await this.emailService.sendPaymentConfirmationEmail(user.email, {
+          firstName: user.firstName,
+          planName: planNames[plan] || plan,
+          amount: finalPrice,
+          currency,
+          billingCycle,
+          transactionId: transaction._id.toString(),
+          nextBillingDate,
+          expiresAt: expirationDate,
+          isRecurring,
+        });
+      }
+    } catch (error) {
+      this.logger.error('Failed to send payment confirmation email:', error);
+    }
+  }
+
+  // Helper method to map Stripe payment method types to our enum
+  private mapStripePaymentMethodType(stripeType: string): PaymentMethod {
+    const mapping: Record<string, PaymentMethod> = {
+      card: PaymentMethod.CARD,
+      klarna: PaymentMethod.KLARNA,
+      afterpay_clearpay: PaymentMethod.AFTERPAY,
+      affirm: PaymentMethod.AFFIRM,
+      bank_transfer: PaymentMethod.BANK_TRANSFER,
+    };
+    return mapping[stripeType] || PaymentMethod.CARD;
   }
 
   // ✅ **Handle Recurring Payments**
@@ -266,10 +1067,11 @@ export class StripeService {
     const amountPaid = invoice.amount_paid / 100;
     const currency = invoice.currency;
     const invoiceId = invoice.id;
+    const subscriptionId = invoice.subscription as string;
 
     // ✅ Ensure the invoice does not already exist
     const existingTransaction = await this.transactionModel.findOne({
-      stripeSessionId: invoiceId,
+      stripePaymentIntentId: invoice.payment_intent as string,
     });
 
     if (existingTransaction) {
@@ -277,16 +1079,111 @@ export class StripeService {
       return;
     }
 
+    // Get subscription metadata to determine plan
+    let plan: SubscriptionPlan = SubscriptionPlan.MASTER_CLASES; // Default fallback
+    let billingCycle: BillingCycle = BillingCycle.MONTHLY;
+
+    if (invoice.subscription_details?.metadata) {
+      plan =
+        (invoice.subscription_details.metadata.plan as SubscriptionPlan) ||
+        SubscriptionPlan.MASTER_CLASES;
+      billingCycle =
+        (invoice.subscription_details.metadata.billingCycle as BillingCycle) ||
+        BillingCycle.MONTHLY;
+    } else if (subscriptionId) {
+      // Fetch subscription from Stripe to get metadata
+      try {
+        const subscription =
+          await this.stripe.subscriptions.retrieve(subscriptionId);
+        if (subscription.metadata?.plan) {
+          plan = subscription.metadata.plan as SubscriptionPlan;
+          billingCycle =
+            (subscription.metadata.billingCycle as BillingCycle) ||
+            BillingCycle.MONTHLY;
+        }
+      } catch (error) {
+        this.logger.error(
+          `Error fetching subscription ${subscriptionId}:`,
+          error,
+        );
+      }
+    }
+
+    // Calculate next billing date based on billing cycle
+    let nextBillingDate: Date | undefined;
+    if (billingCycle === BillingCycle.WEEKLY) {
+      nextBillingDate = new Date();
+      nextBillingDate.setDate(nextBillingDate.getDate() + 7);
+    } else if (billingCycle === BillingCycle.MONTHLY) {
+      nextBillingDate = new Date();
+      nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+    }
+
     // ✅ Create new transaction for the recurring payment
-    await this.transactionModel.create({
+    const transaction = await this.transactionModel.create({
       userId: user._id.toString(),
       amount: amountPaid,
       currency,
-      status: 'paid',
-      stripeSessionId: invoiceId,
+      status: PaymentStatus.SUCCEEDED,
+      plan,
+      subscriptionId,
+      stripePaymentIntentId: invoice.payment_intent as string,
+      stripeCustomerId: customerId,
+      paymentMethod: PaymentMethod.CARD,
+      billingCycle,
+      nextBillingDate,
+      receiptUrl: invoice.hosted_invoice_url,
+      invoiceUrl: invoice.invoice_pdf,
+      metadata: {
+        invoiceId,
+        invoiceNumber: invoice.number,
+        billingReason: invoice.billing_reason,
+      },
     });
 
-    this.logger.log(`✅ Recurring payment recorded for user ${user._id}`);
+    // Record subscription history
+    await this.subscriptionHistoryModel.create({
+      userId: user._id.toString(),
+      transactionId: transaction._id,
+      plan,
+      action: SubscriptionAction.RENEWED,
+      stripeSubscriptionId: subscriptionId,
+      stripeEventId: invoiceId,
+      price: amountPaid,
+      currency,
+      effectiveDate: new Date(),
+      metadata: {
+        invoiceId,
+        invoiceNumber: invoice.number,
+      },
+    });
+
+    // Update user's subscription with new period end date
+    if (nextBillingDate) {
+      // Get current period end from invoice
+      const currentPeriodEnd = new Date(
+        invoice.lines.data[0]?.period.end * 1000,
+      );
+
+      const userSubscriptions = user.subscriptions.map((sub) => {
+        if (sub.plan === plan && sub.stripeSubscriptionId === subscriptionId) {
+          return {
+            ...sub,
+            currentPeriodEnd: currentPeriodEnd,
+            status: 'active',
+          };
+        }
+        return sub;
+      });
+
+      await this.userService.updateUser(user._id.toString(), {
+        subscriptions: userSubscriptions,
+      });
+    }
+
+    this.logger.log(
+      `✅ Recurring payment recorded for user ${user._id} - Plan: ${plan}`,
+    );
   }
 
   // ✅ **Handle Subscription Cancellation**
@@ -326,20 +1223,216 @@ export class StripeService {
   }
 
   // ✅ **Map Stripe `priceId` to SubscriptionPlan Enum**
-  private mapPriceIdToPlan(priceId: string): SubscriptionPlan | null {
+  private async mapPriceIdToPlan(priceId: string): Promise<SubscriptionPlan | null> {
+    // Try to find the plan in database first
+    try {
+      const environment = this.configService.get<string>('NODE_ENV', 'development');
+      const query = environment === 'production' 
+        ? { 'stripeIds.production.priceId': priceId }
+        : { 'stripeIds.development.priceId': priceId };
+      
+      const plan = await this.subscriptionPlanModel.findOne(query).exec();
+      if (plan) {
+        return plan.planId as SubscriptionPlan;
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to find plan for price ID ${priceId} in database`);
+    }
+    
+    // Fallback to hardcoded mapping (to be removed once database is confirmed working)
     const priceToPlanMap: { [key: string]: SubscriptionPlan } = {
-      price_1RTnbQE0taYR7njRttjfaMqy: SubscriptionPlan.MENTORSHIP, //this prod
-      // price_1Qy0JcJ1acFkbhNI4q0axjLX: SubscriptionPlan.MENTORSHIP, // This is dev
-      price_1R5wSRE0taYR7njRd270eE8O: SubscriptionPlan.CLASS, // This is prod
-      // price_1R5bWkJ1acFkbhNIFMuDqkMj: SubscriptionPlan.CLASS, // This is dev
-      // price_1RGOg5J1acFkbhNIBI6fd5l6: SubscriptionPlan.STOCK,
-      // price_1RNIS6J1acFkbhNIyPeQVOAS: SubscriptionPlan.PSICOTRADING, // This is dev
-      price_1RMx9KE0taYR7njRSoew9Cq1: SubscriptionPlan.PSICOTRADING, // This is prod
-      // price_1RX2hDJ1acFkbhNIq4mDa1Js: SubscriptionPlan.MONEYPEACE, // This is dev
-      price_1RX5z8E0taYR7njRaC7mXbqn: SubscriptionPlan.MONEYPEACE, // This is prod
+      /* These are Dev subscriptions */
+      // Community Subscriptions
+      price_1Rj37aJ1acFkbhNI6psETNkH: SubscriptionPlan.LIVE_WEEKLY_MANUAL,
+      price_1Rj383J1acFkbhNIO3TfFmnl: SubscriptionPlan.LIVE_WEEKLY_RECURRING,
+
+      // Recurring Monthly
+      price_1Rk7OOJ1acFkbhNI1JAr62Lw: SubscriptionPlan.MASTER_CLASES,
+      price_1Rk7PoJ1acFkbhNInNuVejrp: SubscriptionPlan.LIVE_RECORDED,
+      price_1RNIS6J1acFkbhNIyPeQVOAS: SubscriptionPlan.PSICOTRADING,
+
+      // One-Time Purchases
+      price_1Rk6VVJ1acFkbhNIGFGK4mzA: SubscriptionPlan.CLASSES,
+      price_1RX2hDJ1acFkbhNIq4mDa1Js: SubscriptionPlan.PEACE_WITH_MONEY,
+      price_1Rj38bJ1acFkbhNID7qBD4lz: SubscriptionPlan.MASTER_COURSE,
+      price_1RjVpqJ1acFkbhNIGH06m1RA: SubscriptionPlan.COMMUNITY_EVENT,
+      price_1RJKtNJ1acFkbhNIBNsLFT4p: SubscriptionPlan.VIP_EVENT,
+
+      /* These are Prod subscriptions */
+      // // Community Subscriptions
+      // price_1Rj37aJ1acFkbhNI6psETNkH: SubscriptionPlan.LIVE_WEEKLY_MANUAL, // TODO: Create in Stripe
+      // price_1Rj383J1acFkbhNIO3TfFmnl: SubscriptionPlan.LIVE_WEEKLY_RECURRING, // TODO: Create in Stripe
+
+      // // Recurring Monthly
+      // price_TODO_MASTER_CLASES: SubscriptionPlan.MASTER_CLASES, // TODO: Create in Stripe
+      // price_1R5bWkJ1acFkbhNIFMuDqkMj: SubscriptionPlan.LIVE_RECORDED, // Using existing CLASS price
+      // price_1RNIS6J1acFkbhNIyPeQVOAS: SubscriptionPlan.PSICOTRADING,
+
+      // // One-Time Purchases
+      // price_TODO_CLASSES: SubscriptionPlan.CLASSES, // TODO: Create in Stripe
+      // price_1RX5z8E0taYR7njRaC7mXbqn: SubscriptionPlan.PEACE_WITH_MONEY, // Using existing MONEYPEACE price
+      // price_1Rj38bJ1acFkbhNID7qBD4lz: SubscriptionPlan.MASTER_COURSE,
+      // price_1RjVpqJ1acFkbhNIGH06m1RA: SubscriptionPlan.COMMUNITY_EVENT,
     };
 
     return priceToPlanMap[priceId] || null;
+  }
+
+  /**
+   * Get subscription details for a user
+   */
+  async getSubscriptionDetails(userId: string) {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const subscriptionDetails = await Promise.all(
+      user.activeSubscriptions.map(async (subId) => {
+        try {
+          const subscription = await this.stripe.subscriptions.retrieve(subId);
+          return {
+            id: subscription.id,
+            status: subscription.status,
+            currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            items: subscription.items.data.map((item) => ({
+              id: item.id,
+              price: item.price,
+              quantity: item.quantity,
+            })),
+          };
+        } catch (error) {
+          this.logger.error(`Error fetching subscription ${subId}:`, error);
+          return null;
+        }
+      }),
+    );
+
+    return {
+      user: {
+        id: user._id,
+        email: user.email,
+        subscriptions: user.subscriptions,
+      },
+      stripeSubscriptions: subscriptionDetails.filter((s) => s !== null),
+    };
+  }
+
+  /**
+   * Create customer portal session for subscription management
+   */
+  async createCustomerPortalSession(userId: string) {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Ensure user has a Stripe customer ID
+    let customerId = user.stripeCustomerId;
+    if (!customerId) {
+      const customer = await this.stripe.customers.create({
+        email: user.email,
+        name: `${user.firstName} ${user.lastName}`,
+        metadata: { userId: user._id.toString() },
+      });
+      customerId = customer.id;
+
+      await this.userService.updateUser(userId, {
+        stripeCustomerId: customerId,
+      });
+    }
+
+    const session = await this.stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${this.configService.get<string>('FRONTEND_URL')}/dashboard/account`,
+    });
+
+    return { url: session.url };
+  }
+
+  /**
+   * Get payment history for a user
+   */
+  async getPaymentHistory(userId: string, limit: number = 10) {
+    const transactions = await this.transactionModel
+      .find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .exec();
+
+    return transactions.map((tx) => ({
+      id: tx._id,
+      amount: tx.amount,
+      currency: tx.currency,
+      status: tx.status,
+      plan: tx.plan,
+      createdAt: tx.createdAt,
+      receiptUrl: tx.receiptUrl,
+      invoiceUrl: tx.invoiceUrl,
+    }));
+  }
+
+  /**
+   * Update subscription (upgrade/downgrade)
+   */
+  async updateSubscription(
+    userId: string,
+    currentPlan: SubscriptionPlan,
+    newPriceId: string,
+  ) {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const subscription = user.activeSubscriptions.find(() =>
+      user.subscriptions.some((sub) => sub.plan === currentPlan),
+    );
+
+    if (!subscription) {
+      throw new NotFoundException('No active subscription found for this plan');
+    }
+
+    try {
+      const stripeSubscription =
+        await this.stripe.subscriptions.retrieve(subscription);
+      const subscriptionItem = stripeSubscription.items.data[0];
+
+      // Update the subscription with the new price
+      const updatedSubscription = await this.stripe.subscriptions.update(
+        subscription,
+        {
+          items: [
+            {
+              id: subscriptionItem.id,
+              price: newPriceId,
+            },
+          ],
+          proration_behavior: 'create_prorations',
+        },
+      );
+
+      // Update the user's subscription plan
+      const newPlan = await this.mapPriceIdToPlan(newPriceId);
+      if (newPlan) {
+        user.subscriptions = user.subscriptions.map((sub) =>
+          sub.plan === currentPlan ? { ...sub, plan: newPlan } : sub,
+        );
+
+        await this.userService.updateUser(userId, {
+          subscriptions: user.subscriptions,
+        });
+      }
+
+      return {
+        success: true,
+        subscription: updatedSubscription,
+      };
+    } catch (error) {
+      this.logger.error('Error updating subscription:', error);
+      throw new InternalServerErrorException('Failed to update subscription');
+    }
   }
 
   async cancelSubscription(
@@ -354,7 +1447,9 @@ export class StripeService {
 
     // ✅ Find the Stripe Subscription ID associated with the plan
     const subscriptionId = user.activeSubscriptions.find(() =>
-      user.subscriptions.some((sub) => sub.plan === subscriptionPlan),
+      user.subscriptions.some(
+        (subscription) => subscription.plan === subscriptionPlan,
+      ),
     );
 
     if (!subscriptionId) {
@@ -390,5 +1485,290 @@ export class StripeService {
       this.logger.error('Error canceling subscription:', error.message);
       throw new InternalServerErrorException('Failed to cancel subscription');
     }
+  }
+
+  // ✅ **Handle Subscription Updated**
+  private async handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+    this.logger.log(
+      `Processing subscription.updated event for ${subscription.id}`,
+    );
+
+    const customerId = subscription.customer as string;
+    const user = await this.userService.findByStripeCustomerId(customerId);
+
+    if (!user) {
+      this.logger.warn(`⚠️ No user found for customer: ${customerId}`);
+      return;
+    }
+
+    // Check if plan changed
+    const plan = subscription.metadata?.plan as SubscriptionPlan;
+    if (plan) {
+      const previousPlan = user.subscriptions.find(() =>
+        user.activeSubscriptions.includes(subscription.id),
+      )?.plan;
+
+      if (previousPlan && previousPlan !== plan) {
+        // Record plan change
+        await this.subscriptionHistoryModel.create({
+          userId: user._id.toString(),
+          plan,
+          previousPlan,
+          action: SubscriptionAction.UPGRADED, // Or DOWNGRADED based on plan comparison
+          stripeSubscriptionId: subscription.id,
+          price: subscription.items.data[0].price.unit_amount / 100,
+          currency: subscription.currency,
+          effectiveDate: new Date(),
+        });
+      }
+    }
+
+    this.logger.log(
+      `✅ Subscription ${subscription.id} updated for user ${user._id}`,
+    );
+  }
+
+  // ✅ **Handle Payment Failed**
+  private async handlePaymentFailed(invoice: Stripe.Invoice) {
+    this.logger.log(
+      `Processing invoice.payment_failed event for ${invoice.id}`,
+    );
+
+    const customerId = invoice.customer as string;
+    const user = await this.userService.findByStripeCustomerId(customerId);
+
+    if (!user) {
+      this.logger.warn(`⚠️ No user found for customer: ${customerId}`);
+      return;
+    }
+
+    // Create failed transaction record
+    await this.transactionModel.create({
+      userId: user._id.toString(),
+      amount: invoice.amount_due / 100,
+      currency: invoice.currency,
+      status: PaymentStatus.FAILED,
+      plan:
+        (invoice.subscription_details?.metadata?.plan as SubscriptionPlan) ||
+        SubscriptionPlan.MASTER_CLASES,
+      subscriptionId: invoice.subscription as string,
+      stripePaymentIntentId: invoice.payment_intent as string,
+      stripeCustomerId: customerId,
+      paymentMethod: PaymentMethod.CARD,
+      failureReason: 'Payment failed on invoice',
+      metadata: {
+        invoiceId: invoice.id,
+        attemptCount: invoice.attempt_count,
+      },
+    });
+
+    // Record in subscription history
+    await this.subscriptionHistoryModel.create({
+      userId: user._id.toString(),
+      plan:
+        (invoice.subscription_details?.metadata?.plan as SubscriptionPlan) ||
+        SubscriptionPlan.MASTER_CLASES,
+      action: SubscriptionAction.PAYMENT_FAILED,
+      stripeSubscriptionId: invoice.subscription as string,
+      stripeEventId: invoice.id,
+      price: invoice.amount_due / 100,
+      currency: invoice.currency,
+      effectiveDate: new Date(),
+      metadata: {
+        invoiceId: invoice.id,
+        attemptCount: invoice.attempt_count,
+      },
+    });
+
+    this.logger.warn(
+      `⚠️ Payment failed for user ${user._id} - Invoice: ${invoice.id}`,
+    );
+  }
+
+  // ✅ **Handle Payment Intent Failed**
+  private async handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent) {
+    this.logger.log(
+      `Processing payment_intent.payment_failed event for ${paymentIntent.id}`,
+    );
+
+    // Try to find existing transaction
+    const transaction = await this.transactionModel.findOne({
+      stripePaymentIntentId: paymentIntent.id,
+    });
+
+    if (transaction) {
+      // Update transaction status
+      transaction.status = PaymentStatus.FAILED;
+      transaction.failureReason =
+        paymentIntent.last_payment_error?.message || 'Payment failed';
+      await transaction.save();
+
+      this.logger.warn(
+        `⚠️ Payment intent ${paymentIntent.id} failed - Transaction updated`,
+      );
+    } else {
+      this.logger.warn(
+        `⚠️ No transaction found for payment intent ${paymentIntent.id}`,
+      );
+    }
+  }
+
+  /**
+   * Get checkout session details (for success page)
+   */
+  async getCheckoutSessionUrl(sessionId: string) {
+    try {
+      const session = await this.stripe.checkout.sessions.retrieve(sessionId);
+      return { url: session.url };
+    } catch (error) {
+      this.logger.error('Error retrieving checkout session URL:', error);
+      throw new NotFoundException('Checkout session not found');
+    }
+  }
+
+  async getCheckoutSession(sessionId: string) {
+    try {
+      const session = await this.stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ['customer', 'subscription', 'payment_intent'],
+      });
+
+      // Get user from metadata or customer
+      let user = null;
+      if (session.metadata?.userId) {
+        user = await this.userService.findById(session.metadata.userId);
+      } else if (session.customer) {
+        const customerId =
+          typeof session.customer === 'string'
+            ? session.customer
+            : session.customer.id;
+        user = await this.userService.findByStripeCustomerId(customerId);
+      }
+
+      // Get client secret from payment intent
+      let clientSecret = null;
+      if (session.payment_intent && typeof session.payment_intent === 'object') {
+        clientSecret = session.payment_intent.client_secret;
+      }
+
+      return {
+        id: session.id,
+        status: session.status,
+        paymentStatus: session.payment_status,
+        customerEmail: session.customer_email || user?.email,
+        amount_total: session.amount_total,
+        amountTotal: session.amount_total / 100,
+        currency: session.currency,
+        metadata: session.metadata,
+        subscription: session.subscription,
+        mode: session.mode,
+        client_secret: clientSecret,
+        payment_intent: session.payment_intent,
+        user: user
+          ? {
+              id: user._id,
+              email: user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+            }
+          : null,
+      };
+    } catch (error) {
+      this.logger.error('Error retrieving checkout session:', error);
+      throw new NotFoundException('Checkout session not found');
+    }
+  }
+
+  /**
+   * Get subscription history for a user
+   */
+  async getSubscriptionHistory(userId: string, limit: number = 20) {
+    const history = await this.subscriptionHistoryModel
+      .find({ userId })
+      .populate('transactionId')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .exec();
+
+    return history.map((record) => ({
+      id: record._id,
+      plan: record.plan,
+      previousPlan: record.previousPlan,
+      action: record.action,
+      price: record.price,
+      previousPrice: record.previousPrice,
+      discountApplied: record.discountApplied,
+      currency: record.currency,
+      cancellationReason: record.cancellationReason,
+      cancellationNote: record.cancellationNote,
+      effectiveDate: record.effectiveDate,
+      expirationDate: record.expirationDate,
+      createdAt: record.createdAt,
+    }));
+  }
+
+  /**
+   * Get available BNPL (Buy Now Pay Later) methods based on amount and currency
+   * @param amount Payment amount in the currency's base unit
+   * @param currency Currency code (e.g., 'usd', 'eur')
+   * @param isRecurring Whether this is a recurring payment
+   * @returns Array of BNPL payment method strings
+   */
+  private getBNPLMethods(amount: number, currency: string, isRecurring: boolean = false): Stripe.Checkout.SessionCreateParams.PaymentMethodType[] {
+    const bnplMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = [];
+    
+    // Check if BNPL is enabled via environment variable
+    const bnplEnabled = this.configService.get<string>('STRIPE_BNPL_ENABLED', 'true') === 'true';
+    if (!bnplEnabled) {
+      this.logger.debug('BNPL methods disabled via configuration');
+      return bnplMethods;
+    }
+    
+    // BNPL methods are generally not available for subscriptions
+    if (isRecurring) {
+      return bnplMethods;
+    }
+    
+    // Currency must be lowercase for Stripe
+    const lowerCurrency = currency.toLowerCase();
+    
+    // Klarna availability
+    // Minimum: $1 USD, Maximum: $10,000 USD
+    // Available in: USD, EUR, GBP, SEK, NOK, DKK, and more
+    if (['usd', 'eur', 'gbp', 'sek', 'nok', 'dkk', 'chf', 'aud', 'nzd', 'cad', 'pln', 'czk'].includes(lowerCurrency)) {
+      if (lowerCurrency === 'usd' && amount >= 1 && amount <= 10000) {
+        bnplMethods.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+      } else if (lowerCurrency === 'eur' && amount >= 1 && amount <= 10000) {
+        bnplMethods.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+      } else if (amount >= 1 && amount <= 15000) {
+        // Other currencies have different limits
+        bnplMethods.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+      }
+    }
+    
+    // Afterpay/Clearpay availability
+    // Minimum: $1 USD, Maximum: $2,000 USD (varies by region)
+    // Available in: USD, CAD, GBP, AUD, NZD, EUR
+    if (['usd', 'cad', 'gbp', 'aud', 'nzd', 'eur'].includes(lowerCurrency)) {
+      if (lowerCurrency === 'usd' && amount >= 1 && amount <= 2000) {
+        bnplMethods.push('afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+      } else if (lowerCurrency === 'aud' && amount >= 1 && amount <= 2000) {
+        bnplMethods.push('afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+      } else if (amount >= 1 && amount <= 1000) {
+        // Other currencies typically have lower limits
+        bnplMethods.push('afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+      }
+    }
+    
+    // Affirm availability (US only)
+    // Minimum: $50 USD, Maximum: $30,000 USD
+    if (lowerCurrency === 'usd' && amount >= 50 && amount <= 30000) {
+      bnplMethods.push('affirm' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+    }
+    
+    if (bnplMethods.length > 0) {
+      this.logger.debug(`BNPL methods available for ${amount} ${currency}: ${bnplMethods.join(', ')}`);
+    }
+    
+    return bnplMethods;
   }
 }

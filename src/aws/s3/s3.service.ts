@@ -137,7 +137,6 @@ export class S3Service {
         dateLessThan: new Date(expires * 1000).toISOString(),
       });
 
-      console.log('✅ Signed CloudFront URL generated!');
       return signedUrl;
     }
 

@@ -1,0 +1,49 @@
+{
+  "footer": {
+    "companyDescription": "Your trusted partner in day trading. We provide professional trading tools, education, and support to help you succeed in the financial markets.",
+    "trading": {
+      "title": "Trading",
+      "platform": "Trading Platform",
+      "features": "Features",
+      "markets": "Markets",
+      "pricing": "Pricing"
+    },
+    "education": {
+      "title": "Education",
+      "courses": "Trading Courses",
+      "webinars": "Live Webinars",
+      "tutorials": "Video Tutorials",
+      "glossary": "Trading Glossary"
+    },
+    "company": {
+      "title": "Company",
+      "about": "About Us",
+      "careers": "Careers",
+      "press": "Press Center",
+      "partners": "Partners"
+    },
+    "support": {
+      "title": "Support",
+      "helpCenter": "Help Center",
+      "contact": "Contact Us",
+      "faq": "FAQ",
+      "api": "API Documentation"
+    },
+    "contact": {
+      "phone": "Phone",
+      "phoneNumber": "+1 (555) 123-4567",
+      "email": "Email",
+      "emailAddress": "support@daytradeoak.com",
+      "address": "Address",
+      "addressText": "123 Trading Street, Financial District, NY 10004"
+    },
+    "newsletter": {
+      "title": "Stay Updated",
+      "subtitle": "Get the latest trading insights and market updates delivered to your inbox.",
+      "placeholder": "Enter your email",
+      "button": "Subscribe"
+    },
+    "copyright": "© {{year}} DayTradeDak. All rights reserved.",
+    "riskWarning": "Risk Warning: Trading involves substantial risk and may not be suitable for all investors. Past performance is not indicative of future results."
+  }
+}

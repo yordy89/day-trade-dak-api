@@ -30,6 +30,22 @@ export class EventRegistration {
 
   @Prop()
   promoCode?: string;
+
+  // New fields for enhanced registration tracking
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  userId?: Types.ObjectId;
+
+  @Prop({ type: Object })
+  additionalInfo?: object;
+
+  @Prop({ enum: ['paid', 'free', 'member_exclusive'], default: 'paid' })
+  registrationType?: string;
+
+  @Prop()
+  amountPaid?: number;
+
+  @Prop()
+  stripeSessionId?: string;
 }
 
 export const EventRegistrationSchema =

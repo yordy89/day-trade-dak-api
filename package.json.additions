@@ -1,0 +1,27 @@
+{
+  "dependencies": {
+    "compression": "^1.7.4",
+    "helmet": "^7.0.0",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1",
+    "nest-winston": "^1.9.4",
+    "@nestjs/swagger": "^7.1.0",
+    "swagger-ui-express": "^5.0.0",
+    "ioredis": "^5.3.2",
+    "@nestjs/cache-manager": "^2.1.0",
+    "cache-manager": "^5.2.3",
+    "cache-manager-ioredis-yet": "^1.2.2"
+  },
+  "devDependencies": {
+    "@types/compression": "^1.7.2",
+    "@types/winston": "^2.4.4"
+  },
+  "scripts": {
+    "start:prod": "node dist/main.optimized.js",
+    "build:prod": "nest build && node -r esbuild-register scripts/post-build.ts",
+    "test:load": "artillery run tests/load/api-load-test.yml",
+    "logs:tail": "tail -f logs/combined-*.log",
+    "logs:errors": "tail -f logs/error-*.log",
+    "db:indexes": "node -r esbuild-register scripts/create-indexes.ts"
+  }
+}

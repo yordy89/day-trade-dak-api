@@ -9,12 +9,14 @@ import * as bcrypt from 'bcrypt';
 import { plainToInstance } from 'class-transformer';
 import { CreateUserInput, UserEntity } from 'src/users/user.dto';
 import { UserService } from 'src/users/users.service';
+import { EmailService } from 'src/email/email.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
+    private readonly emailService: EmailService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -53,6 +55,17 @@ export class AuthService {
     });
 
     const plainUser = userCreated.toObject();
+
+    // Send welcome email
+    try {
+      await this.emailService.sendWelcomeEmail({
+        firstName: userCreated.firstName,
+        email: userCreated.email,
+      });
+    } catch (error) {
+      // Log error but don't fail the signup process
+      console.error('Failed to send welcome email:', error);
+    }
 
     return plainToInstance(UserEntity, plainUser);
   }

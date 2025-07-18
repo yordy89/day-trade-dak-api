@@ -14,6 +14,9 @@ import {
 import { UserService } from './users.service';
 import { RequestWithUser } from 'src/auth/auth.interfaces';
 import { JwtAuthGuard } from 'src/guards/jwt-auth-guard';
+import { RolesGuard } from 'src/guards/roles.guard';
+import { Roles } from 'src/decorators/roles.decorator';
+import { Role } from 'src/constants';
 import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('user')
@@ -57,14 +60,26 @@ export class UserController {
       ? user.toObject()
       : user;
 
+    // Return full subscription objects instead of just plan names
+    const now = new Date();
+    const subscriptionsWithDetails = user.subscriptions.map((sub) => ({
+      plan: sub.plan,
+      expiresAt: sub.expiresAt,
+      stripeSubscriptionId: sub.stripeSubscriptionId,
+      createdAt: sub.createdAt,
+      currentPeriodEnd: sub.currentPeriodEnd,
+      status: sub.status,
+      isActive: !sub.expiresAt || sub.expiresAt > now,
+    }));
+
     return {
       ...userWithoutSensitiveData,
-      subscriptions: user.subscriptions.map((sub) => sub.plan),
+      subscriptions: subscriptionsWithDetails,
       activeSubscriptions: user.subscriptions
-        .filter((sub) => !sub.expiresAt) // ✅ Only return active subscriptions
+        .filter((sub) => !sub.expiresAt || sub.expiresAt > now)
         .map((sub) => sub.plan),
       expiredSubscriptions: user.subscriptions
-        .filter((sub) => sub.expiresAt) // ✅ Only return expired subscriptions
+        .filter((sub) => sub.expiresAt && sub.expiresAt <= now)
         .map((sub) => sub.plan),
     };
   }
@@ -99,5 +114,16 @@ export class UserController {
   @Delete('/admin/:userId')
   async deleteUserFromAdmin(@Param('userId') userId: string) {
     return this.userService.deleteUserFromAdmin(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('subscriptions/details')
+  async getSubscriptionDetails(@Req() req: RequestWithUser) {
+    const userId = req.user?._id;
+    if (!userId) {
+      return { message: 'Invalid token' };
+    }
+
+    return this.userService.getSubscriptionDetails(userId);
   }
 }

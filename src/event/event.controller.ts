@@ -1,12 +1,15 @@
 // src/events/events.controller.ts
 
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
-import { EventsService } from './event.service';
+import { Controller, Get, Post, Body, Param, Inject } from '@nestjs/common';
+import { EventsServiceOptimized } from './event.service.optimized';
 import { CreateEventDto } from './dto/create-event.dto';
 
 @Controller('events')
 export class EventsController {
-  constructor(private readonly eventsService: EventsService) {}
+  constructor(
+    @Inject('EventsService')
+    private readonly eventsService: EventsServiceOptimized,
+  ) {}
 
   @Post('')
   create(@Body() createEventDto: CreateEventDto) {

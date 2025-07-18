@@ -3,7 +3,9 @@ import { Document } from 'mongoose';
 import { Role } from 'src/constants';
 import { SubscriptionPlan } from './user.dto';
 
-@Schema()
+export type UserDocument = User & Document;
+
+@Schema({ timestamps: true })
 export class User extends Document {
   @Prop({ required: true })
   firstName: string;
@@ -34,17 +36,46 @@ export class User extends Document {
       {
         plan: { type: String, enum: SubscriptionPlan, required: true },
         expiresAt: { type: Date, required: false },
+        stripeSubscriptionId: { type: String, required: false },
+        createdAt: { type: Date, required: false },
+        currentPeriodEnd: { type: Date, required: false },
+        status: { type: String, required: false },
       },
     ],
-    default: [{ plan: SubscriptionPlan.FREE }],
+    default: [],
   })
-  subscriptions: { plan: SubscriptionPlan; expiresAt?: Date }[]; // ✅ Tracks expiration for each subscription
+  subscriptions: {
+    plan: SubscriptionPlan;
+    expiresAt?: Date;
+    stripeSubscriptionId?: string;
+    createdAt?: Date;
+    currentPeriodEnd?: Date;
+    status?: string;
+  }[]; // ✅ Enhanced to track more subscription details
 
   @Prop({ type: [String], default: [] })
   activeSubscriptions: string[]; // ✅ Stores Stripe subscription IDs for recurring plans
 
   @Prop({ required: false, unique: true })
   stripeCustomerId?: string; // ✅ Stores Stripe customer ID
+
+  @Prop()
+  fullName?: string;
+
+  @Prop({ default: 'active' })
+  status?: string;
+
+  @Prop()
+  lastLogin?: Date;
+
+  @Prop({ default: false })
+  allowLiveMeetingAccess?: boolean;
+
+  @Prop()
+  createdAt?: Date;
+
+  @Prop()
+  updatedAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

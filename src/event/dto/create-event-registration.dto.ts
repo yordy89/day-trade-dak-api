@@ -4,6 +4,8 @@ import {
   IsOptional,
   IsBoolean,
   IsEnum,
+  IsObject,
+  IsNumber,
 } from 'class-validator';
 
 export class CreateEventRegistrationDto {
@@ -32,4 +34,25 @@ export class CreateEventRegistrationDto {
 
   @IsOptional()
   promoCode?: string;
+
+  // New fields
+  @IsOptional()
+  @IsString()
+  userId?: string;
+
+  @IsOptional()
+  @IsObject()
+  additionalInfo?: object;
+
+  @IsOptional()
+  @IsEnum(['paid', 'free', 'member_exclusive'])
+  registrationType?: string;
+
+  @IsOptional()
+  @IsNumber()
+  amountPaid?: number;
+
+  @IsOptional()
+  @IsString()
+  stripeSessionId?: string;
 }

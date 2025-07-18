@@ -4,7 +4,8 @@ import { Model } from 'mongoose';
 import { Video, VideoDocument } from './video.schema';
 import { VideoClass, VideoClassDocument } from './videoClass.schema';
 import { CreateVideoDto, UpdateVideoDto } from './video.dto';
-import { S3Service } from 'src/aws/s3/s3.service';
+import { Inject } from '@nestjs/common';
+import { S3ServiceOptimized } from 'src/aws/s3/s3.service.optimized';
 
 @Injectable()
 export class VideoService {
@@ -12,7 +13,7 @@ export class VideoService {
     @InjectModel(Video.name) private videoModel: Model<VideoDocument>,
     @InjectModel(VideoClass.name)
     private videoClassModel: Model<VideoClassDocument>,
-    private readonly s3Service: S3Service,
+    @Inject('S3Service') private readonly s3Service: S3ServiceOptimized,
   ) {}
 
   async findAll(): Promise<Video[]> {

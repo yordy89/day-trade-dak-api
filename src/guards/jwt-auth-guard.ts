@@ -38,7 +38,14 @@ export class JwtAuthGuard implements CanActivate {
         throw new UnauthorizedException('User not found');
       }
 
-      request.user = user;
+      // Set user in request with expected structure
+      request.user = {
+        userId: user._id.toString(),
+        _id: user._id.toString(),
+        email: user.email,
+        role: user.role,
+        ...user.toObject()
+      };
       return true;
     } catch (err) {
       console.error('JWT Verification Error:', err.message);
