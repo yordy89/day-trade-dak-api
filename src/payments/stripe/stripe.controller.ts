@@ -70,6 +70,7 @@ export class StripeController {
       phoneNumber?: string;
       additionalInfo?: object;
       userId?: string;
+      paymentMethod?: 'card' | 'klarna';
     },
   ) {
     // Validate user is not already registered

@@ -89,11 +89,11 @@ export const baseEmailTemplate = (data: EmailTemplateData): string => {
                   Visitar sitio web
                 </a>
                 <span style="color: #d1d5db; margin: 0 10px;">|</span>
-                <a href="https://daytradedak.com/privacy" style="color: #6b7280; font-size: 12px; text-decoration: none;">
+                <a href="https://daytradedak.com/fulfillment-policies/" style="color: #6b7280; font-size: 12px; text-decoration: none;">
                   Política de privacidad
                 </a>
                 <span style="color: #d1d5db; margin: 0 10px;">|</span>
-                <a href="https://daytradedak.com/terms" style="color: #6b7280; font-size: 12px; text-decoration: none;">
+                <a href="https://daytradedak.com/fulfillment-policies/" style="color: #6b7280; font-size: 12px; text-decoration: none;">
                   Términos de servicio
                 </a>
               </div>

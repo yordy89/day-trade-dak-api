@@ -17,6 +17,8 @@ export interface EventRegistrationData {
   isPaid: boolean;
   amount?: number;
   currency?: string;
+  additionalAdults?: number;
+  additionalChildren?: number;
 }
 
 const formatDate = (date: Date): string => {
@@ -75,6 +77,8 @@ export const eventRegistrationTemplate = (
     isPaid,
     amount,
     currency,
+    additionalAdults = 0,
+    additionalChildren = 0,
   } = data;
 
   const { emoji, color, title: eventTypeTitle } = getEventTypeInfo(eventType);
@@ -148,6 +152,23 @@ export const eventRegistrationTemplate = (
             : ''
         }
         ${
+          (additionalAdults > 0 || additionalChildren > 0) && eventType === 'community_event'
+            ? `
+        <tr>
+          <td colspan="2" style="padding-top: 16px; border-top: 1px solid #e5e7eb;"></td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280;">Invitados adicionales:</td>
+          <td style="padding: 8px 0; color: #212636; text-align: right;">
+            ${additionalAdults > 0 ? `${additionalAdults} adulto${additionalAdults > 1 ? 's' : ''}` : ''}
+            ${additionalAdults > 0 && additionalChildren > 0 ? ' y ' : ''}
+            ${additionalChildren > 0 ? `${additionalChildren} niño${additionalChildren > 1 ? 's' : ''}` : ''}
+          </td>
+        </tr>
+        `
+            : ''
+        }
+        ${
           isPaid && formattedAmount
             ? `
         <tr>
@@ -188,24 +209,20 @@ export const eventRegistrationTemplate = (
         : ''
     }
 
-    ${emailButton('Ver detalles del evento', `${process.env.FRONTEND_URL}/events/${eventType}`)}
 
     <h3 style="margin: 30px 0 15px 0; color: #212636; font-size: 18px; font-weight: 600;">
       📌 Información importante
     </h3>
 
     <ul style="margin: 0 0 30px 0; padding-left: 20px; color: #4b5563; font-size: 16px; line-height: 28px;">
-      ${eventDate ? '<li>Guarda la fecha en tu calendario</li>' : ''}
-      ${
-        eventLocation && eventLocation.includes('online')
-          ? '<li>El enlace de acceso se enviará 24 horas antes del evento</li>'
-          : eventLocation
-            ? '<li>Llega con 15 minutos de anticipación</li>'
-            : ''
-      }
-      <li>Prepara tus preguntas para la sesión de Q&A</li>
-      <li>Comparte este evento con otros traders interesados</li>
-      ${ticketNumber ? '<li>Guarda este correo como comprobante de registro</li>' : ''}
+      <li>📅 Fechas: 25-27 de Septiembre, 2025</li>
+      <li>📍 Lugar: Hilton Garden Inn Tampa Ybor Historic District</li>
+      <li>⏰ Check-in: Jueves 8:00 AM - 8:30 AM</li>
+      <li>💻 Trae tu laptop y libreta para tomar notas</li>
+      <li>🏨 El alojamiento NO está incluido - reserva con anticipación</li>
+      <li>🍽️ Solo la cena del sábado está incluida</li>
+      ${(additionalAdults > 0 || additionalChildren > 0) ? '<li>👥 Tus invitados adicionales SOLO podrán asistir a la cena del sábado</li>' : ''}
+      <li>✅ Este correo es tu comprobante de registro</li>
     </ul>
 
     ${
@@ -224,7 +241,7 @@ export const eventRegistrationTemplate = (
         ¿Necesitas hacer cambios en tu registro?
       </p>
       <p style="margin: 0; color: #6b7280; font-size: 14px;">
-        Contáctanos en <a href="mailto:events@daytradedak.com" style="color: #16a34a; text-decoration: none;">events@daytradedak.com</a>
+        Contáctanos en <a href="mailto:support@daytradedak.com" style="color: #16a34a; text-decoration: none;">support@daytradedak.com</a>
       </p>
     </div>
 
