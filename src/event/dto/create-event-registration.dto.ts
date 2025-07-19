@@ -55,4 +55,12 @@ export class CreateEventRegistrationDto {
   @IsOptional()
   @IsString()
   stripeSessionId?: string;
+
+  @IsOptional()
+  @IsEnum(['card', 'klarna', 'other'])
+  paymentMethod?: string;
+
+  @IsOptional()
+  @IsNumber()
+  klarnaFee?: number;
 }
