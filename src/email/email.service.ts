@@ -185,4 +185,220 @@ export class EmailService {
       throw new Error('Failed to send email');
     }
   }
+
+  // Add contact to Brevo list
+  async addContactToList(
+    email: string,
+    listIds: number[],
+    attributes?: {
+      FIRSTNAME?: string;
+      LASTNAME?: string;
+      SMS?: string;
+      [key: string]: any;
+    },
+  ) {
+    try {
+      const response = await axios.post(
+        'https://api.brevo.com/v3/contacts',
+        {
+          email,
+          listIds,
+          attributes,
+          updateEnabled: true, // Update if contact already exists
+        },
+        {
+          headers: {
+            'api-key': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      this.logger.log(`Contact ${email} added to Brevo lists: ${listIds.join(', ')}`);
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 400) {
+        const errorCode = error.response?.data?.code;
+        const errorMessage = error.response?.data?.message || '';
+        
+        // Handle duplicate contact
+        if (errorCode === 'duplicate_parameter' && errorMessage.includes('Contact already exist')) {
+          return this.updateContactLists(email, listIds, attributes);
+        }
+        
+        // Handle duplicate SMS - retry without SMS
+        if (errorCode === 'duplicate_parameter' && errorMessage.includes('SMS')) {
+          this.logger.warn(`SMS number already exists, creating contact without SMS`);
+          const { SMS, ...attributesWithoutSMS } = attributes || {};
+          try {
+            const response = await axios.post(
+              'https://api.brevo.com/v3/contacts',
+              {
+                email,
+                listIds,
+                attributes: attributesWithoutSMS,
+                updateEnabled: true,
+              },
+              {
+                headers: {
+                  'api-key': this.apiKey,
+                  'Content-Type': 'application/json',
+                },
+              },
+            );
+            this.logger.log(`Contact ${email} added to Brevo lists (without SMS): ${listIds.join(', ')}`);
+            return response.data;
+          } catch (retryError) {
+            // If still fails, might be existing contact, try update
+            if (retryError.response?.status === 400) {
+              return this.updateContactLists(email, listIds, attributesWithoutSMS);
+            }
+            throw retryError;
+          }
+        }
+      }
+      
+      this.logger.error(
+        `Failed to add contact ${email} to Brevo:`,
+        error.response?.data || error.message,
+      );
+      throw error;
+    }
+  }
+
+  // Update contact lists in Brevo
+  private async updateContactLists(
+    email: string,
+    listIds: number[],
+    attributes?: any,
+  ) {
+    try {
+      // First update attributes if provided
+      if (attributes && Object.keys(attributes).length > 0) {
+        try {
+          await axios.put(
+            `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
+            {
+              attributes,
+            },
+            {
+              headers: {
+                'api-key': this.apiKey,
+                'Content-Type': 'application/json',
+              },
+            },
+          );
+        } catch (updateError) {
+          // If SMS is duplicate, remove it and try again
+          if (
+            updateError.response?.status === 400 &&
+            updateError.response?.data?.code === 'duplicate_parameter' &&
+            updateError.response?.data?.message?.includes('SMS')
+          ) {
+            this.logger.warn(`SMS number already exists for another contact, updating without SMS`);
+            const { SMS, ...attributesWithoutSMS } = attributes;
+            if (Object.keys(attributesWithoutSMS).length > 0) {
+              await axios.put(
+                `https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`,
+                {
+                  attributes: attributesWithoutSMS,
+                },
+                {
+                  headers: {
+                    'api-key': this.apiKey,
+                    'Content-Type': 'application/json',
+                  },
+                },
+              );
+            }
+          } else {
+            throw updateError;
+          }
+        }
+      }
+
+      // Then add to lists - handle each list individually
+      for (const listId of listIds) {
+        try {
+          await axios.post(
+            `https://api.brevo.com/v3/contacts/lists/${listId}/contacts/add`,
+            {
+              emails: [email],
+            },
+            {
+              headers: {
+                'api-key': this.apiKey,
+                'Content-Type': 'application/json',
+              },
+            },
+          );
+        } catch (listError) {
+          // Log but continue with other lists
+          this.logger.warn(`Failed to add ${email} to list ${listId}:`, listError.response?.data?.message || listError.message);
+        }
+      }
+
+      this.logger.log(`Contact ${email} updated in Brevo lists: ${listIds.join(', ')}`);
+      return { message: 'Contact updated successfully' };
+    } catch (error) {
+      this.logger.error(
+        `Failed to update contact ${email} in Brevo:`,
+        error.response?.data || error.message,
+      );
+      throw error;
+    }
+  }
+
+  // Add event registrant to marketing list
+  async addEventRegistrantToMarketingList(
+    email: string,
+    firstName: string,
+    lastName?: string,
+    phoneNumber?: string,
+    eventType?: string,
+  ) {
+    try {
+      // Define list IDs for different purposes (you'll need to get these from Brevo)
+      const listIds = [];
+      
+      // Add to general event registrants list
+      const generalEventListId = parseInt(process.env.BREVO_EVENT_LIST_ID || '0');
+      if (generalEventListId > 0) {
+        listIds.push(generalEventListId);
+      }
+
+      // Add to specific event type list if configured
+      if (eventType) {
+        const eventTypeListId = parseInt(
+          process.env[`BREVO_${eventType.toUpperCase()}_LIST_ID`] || '0',
+        );
+        if (eventTypeListId > 0) {
+          listIds.push(eventTypeListId);
+        }
+      }
+
+      if (listIds.length === 0) {
+        this.logger.warn('No Brevo list IDs configured for event registrations');
+        return null;
+      }
+
+      const attributes: any = {
+        FIRSTNAME: firstName,
+      };
+
+      if (lastName) attributes.LASTNAME = lastName;
+      if (phoneNumber) attributes.SMS = phoneNumber;
+      if (eventType) attributes.EVENT_TYPE = eventType;
+      attributes.REGISTRATION_DATE = new Date().toISOString();
+
+      return await this.addContactToList(email, listIds, attributes);
+    } catch (error) {
+      this.logger.error(
+        `Failed to add event registrant ${email} to marketing list:`,
+        error,
+      );
+      // Don't throw - we don't want to break the registration flow
+      return null;
+    }
+  }
 }

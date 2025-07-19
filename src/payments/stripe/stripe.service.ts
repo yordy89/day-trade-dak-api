@@ -183,8 +183,22 @@ export class StripeService {
     lastName: string;
     email: string;
     phoneNumber?: string;
-    additionalInfo?: object;
+    additionalInfo?: {
+      tradingExperience?: string;
+      expectations?: string;
+      additionalAttendees?: {
+        adults: number;
+        children: number;
+        details: Array<{
+          type: 'adult' | 'child';
+          name: string;
+          age?: number;
+        }>;
+      };
+      [key: string]: any;
+    };
     userId?: string;
+    paymentMethod?: 'card' | 'klarna';
   }) {
     const {
       eventId,
@@ -194,6 +208,7 @@ export class StripeService {
       phoneNumber,
       additionalInfo,
       userId,
+      paymentMethod = 'card',
     } = body;
 
     // Get event details
@@ -275,13 +290,37 @@ export class StripeService {
       console.error('Error searching for products:', error);
     }
 
+    // Calculate total price including additional attendees
+    let totalPrice = event.price || 0;
+    let adultsCount = 0;
+    let childrenCount = 0;
+    
+    if (additionalInfo?.additionalAttendees) {
+      adultsCount = additionalInfo.additionalAttendees.adults || 0;
+      childrenCount = additionalInfo.additionalAttendees.children || 0;
+      // Adult: $75, Child: $48
+      totalPrice += (adultsCount * 75) + (childrenCount * 48);
+      
+      this.logger.log(`Additional attendees: ${adultsCount} adults, ${childrenCount} children`);
+      this.logger.log(`Price calculation: Base $${event.price} + Adults $${adultsCount * 75} + Children $${childrenCount * 48} = Total $${totalPrice}`);
+    }
+    
+    // Apply Klarna fee if payment method is Klarna
+    let originalPrice = totalPrice;
+    if (paymentMethod === 'klarna') {
+      const klarnaFeePercentage = parseFloat(this.configService.get<string>('KLARNA_FEE_PERCENTAGE') || '0.0644');
+      totalPrice = totalPrice * (1 + klarnaFeePercentage);
+      this.logger.log(`Klarna fee applied: ${(klarnaFeePercentage * 100).toFixed(2)}%`);
+      this.logger.log(`Price with Klarna fee: $${originalPrice} → $${totalPrice.toFixed(2)}`);
+    }
+    
     // Create price
     let price;
     if (productId) {
       // Create a one-time price for the existing product
       price = await this.stripe.prices.create({
         currency: 'usd',
-        unit_amount: Math.round(event.price * 100), // Convert to cents
+        unit_amount: Math.round(totalPrice * 100), // Convert to cents
         product: productId,
       });
     } else {
@@ -292,7 +331,7 @@ export class StripeService {
       );
       price = await this.stripe.prices.create({
         currency: 'usd',
-        unit_amount: Math.round(event.price * 100), // Convert to cents
+        unit_amount: Math.round(totalPrice * 100), // Convert to cents
         product_data: {
           name: event.title || event.name,
           metadata: {
@@ -302,16 +341,21 @@ export class StripeService {
       });
     }
     
-    // Get BNPL methods based on the event price
-    const eventPrice = event.price || 0;
-    const bnplMethods = this.getBNPLMethods(eventPrice, 'usd', false);
+    // Determine payment methods based on selection
+    let paymentMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = [];
+    
+    if (paymentMethod === 'klarna') {
+      paymentMethods = ['klarna'];
+    } else {
+      paymentMethods = ['card'];
+    }
     
     this.logger.log(`Creating event checkout for ${event.name || event.title}`);
-    this.logger.log(`Event price: $${eventPrice} USD`);
-    this.logger.log(`Payment methods: ${['card', ...bnplMethods].join(', ')}`);
+    this.logger.log(`Payment method: ${paymentMethod}`);
+    this.logger.log(`Total price: $${totalPrice.toFixed(2)} USD`);
 
     const session = await this.stripe.checkout.sessions.create({
-      payment_method_types: ['card', ...bnplMethods] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+      payment_method_types: paymentMethods,
       mode: 'payment',
       line_items: [{ price: price.id, quantity: 1 }],
       success_url:
@@ -320,13 +364,15 @@ export class StripeService {
           : `${this.configService.get<string>('FRONTEND_URL')}/community-event/success?session_id={CHECKOUT_SESSION_ID}&event=${eventId}`,
       cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/${event.type === 'master_course' ? 'master-course' : 'community-event'}`,
       customer_email: email,
-      // BNPL requires shipping address collection
-      shipping_address_collection: {
-        allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
-      },
-      // Phone number collection is required for some BNPL methods
+      // Klarna requires shipping address collection
+      ...(paymentMethod === 'klarna' && {
+        shipping_address_collection: {
+          allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
+        },
+      }),
+      // Phone number collection is required for Klarna
       phone_number_collection: {
-        enabled: true,
+        enabled: paymentMethod === 'klarna',
       },
       metadata: {
         eventRegistration: 'true',
@@ -341,6 +387,15 @@ export class StripeService {
         registrationType: event.requiresActiveSubscription
           ? 'member_exclusive'
           : 'paid',
+        // Additional attendee metadata
+        basePrice: (event.price || 0).toString(),
+        additionalAdults: adultsCount.toString(),
+        additionalChildren: childrenCount.toString(),
+        totalPrice: totalPrice.toString(),
+        guestDetails: JSON.stringify(additionalInfo?.additionalAttendees?.details || []),
+        paymentMethod: paymentMethod,
+        originalPrice: originalPrice.toString(),
+        klarnaFee: paymentMethod === 'klarna' ? (totalPrice - originalPrice).toFixed(2) : '0',
       },
     });
 
@@ -707,6 +762,8 @@ export class StripeService {
           paymentStatus: 'paid',
           amountPaid: session.amount_total ? session.amount_total / 100 : 0,
           stripeSessionId: session.id,
+          paymentMethod: session.metadata?.paymentMethod || 'card',
+          klarnaFee: parseFloat(session.metadata?.klarnaFee || '0'),
         });
 
         // Update event registration count
@@ -812,7 +869,18 @@ export class StripeService {
                 ? session.amount_total / 100
                 : undefined,
               currency: session.currency,
+              additionalAdults: parseInt(session.metadata?.additionalAdults || '0'),
+              additionalChildren: parseInt(session.metadata?.additionalChildren || '0'),
             });
+
+            // Add to Brevo marketing list
+            await this.emailService.addEventRegistrantToMarketingList(
+              email,
+              firstName,
+              lastName,
+              phoneNumber,
+              eventType,
+            );
           } else {
             // Fallback to old template if event not found
             await this.emailService.sendEventRegistrationTemplate(
