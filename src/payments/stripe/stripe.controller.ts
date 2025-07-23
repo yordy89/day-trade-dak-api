@@ -82,6 +82,18 @@ export class StripeController {
     return this.stripeService.createEventCheckoutSession(body);
   }
 
+  // **Create classes checkout session (NEW)**
+  @UseGuards(JwtAuthGuard)
+  @Post('classes-checkout')
+  async createClassesCheckoutSession(
+    @Req() req: RequestWithUser,
+    @Body() body: { userId?: string; paymentMethod?: 'card' | 'klarna' },
+  ) {
+    const userId = body.userId || req.user._id.toString();
+    const paymentMethod = body.paymentMethod || 'card';
+    return this.stripeService.createClassesCheckoutSession(userId, paymentMethod);
+  }
+
   // **Stripe Webhook Handling**
   @Post('webhook')
   async stripeWebhook(

@@ -641,6 +641,119 @@ export class StripeService {
     return session;
   }
 
+  // ✅ **Create Classes Checkout Session**
+  async createClassesCheckoutSession(userId: string, paymentMethod: 'card' | 'klarna' = 'card') {
+    // Get user details
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Get or create Stripe customer
+    let customerId = user.stripeCustomerId;
+    if (!customerId) {
+      const customer = await this.stripe.customers.create({
+        email: user.email,
+        name: `${user.firstName} ${user.lastName}`,
+        metadata: { userId },
+      });
+      customerId = customer.id;
+      await this.userService.updateUser(userId, {
+        stripeCustomerId: customerId,
+      });
+    }
+
+    // Search for existing CLASSES product in Stripe
+    let productId: string | undefined;
+    try {
+      const products = await this.stripe.products.list({ limit: 100 });
+      const classesProduct = products.data.find(
+        (p) => p.name === 'CLASSES' || p.name === 'Classes de Trading',
+      );
+      productId = classesProduct?.id;
+    } catch (error) {
+      console.error('Error searching for CLASSES product:', error);
+    }
+
+    // Calculate price based on payment method
+    let basePrice = 500; // $500 USD
+    let finalPrice = basePrice;
+    
+    // Apply Klarna fee if payment method is Klarna
+    if (paymentMethod === 'klarna') {
+      const klarnaFeePercentage = parseFloat(this.configService.get<string>('KLARNA_FEE_PERCENTAGE') || '0.0644');
+      finalPrice = basePrice * (1 + klarnaFeePercentage);
+      this.logger.log(`Klarna fee applied: ${(klarnaFeePercentage * 100).toFixed(2)}%`);
+      this.logger.log(`Price with Klarna fee: $${basePrice} → $${finalPrice.toFixed(2)}`);
+    }
+    
+    let priceObj;
+    
+    if (productId) {
+      // Create a one-time price for the existing product
+      priceObj = await this.stripe.prices.create({
+        currency: 'usd',
+        unit_amount: Math.round(finalPrice * 100), // Convert to cents
+        product: productId,
+      });
+    } else {
+      // Create inline product if no existing product found
+      priceObj = await this.stripe.prices.create({
+        currency: 'usd',
+        unit_amount: Math.round(finalPrice * 100), // Convert to cents
+        product_data: {
+          name: 'Classes de Trading',
+          metadata: {
+            type: 'classes',
+            duration: '15_days',
+          },
+        },
+      });
+    }
+
+    // Determine payment method types based on selection
+    let paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = [];
+    
+    if (paymentMethod === 'klarna') {
+      paymentMethodTypes = ['klarna'];
+    } else {
+      paymentMethodTypes = ['card'];
+    }
+
+    // Create checkout session
+    const session = await this.stripe.checkout.sessions.create({
+      payment_method_types: paymentMethodTypes,
+      mode: 'payment',
+      customer: customerId,
+      line_items: [{ price: priceObj.id, quantity: 1 }],
+      success_url: `${this.configService.get<string>('FRONTEND_URL')}/classes/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/classes`,
+      // Klarna requires shipping address collection
+      ...(paymentMethod === 'klarna' && {
+        shipping_address_collection: {
+          allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
+        },
+      }),
+      // Phone number collection is required for Klarna
+      phone_number_collection: {
+        enabled: paymentMethod === 'klarna',
+      },
+      metadata: {
+        userId: userId.toString(),
+        type: 'classes_purchase',
+        accessDuration: '15_days',
+        classesCount: '8',
+        paymentMethod,
+        originalPrice: basePrice.toString(),
+        finalPrice: finalPrice.toFixed(2),
+      },
+    });
+
+    this.logger.log(`Created classes checkout session for user ${userId}: ${session.id} with payment method: ${paymentMethod}`);
+
+    return { url: session.url, sessionId: session.id };
+  }
+
   // ✅ **Handle Webhook Events**
   async handleWebhookEvent(signature: string, rawBody: Buffer) {
     this.logger.log('📥 Webhook received');
@@ -945,6 +1058,104 @@ export class StripeService {
     }
   }
 
+  // ✅ **Handle Classes Purchase**
+  private async handleClassesPurchase(session: Stripe.Checkout.Session) {
+    this.logger.log('📚 Processing classes purchase');
+    
+    const userId = session.metadata?.userId;
+    
+    if (!userId) {
+      this.logger.error('Missing userId for classes purchase');
+      return;
+    }
+    
+    const amount = session.amount_total ? session.amount_total / 100 : 0;
+    const currency = session.currency || 'usd';
+    
+    try {
+      // Create transaction record
+      const transaction = await this.transactionModel.create({
+        userId,
+        amount,
+        currency,
+        status: session.payment_status === 'paid' 
+          ? PaymentStatus.SUCCEEDED 
+          : PaymentStatus.PENDING,
+        plan: SubscriptionPlan.CLASSES,
+        type: TransactionType.ONE_TIME_PURCHASE,
+        stripeSessionId: session.id,
+        stripeCustomerId: session.customer as string,
+        stripePaymentIntentId: session.payment_intent as string,
+        paymentMethod: this.mapStripePaymentMethodType(
+          session.payment_method_types?.[0] || 'card'
+        ),
+        billingCycle: BillingCycle.ONE_TIME,
+        metadata: session.metadata,
+      });
+      
+      // Add CLASSES subscription with 15-day expiration
+      const expirationDate = new Date();
+      expirationDate.setDate(expirationDate.getDate() + 15);
+      
+      // Remove any existing CLASSES subscription
+      await this.userService.updateUser(userId, {
+        $pull: { subscriptions: { plan: SubscriptionPlan.CLASSES } },
+      });
+      
+      // Add new CLASSES subscription
+      await this.userService.updateUser(userId, {
+        $push: {
+          subscriptions: {
+            plan: SubscriptionPlan.CLASSES,
+            expiresAt: expirationDate,
+            createdAt: new Date(),
+            status: 'active',
+          },
+        },
+      });
+      
+      // Record subscription history
+      await this.subscriptionHistoryModel.create({
+        userId,
+        transactionId: transaction._id,
+        plan: SubscriptionPlan.CLASSES,
+        action: SubscriptionAction.CREATED,
+        stripeEventId: session.id,
+        price: amount,
+        currency,
+        effectiveDate: new Date(),
+        expirationDate,
+        metadata: session.metadata,
+      });
+      
+      this.logger.log(
+        `✅ Classes access granted to user ${userId} until ${expirationDate}`
+      );
+      
+      // Send confirmation email
+      try {
+        const user = await this.userService.findById(userId);
+        if (user && this.emailService) {
+          await this.emailService.sendPaymentConfirmationEmail(user.email, {
+            firstName: user.firstName,
+            planName: 'Clases de Trading',
+            amount,
+            currency,
+            billingCycle: BillingCycle.ONE_TIME,
+            transactionId: transaction._id.toString(),
+            expiresAt: expirationDate,
+            isRecurring: false,
+          });
+        }
+      } catch (emailError) {
+        this.logger.error('Failed to send classes purchase confirmation email:', emailError);
+      }
+    } catch (error) {
+      this.logger.error('Error processing classes purchase:', error);
+      throw error;
+    }
+  }
+
   // ✅ **Handle First-Time Checkout Completion**
   private async handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     this.logger.log('🎯 Processing checkout.session.completed event');
@@ -1007,6 +1218,12 @@ export class StripeService {
     // Handle general event registration (NEW)
     if (session.metadata?.eventRegistration === 'true') {
       await this.handleEventRegistration(session);
+      return;
+    }
+
+    // Handle classes purchase
+    if (session.metadata?.type === 'classes_purchase') {
+      await this.handleClassesPurchase(session);
       return;
     }
 
