@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Event, EventSchema } from './schemas/event.schema';
 import {
@@ -6,12 +6,14 @@ import {
   EventRegistrationSchema,
 } from './schemas/eventRegistration.schema';
 import { EventsServiceOptimized } from './event.service.optimized';
+import { EventsService } from './event.service';
 import { EventsController } from './event.controller';
 import { EventRegistrationsController } from './event-registration.controller';
 import { EventRegistrationsService } from './event-registration.service';
 import { EmailModule } from 'src/email/email.module';
 import { CacheModule } from 'src/cache/cache.module';
 import { LoggerModule } from 'src/logger/logger.module';
+import { StripeModule } from 'src/payments/stripe/stripe.module';
 
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { LoggerModule } from 'src/logger/logger.module';
     EmailModule,
     CacheModule,
     LoggerModule,
+    forwardRef(() => StripeModule),
   ],
   controllers: [EventsController, EventRegistrationsController],
   providers: [
@@ -30,8 +33,9 @@ import { LoggerModule } from 'src/logger/logger.module';
       useClass: EventsServiceOptimized,
     },
     EventsServiceOptimized,
+    EventsService,
     EventRegistrationsService,
   ],
-  exports: ['EventsService', EventsServiceOptimized, EventRegistrationsService],
+  exports: ['EventsService', EventsServiceOptimized, EventsService, EventRegistrationsService],
 })
 export class EventModule {}

@@ -17,6 +17,10 @@ import {
   eventRegistrationTemplate,
   EventRegistrationData,
 } from './templates/event-registration.template';
+import {
+  additionalAttendeesTemplate,
+  AdditionalAttendeesData,
+} from './templates/additional-attendees.template';
 
 @Injectable()
 export class EmailService {
@@ -400,5 +404,52 @@ export class EmailService {
       // Don't throw - we don't want to break the registration flow
       return null;
     }
+  }
+
+  async sendEventUpdateConfirmation(
+    to: string,
+    name: string,
+    details: {
+      eventName: string;
+      additionalAdults: number;
+      additionalChildren: number;
+      totalAmount: number;
+      confirmationNumber?: string;
+      eventDate?: Date;
+      paymentMethod?: 'card' | 'klarna';
+      adultPrice?: number;
+      childPrice?: number;
+    },
+  ) {
+    const subject = 'Confirmación - Invitados Adicionales Agregados';
+    
+    // Calculate pricing details
+    const adultPrice = details.adultPrice || 75;
+    const childPrice = details.childPrice || 48;
+    const adultsSubtotal = details.additionalAdults * adultPrice;
+    const childrenSubtotal = details.additionalChildren * childPrice;
+    const baseAmount = adultsSubtotal + childrenSubtotal;
+    const klarnaFee = details.paymentMethod === 'klarna' ? baseAmount * 0.0644 : 0;
+    
+    const emailData: AdditionalAttendeesData = {
+      firstName: name,
+      eventName: details.eventName,
+      eventDate: details.eventDate,
+      confirmationNumber: details.confirmationNumber || `REG-${Date.now()}`,
+      additionalAdults: details.additionalAdults,
+      additionalChildren: details.additionalChildren,
+      adultPrice,
+      childPrice,
+      adultsSubtotal,
+      childrenSubtotal,
+      klarnaFee: klarnaFee > 0 ? klarnaFee : undefined,
+      totalAmount: details.totalAmount,
+      paymentMethod: details.paymentMethod || 'card',
+      manageRegistrationUrl: `${process.env.FRONTEND_URL || 'https://app.daytradedak.com'}/community-event/manage-registration`,
+    };
+    
+    const html = additionalAttendeesTemplate(emailData);
+
+    return this.send(to, subject, html);
   }
 }

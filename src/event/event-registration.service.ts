@@ -1,6 +1,6 @@
 // src/event-registrations/event-registrations.service.ts
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -9,9 +9,8 @@ import {
 } from './schemas/eventRegistration.schema';
 import { Event, EventDocument } from './schemas/event.schema';
 import { CreateEventRegistrationDto } from './dto/create-event-registration.dto';
-
-import { BadRequestException } from '@nestjs/common';
 import { EmailService } from 'src/email/email.service';
+import { StripeService } from '../payments/stripe/stripe.service';
 
 @Injectable()
 export class EventRegistrationsService {
@@ -21,6 +20,8 @@ export class EventRegistrationsService {
     @InjectModel(Event.name)
     private eventModel: Model<EventDocument>,
     private readonly emailService: EmailService,
+    @Inject(forwardRef(() => StripeService))
+    private readonly stripeService: StripeService,
   ) {}
 
   async create(createEventRegistrationDto: CreateEventRegistrationDto) {
@@ -66,5 +67,134 @@ export class EventRegistrationsService {
 
   async findEventById(eventId: string): Promise<EventDocument | null> {
     return this.eventModel.findById(eventId).exec();
+  }
+
+  async findById(id: string): Promise<EventRegistrationDocument | null> {
+    return this.eventRegistrationModel.findById(id).exec();
+  }
+
+  async findByEmail(email: string): Promise<EventRegistrationDocument[]> {
+    return this.eventRegistrationModel
+      .find({ email: email.toLowerCase() })
+      .exec();
+  }
+
+  async createAdditionalAttendeesCheckout(
+    registrationId: string,
+    additionalAdults: number,
+    additionalChildren: number,
+    paymentMethod: 'card' | 'klarna',
+    baseAmount: number,
+  ) {
+    // Get the registration
+    const registration = await this.eventRegistrationModel.findById(registrationId);
+    if (!registration) {
+      throw new BadRequestException('Registration not found');
+    }
+
+    // Calculate fees if using Klarna
+    const klarnaFeePercentage = 0.0644;
+    const klarnaFee = paymentMethod === 'klarna' ? baseAmount * klarnaFeePercentage : 0;
+    const totalAmount = baseAmount + klarnaFee;
+
+    // Create checkout session metadata
+    const metadata = {
+      type: 'event_registration_update',
+      updateType: 'add_attendees',
+      registrationId: registrationId,
+      eventId: registration.eventId.toString(),
+      previousAdults: registration.additionalInfo?.['additionalAttendees']?.['adults'] || 0,
+      previousChildren: registration.additionalInfo?.['additionalAttendees']?.['children'] || 0,
+      additionalAdults: additionalAdults.toString(),
+      additionalChildren: additionalChildren.toString(),
+      email: registration.email,
+      paymentMethod,
+    };
+
+    // Create Stripe checkout session for the additional amount
+    const checkoutResponse = await this.stripeService.createEventAttendeeCheckoutSession({
+      amount: totalAmount,
+      metadata,
+      email: registration.email,
+      paymentMethod,
+    });
+
+    return {
+      checkoutUrl: checkoutResponse.url,
+      sessionId: checkoutResponse.sessionId,
+      additionalAmount: totalAmount,
+    };
+  }
+
+  async updateRegistrationAttendees(
+    registrationId: string,
+    additionalAdults: number,
+    additionalChildren: number,
+    amountPaid: number,
+    stripeSessionId: string,
+  ) {
+    const registration = await this.eventRegistrationModel
+      .findById(registrationId)
+      .populate('eventId');
+    if (!registration) {
+      throw new BadRequestException('Registration not found');
+    }
+
+    // Get current attendees
+    const currentAdults = registration.additionalInfo?.['additionalAttendees']?.['adults'] || 0;
+    const currentChildren = registration.additionalInfo?.['additionalAttendees']?.['children'] || 0;
+
+    // Update attendee counts
+    const updatedAdditionalInfo = {
+      ...registration.additionalInfo,
+      additionalAttendees: {
+        adults: currentAdults + additionalAdults,
+        children: currentChildren + additionalChildren,
+        details: [],
+      },
+      paymentHistory: [
+        ...(registration.additionalInfo?.['paymentHistory'] || []),
+        {
+          date: new Date(),
+          amount: amountPaid,
+          type: 'add_attendees',
+          stripeSessionId,
+          attendeesAdded: {
+            adults: additionalAdults,
+            children: additionalChildren,
+          },
+        },
+      ],
+    };
+
+    // Update registration
+    await this.eventRegistrationModel.findByIdAndUpdate(
+      registrationId,
+      {
+        additionalInfo: updatedAdditionalInfo,
+        amountPaid: (registration.amountPaid || 0) + amountPaid,
+      },
+      { new: true },
+    );
+
+    // Send confirmation email
+    const event = registration.eventId as any; // EventDocument
+    await this.emailService.sendEventUpdateConfirmation(
+      registration.email,
+      registration.firstName,
+      {
+        eventName: event?.title || event?.name || 'Mentoría Presencial',
+        eventDate: event?.date,
+        additionalAdults,
+        additionalChildren,
+        totalAmount: amountPaid,
+        confirmationNumber: registration._id.toString(),
+        paymentMethod: 'card', // This should come from the checkout session if available
+        adultPrice: 75,
+        childPrice: 48,
+      },
+    );
+
+    return { success: true };
   }
 }
