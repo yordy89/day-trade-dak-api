@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { StripeController } from './stripe.controller';
 import { StripeService } from './stripe.service';
 import { PricingService } from './pricing.service';
@@ -27,7 +27,7 @@ import { EmailModule } from 'src/email/email.module';
     ]),
     UsersModule,
     AuthModule,
-    EventModule,
+    forwardRef(() => EventModule),
     EmailModule,
   ],
   controllers: [StripeController, PaymentReportsController, PublicPricingController],

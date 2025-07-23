@@ -4,6 +4,8 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -38,6 +40,7 @@ export class StripeService {
   constructor(
     private configService: ConfigService,
     private userService: UserService,
+    @Inject(forwardRef(() => EventRegistrationsService))
     private eventRegistrationsService: EventRegistrationsService,
     private pricingService: PricingService,
     private emailService: EmailService,
@@ -397,6 +400,46 @@ export class StripeService {
         originalPrice: originalPrice.toString(),
         klarnaFee: paymentMethod === 'klarna' ? (totalPrice - originalPrice).toFixed(2) : '0',
       },
+    });
+
+    return { url: session.url, sessionId: session.id };
+  }
+
+  // Create checkout session for adding attendees to existing event registration
+  async createEventAttendeeCheckoutSession(params: {
+    amount: number;
+    metadata: Record<string, string>;
+    email: string;
+    paymentMethod: 'card' | 'klarna';
+  }) {
+    const { amount, metadata, email, paymentMethod } = params;
+
+    // Payment method configuration
+    const paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = ['card'];
+    if (paymentMethod === 'klarna') {
+      paymentMethodTypes.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+    }
+
+    const session = await this.stripe.checkout.sessions.create({
+      payment_method_types: paymentMethodTypes,
+      mode: 'payment',
+      customer_email: email,
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: 'Invitados Adicionales - Mentoría Presencial',
+              description: `${metadata.additionalAdults} adultos, ${metadata.additionalChildren} niños`,
+            },
+            unit_amount: Math.round(amount * 100), // Stripe expects cents
+          },
+          quantity: 1,
+        },
+      ],
+      metadata,
+      success_url: `${process.env.FRONTEND_URL}/community-event/manage-registration?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/community-event/manage-registration?canceled=true`,
     });
 
     return { url: session.url, sessionId: session.id };
@@ -930,6 +973,33 @@ export class StripeService {
 
       this.logger.log(
         `✅ VIP registration completed for ${session.metadata.email}`,
+      );
+      return;
+    }
+
+    // Handle event registration update (adding attendees)
+    if (session.metadata?.type === 'event_registration_update' && 
+        session.metadata?.updateType === 'add_attendees') {
+      const {
+        registrationId,
+        additionalAdults,
+        additionalChildren,
+        paymentMethod: regPaymentMethod,
+      } = session.metadata;
+
+      const amount = session.amount_total ? session.amount_total / 100 : 0;
+
+      // Update the registration with new attendees
+      await this.eventRegistrationsService.updateRegistrationAttendees(
+        registrationId,
+        parseInt(additionalAdults, 10),
+        parseInt(additionalChildren, 10),
+        amount,
+        session.id,
+      );
+
+      this.logger.log(
+        `✅ Registration updated for ${registrationId} with ${additionalAdults} adults and ${additionalChildren} children`,
       );
       return;
     }
