@@ -57,7 +57,31 @@ export class AdminEventsController {
         status: 'success',
       });
 
-      return result;
+      // Map the response to match frontend expectations
+      const mappedResult = {
+        events: result.events.map((event: any) => ({
+          _id: event._id,
+          title: event.title || event.name,
+          description: event.description,
+          date: event.date,
+          startTime: event.startTime,
+          endTime: event.endTime,
+          location: event.location,
+          type: event.type || 'general',
+          status: event.isActive ? 'active' : 'draft',
+          capacity: event.capacity,
+          registrations: event.currentRegistrations || event.registrations,
+          price: event.price,
+          vipPrice: event.vipPrice,
+          createdAt: event.createdAt,
+          updatedAt: event.updatedAt,
+        })),
+        total: result.pagination.total,
+        page: result.pagination.page,
+        limit: result.pagination.limit,
+      };
+
+      return mappedResult;
     } catch (error) {
       throw new BadRequestException('Failed to fetch events');
     }
@@ -115,6 +139,35 @@ export class AdminEventsController {
         throw error;
       }
       throw new BadRequestException('Failed to fetch event details');
+    }
+  }
+
+  @Get(':id/statistics')
+  async getEventStatistics(
+    @Param('id') id: string,
+    @Req() req: RequestWithUser,
+  ) {
+    try {
+      const statistics = await this.adminEventsService.getEventStatisticsById(id);
+      
+      // Log admin action
+      await this.adminService.logAdminAction({
+        adminId: req.user._id.toString(),
+        adminEmail: req.user.email,
+        action: 'VIEW_EVENT_STATISTICS',
+        resource: 'events',
+        resourceId: id,
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        status: 'success',
+      });
+
+      return statistics;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to fetch event statistics');
     }
   }
 
@@ -230,6 +283,7 @@ export class AdminEventsController {
     @Query('limit') limit: number = 50,
     @Query('search') search?: string,
     @Query('paymentStatus') paymentStatus?: string,
+    @Query('status') status?: string,
   ) {
     try {
       const result = await this.adminEventsService.getEventRegistrations(
@@ -250,7 +304,33 @@ export class AdminEventsController {
         status: 'success',
       });
 
-      return result;
+      // Map the response to match frontend expectations
+      const mappedResult = {
+        registrations: result.data.map((reg: any) => ({
+          _id: reg._id,
+          eventId: reg.eventId,
+          user: reg.userId || {
+            _id: reg._id,
+            firstName: reg.firstName,
+            lastName: reg.lastName,
+            email: reg.email,
+            phone: reg.phone || reg.phoneNumber,
+          },
+          ticketType: reg.ticketType || (reg.isVip ? 'vip' : 'regular'),
+          status: reg.paymentStatus === 'paid' ? 'confirmed' : 'pending',
+          paymentStatus: reg.paymentStatus,
+          paymentAmount: reg.amount || reg.amountPaid || 0,
+          stripePaymentIntentId: reg.transactionId || reg.stripeSessionId,
+          registrationDate: reg.registeredAt || reg.createdAt,
+          createdAt: reg.createdAt,
+          updatedAt: reg.updatedAt,
+        })),
+        total: result.total,
+        page: result.page,
+        limit: limit,
+      };
+
+      return mappedResult;
     } catch (error) {
       throw new BadRequestException('Failed to fetch event registrations');
     }

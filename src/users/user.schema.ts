@@ -79,3 +79,11 @@ export class User extends Document {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Virtual populate for module permissions
+UserSchema.virtual('modulePermissions', {
+  ref: 'ModulePermission',
+  localField: '_id',
+  foreignField: 'userId',
+  match: { isActive: true },
+});

@@ -271,7 +271,7 @@ export class AdminEventsService {
     const [registrations, total] = await Promise.all([
       this.registrationModel
         .find(query)
-        .populate('userId', 'firstName lastName email')
+        .populate('userId', 'firstName lastName email phoneNumber')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -279,14 +279,43 @@ export class AdminEventsService {
       this.registrationModel.countDocuments(query),
     ]);
 
-    return {
-      registrations,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+    // Map registrations to ensure the frontend gets the expected format
+    const mappedRegistrations = registrations.map((reg: any) => ({
+      _id: reg._id,
+      userId: reg.userId || {
+        _id: reg._id,
+        firstName: reg.firstName,
+        lastName: reg.lastName,
+        email: reg.email,
+        phone: reg.phoneNumber,
+        phoneNumber: reg.phoneNumber,
       },
+      eventId: reg.eventId,
+      ticketType: reg.isVip ? 'vip' : 'general',
+      paymentStatus: reg.paymentStatus === 'paid' ? 'completed' : reg.paymentStatus,
+      paymentMethod: reg.paymentMethod,
+      transactionId: reg.stripeSessionId,
+      amount: reg.amountPaid || 0,
+      registeredAt: reg.createdAt,
+      checkedIn: reg.checkedIn || false,
+      checkedInAt: reg.checkedInAt,
+      createdAt: reg.createdAt,
+      updatedAt: reg.updatedAt,
+      // Include original registration data for flexibility
+      firstName: reg.firstName,
+      lastName: reg.lastName,
+      email: reg.email,
+      phone: reg.phoneNumber,
+      phoneNumber: reg.phoneNumber,
+      isVip: reg.isVip,
+      amountPaid: reg.amountPaid,
+    }));
+
+    return {
+      data: mappedRegistrations,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
     };
   }
 
@@ -458,5 +487,93 @@ export class AdminEventsService {
     await event.save();
 
     return event;
+  }
+
+  async getEventStatisticsById(id: string) {
+    // Verify event exists
+    const event = await this.eventModel.findById(id);
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    // Get all registrations for this event
+    const registrations = await this.registrationModel
+      .find({ eventId: id })
+      .populate('userId', 'firstName lastName email')
+      .lean();
+
+    // Calculate statistics
+    const totalRegistrations = registrations.length;
+    const vipRegistrations = registrations.filter((r: any) => r.isVip === true).length;
+    const generalRegistrations = registrations.filter((r: any) => r.isVip === false).length;
+    
+    // Calculate revenue
+    const totalRevenue = registrations.reduce((sum, r: any) => sum + (r.amountPaid || 0), 0);
+    const vipRevenue = registrations
+      .filter((r: any) => r.isVip === true)
+      .reduce((sum, r: any) => sum + (r.amountPaid || 0), 0);
+    const generalRevenue = registrations
+      .filter((r: any) => r.isVip === false)
+      .reduce((sum, r: any) => sum + (r.amountPaid || 0), 0);
+    
+    // Calculate check-in rate (using a field that might exist)
+    const checkedInCount = registrations.filter((r: any) => r.checkedIn).length;
+    const checkInRate = totalRegistrations > 0 ? (checkedInCount / totalRegistrations) * 100 : 0;
+
+    // Payment status breakdown
+    const paymentStatusBreakdown = {
+      pending: registrations.filter((r: any) => r.paymentStatus === 'pending').length,
+      completed: registrations.filter((r: any) => r.paymentStatus === 'paid').length,
+      failed: 0, // Not in the schema
+      refunded: 0, // Not in the schema
+    };
+
+    // Calculate daily registrations (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const dailyRegistrations = [];
+    const registrationsByDate = new Map();
+    
+    // Group registrations by date
+    registrations.forEach((reg: any) => {
+      if (reg.createdAt) {
+        const date = new Date(reg.createdAt).toISOString().split('T')[0];
+        if (!registrationsByDate.has(date)) {
+          registrationsByDate.set(date, { count: 0, revenue: 0 });
+        }
+        const dayData = registrationsByDate.get(date);
+        dayData.count++;
+        dayData.revenue += reg.amountPaid || 0;
+      }
+    });
+    
+    // Convert to array format
+    registrationsByDate.forEach((data, date) => {
+      dailyRegistrations.push({
+        date,
+        count: data.count,
+        revenue: data.revenue,
+      });
+    });
+    
+    // Sort by date
+    dailyRegistrations.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Calculate capacity utilization
+    const capacityUtilization = event.capacity > 0 ? (totalRegistrations / event.capacity) * 100 : 0;
+
+    return {
+      totalRegistrations,
+      vipRegistrations,
+      generalRegistrations,
+      totalRevenue,
+      vipRevenue,
+      generalRevenue,
+      paymentStatusBreakdown,
+      dailyRegistrations: dailyRegistrations.slice(-30), // Last 30 days
+      checkInRate: Math.round(checkInRate * 100) / 100,
+      capacityUtilization: Math.round(capacityUtilization * 100) / 100,
+    };
   }
 }

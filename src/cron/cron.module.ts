@@ -6,6 +6,7 @@ import { UsersModule } from 'src/users/users.module';
 import { EmailModule } from 'src/email/email.module';
 import { TransactionSchema } from 'src/payments/stripe/transaction.schema';
 import { SubscriptionHistorySchema } from 'src/payments/stripe/subscription-history.schema';
+import { ModulePermissionsModule } from 'src/module-permissions/module-permissions.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { SubscriptionHistorySchema } from 'src/payments/stripe/subscription-hist
     StripeModule,
     UsersModule,
     EmailModule,
+    ModulePermissionsModule,
   ],
   providers: [CronService],
 })

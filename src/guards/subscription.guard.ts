@@ -47,7 +47,7 @@ export class SubscriptionGuard implements CanActivate {
         (sub) =>
           requiredPlans.includes(sub.plan) &&
           (!sub.expiresAt || sub.expiresAt > new Date()), // ✅ Subscription is active (not expired)
-      ) || user.role === Role.ADMIN; // ✅ Allow access for admins
+      ) || user.role === Role.ADMIN || user.role === 'super_admin'; // ✅ Allow access for admins and super_admin
 
     if (!hasValidSubscription) {
       throw new ForbiddenException(

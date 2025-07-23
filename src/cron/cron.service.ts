@@ -10,6 +10,7 @@ import {
 } from 'src/payments/stripe/subscription-history.schema';
 import { EmailService } from 'src/email/email.service';
 import { SubscriptionPlan } from 'src/users/user.dto';
+import { ModulePermissionsService } from 'src/module-permissions/module-permissions.service';
 
 @Injectable()
 export class CronService {
@@ -18,6 +19,7 @@ export class CronService {
   constructor(
     private readonly userService: UserService,
     private readonly emailService: EmailService,
+    private readonly modulePermissionsService: ModulePermissionsService,
     @InjectModel(Transaction.name) private transactionModel: Model<Transaction>,
     @InjectModel(SubscriptionHistory.name)
     private subscriptionHistoryModel: Model<SubscriptionHistory>,
@@ -201,6 +203,79 @@ export class CronService {
       this.logger.log(
         `📅 Updated next billing date for transaction ${transaction._id} to ${newNextBillingDate}`,
       );
+    }
+  }
+
+  // ✅ Remove expired module permissions every midnight
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async removeExpiredModulePermissions() {
+    this.logger.log('🔐 Running cleanup for expired module permissions...');
+    
+    try {
+      const expiredCount = await this.modulePermissionsService.expirePermissions();
+      
+      if (expiredCount > 0) {
+        this.logger.log(`✅ Expired ${expiredCount} module permissions`);
+      } else {
+        this.logger.log('✅ No module permissions to expire');
+      }
+    } catch (error) {
+      this.logger.error('❌ Error expiring module permissions:', error);
+    }
+  }
+
+  // ✅ Send module permission expiration reminders
+  @Cron('0 9 * * *') // Run at 9 AM every day
+  async sendModulePermissionExpirationReminders() {
+    this.logger.log('📧 Checking for module permission expiration reminders...');
+    
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(23, 59, 59, 999);
+    
+    const threeDaysFromNow = new Date();
+    threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
+    threeDaysFromNow.setHours(23, 59, 59, 999);
+    
+    // Get all module types
+    const moduleTypes = [
+      'classes', 'masterClasses', 'liveRecorded', 'psicotrading',
+      'peaceWithMoney', 'liveWeekly', 'communityEvents', 'vipEvents', 'masterCourse'
+    ];
+    
+    for (const moduleType of moduleTypes) {
+      const usersWithAccess = await this.modulePermissionsService.getUsersWithModuleAccess(moduleType as any);
+      
+      for (const { user, permission } of usersWithAccess) {
+        if (permission.expiresAt) {
+          const expiresAt = new Date(permission.expiresAt);
+          
+          // Check if expiring within 1-3 days
+          if (expiresAt <= threeDaysFromNow && expiresAt >= tomorrow) {
+            const daysRemaining = Math.ceil(
+              (expiresAt.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+            );
+            
+            if (daysRemaining === 1 || daysRemaining === 3) {
+              await this.emailService.sendBasicEmail(
+                user.email,
+                `Module Access Expiring Soon - ${moduleType}`,
+                `
+                  <h2>Hello ${user.firstName},</h2>
+                  <p>Your access to <strong>${moduleType}</strong> module will expire in <strong>${daysRemaining} day${daysRemaining > 1 ? 's' : ''}</strong>.</p>
+                  <p>Expiration date: <strong>${expiresAt.toLocaleDateString()}</strong></p>
+                  <p>To continue accessing this module, please contact your administrator or purchase a subscription.</p>
+                  <p>Best regards,<br>Day Trade Dak Team</p>
+                `
+              );
+              
+              this.logger.log(
+                `📧 Sent module permission expiration reminder to ${user.email} for ${moduleType} (${daysRemaining} days remaining)`
+              );
+            }
+          }
+        }
+      }
     }
   }
 }
