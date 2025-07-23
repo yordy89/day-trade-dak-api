@@ -2,12 +2,15 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from 'src/users/user.schema';
+import { PermissionsService } from '../../permissions/permissions.service';
 import * as bcrypt from 'bcrypt';
+import { Role } from '../../constants';
 
 @Injectable()
 export class AdminUsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
+    private permissionsService: PermissionsService,
   ) {}
 
   async getAdminHosts() {
@@ -136,6 +139,11 @@ export class AdminUsersService {
     });
 
     await user.save();
+    
+    // Create default permissions for admin users
+    if (user.role === Role.ADMIN) {
+      await this.permissionsService.createDefaultPermissions(user._id.toString(), user.role);
+    }
     
     // Return user without sensitive data
     const { password, ...userWithoutPassword } = user.toObject();

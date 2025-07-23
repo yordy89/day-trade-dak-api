@@ -33,6 +33,9 @@ import { MeetingsModule } from './meetings/meetings.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebSocketsModule } from './websockets/websockets.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { PermissionsModule } from './permissions/permissions.module';
+import { GuardsModule } from './guards/guards.module';
+import { ModulePermissionsModule } from './module-permissions/module-permissions.module';
 
 @Module({
   imports: [
@@ -56,6 +59,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
       ],
     }),
     ScheduleModule.forRoot(),
+    GuardsModule,
     LoggerModule,
     CacheModule,
     PerformanceModule,
@@ -81,6 +85,8 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
     WebhooksModule,
     WebSocketsModule,
     SubscriptionsModule,
+    PermissionsModule,
+    ModulePermissionsModule,
   ],
   providers: [
     {

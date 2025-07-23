@@ -12,16 +12,19 @@ import {
 import { AuthService } from './auth.service';
 import { CreateUserDto } from 'src/users/user.dto';
 import { JwtAuthGuard } from 'src/guards/jwt-auth-guard';
+import { Public } from 'src/decorators/public.decorator';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Public()
   @Post('signup')
   async signup(@Body() data: CreateUserDto) {
     return this.authService.signup(data);
   }
 
+  @Public()
   @Post('login')
   async login(@Body() data: { email: string; password: string }) {
     const user = await this.authService.validateUser(data.email, data.password);
@@ -31,12 +34,14 @@ export class AuthController {
     return this.authService.login(user);
   }
 
+  @Public()
   @Post('password-recovery')
   async passwordRecovery(@Body('email') email: string) {
     const token = this.authService.generateRecoveryToken(email);
     return { message: 'Recovery email sent', token };
   }
 
+  @Public()
   @Get('signout')
   async signout() {
     return { message: 'Signout successful' };
