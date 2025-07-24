@@ -5,14 +5,17 @@ import { Meeting, MeetingDocument } from '../../schemas/meeting.schema';
 import { CreateMeetingDto } from '../dto/create-meeting.dto';
 import { UpdateMeetingDto } from '../dto/update-meeting.dto';
 import { VideoSDKService } from '../../videosdk/videosdk.service';
+import { ZoomApiService } from '../../videosdk/zoom-api.service';
 import { MeetingCronService } from '../../services/meeting-cron.service';
 import { addDays, addWeeks, addMonths, setHours, setMinutes, parseISO } from 'date-fns';
+import { featuresConfig } from '../../config/features.config';
 
 @Injectable()
 export class AdminMeetingsService {
   constructor(
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
     private videoSDKService: VideoSDKService,
+    private zoomApiService: ZoomApiService,
     private meetingCronService: MeetingCronService,
   ) {}
 
@@ -180,21 +183,50 @@ export class AdminMeetingsService {
       });
     }
 
-    // Create VideoSDK room
-    const room = await this.videoSDKService.createMeeting({
-      title: meetingData.title,
-      mode: 'CONFERENCE',
-    });
-
-    // Create single meeting
-    const meeting = new this.meetingModel({
+    let meetingConfig: any = {
       ...meetingData,
       host: hostId,
-      meetingId: room.roomId,
-      roomUrl: `https://app.videosdk.live/rooms/${room.roomId}`,
       status: 'scheduled',
       isRecurring: false,
-    });
+    };
+
+    if (featuresConfig.meetings.useZoom) {
+      // Create Zoom meeting
+      const zoomMeeting = await this.zoomApiService.createMeeting({
+        topic: meetingData.title,
+        scheduledAt: new Date(meetingData.scheduledAt),
+        duration: meetingData.duration,
+        waitingRoom: meetingData.enableWaitingRoom,
+        joinBeforeHost: false,
+        muteUponEntry: true,
+        recordAutomatically: meetingData.enableRecording,
+      });
+
+      meetingConfig = {
+        ...meetingConfig,
+        meetingId: `zoom-${zoomMeeting.zoomMeetingId}`,
+        roomUrl: zoomMeeting.joinUrl,
+        zoomMeetingId: zoomMeeting.zoomMeetingId,
+        zoomJoinUrl: zoomMeeting.joinUrl,
+        zoomStartUrl: zoomMeeting.startUrl,
+        zoomPassword: zoomMeeting.password,
+      };
+    } else {
+      // Create VideoSDK room
+      const room = await this.videoSDKService.createMeeting({
+        title: meetingData.title,
+        mode: 'CONFERENCE',
+      });
+
+      meetingConfig = {
+        ...meetingConfig,
+        meetingId: room.roomId,
+        roomUrl: `https://app.videosdk.live/rooms/${room.roomId}`,
+      };
+    }
+
+    // Create single meeting
+    const meeting = new this.meetingModel(meetingConfig);
 
     await meeting.save();
     await meeting.populate('host participants');
@@ -245,28 +277,57 @@ export class AdminMeetingsService {
       }
 
       if (shouldCreateMeeting && meetingDate >= new Date()) {
-        // Create VideoSDK room for each instance
-        const room = await this.videoSDKService.createMeeting({
-          title: `${title} - ${meetingDate.toLocaleDateString()}`,
-          mode: 'CONFERENCE',
-        });
-
-        const meeting = new this.meetingModel({
+        let meetingConfig: any = {
           title: `${title} - ${meetingDate.toLocaleDateString()}`,
           description,
           scheduledAt: meetingDate,
           duration,
           participants,
           host,
-          meetingId: room.roomId,
-          roomUrl: `https://app.videosdk.live/rooms/${room.roomId}`,
           status: 'scheduled',
           isRecurring: true,
           recurringType,
           recurringDays,
           recurringEndDate: endDate,
           ...settings,
-        });
+        };
+
+        if (featuresConfig.meetings.useZoom) {
+          // Create Zoom meeting for each instance
+          const zoomMeeting = await this.zoomApiService.createMeeting({
+            topic: `${title} - ${meetingDate.toLocaleDateString()}`,
+            scheduledAt: meetingDate,
+            duration: duration,
+            waitingRoom: settings.enableWaitingRoom,
+            joinBeforeHost: false,
+            muteUponEntry: true,
+            recordAutomatically: settings.enableRecording,
+          });
+
+          meetingConfig = {
+            ...meetingConfig,
+            meetingId: `zoom-${zoomMeeting.zoomMeetingId}`,
+            roomUrl: zoomMeeting.joinUrl,
+            zoomMeetingId: zoomMeeting.zoomMeetingId,
+            zoomJoinUrl: zoomMeeting.joinUrl,
+            zoomStartUrl: zoomMeeting.startUrl,
+            zoomPassword: zoomMeeting.password,
+          };
+        } else {
+          // Create VideoSDK room for each instance
+          const room = await this.videoSDKService.createMeeting({
+            title: `${title} - ${meetingDate.toLocaleDateString()}`,
+            mode: 'CONFERENCE',
+          });
+
+          meetingConfig = {
+            ...meetingConfig,
+            meetingId: room.roomId,
+            roomUrl: `https://app.videosdk.live/rooms/${room.roomId}`,
+          };
+        }
+
+        const meeting = new this.meetingModel(meetingConfig);
 
         await meeting.save();
         meetings.push(meeting);
@@ -316,8 +377,15 @@ export class AdminMeetingsService {
       throw new NotFoundException('Meeting not found');
     }
 
-    // Delete from VideoSDK if needed
-    // await this.videoSDKService.deleteRoom(meeting.meetingId);
+    // Delete from platform if needed
+    if (featuresConfig.meetings.useZoom && meeting.zoomMeetingId) {
+      try {
+        await this.zoomApiService.deleteMeeting(meeting.zoomMeetingId);
+      } catch (error) {
+        // Log error but continue with deletion
+        console.error('Failed to delete Zoom meeting:', error);
+      }
+    }
 
     await meeting.deleteOne();
   }

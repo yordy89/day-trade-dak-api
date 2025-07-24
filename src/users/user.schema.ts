@@ -56,7 +56,7 @@ export class User extends Document {
   @Prop({ type: [String], default: [] })
   activeSubscriptions: string[]; // ✅ Stores Stripe subscription IDs for recurring plans
 
-  @Prop({ required: false, unique: true })
+  @Prop({ required: false, unique: true, sparse: true })
   stripeCustomerId?: string; // ✅ Stores Stripe customer ID
 
   @Prop()

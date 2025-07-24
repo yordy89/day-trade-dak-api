@@ -6,8 +6,11 @@ import { User, UserDocument } from '../users/user.schema';
 import { SubscriptionPlan } from '../users/user.dto';
 import { Role } from '../schemas/role';
 import { VideoSDKService } from '../videosdk/videosdk.service';
+import { ZoomService } from '../videosdk/zoom.service';
+import { ZoomApiService } from '../videosdk/zoom-api.service';
 import { WebSocketGateway } from '../websockets/websockets.gateway';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { featuresConfig } from '../config/features.config';
 
 @Injectable()
 export class MeetingsService {
@@ -17,6 +20,8 @@ export class MeetingsService {
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private videoSDKService: VideoSDKService,
+    private zoomService: ZoomService,
+    private zoomApiService: ZoomApiService,
     private wsGateway: WebSocketGateway,
     private subscriptionsService: SubscriptionsService,
   ) {}
@@ -312,24 +317,53 @@ export class MeetingsService {
       this.logger.log(`Added user ${userId} to meeting attendees`);
     }
     
-    // Generate proper VideoSDK token
+    // Generate meeting access based on feature flag
     const participantName = `${user.firstName} ${user.lastName}`.trim() || user.email;
-    this.logger.log(`Generating token for ${participantName} (${user.email}) as ${isHost ? 'host' : 'participant'}`);
+    this.logger.log(`Generating meeting access for ${participantName} (${user.email}) as ${isHost ? 'host' : 'participant'}`);
     
-    const token = await this.videoSDKService.generateToken({
-      roomId: meeting.meetingId,
-      participantId: userId,
-      participantName: participantName,
-      role: isHost ? 'host' : 'participant',
-    });
-    
-    this.logger.log(`Token generated successfully for meeting ${meeting.meetingId}`);
-    
-    return {
-      token,
-      roomId: meeting.meetingId,
-      role: isHost ? 'host' : 'participant',
-    };
+    if (featuresConfig.meetings.useZoom) {
+      // Check if meeting has Zoom details
+      if (!meeting.zoomMeetingId || !meeting.zoomJoinUrl) {
+        throw new ForbiddenException('Zoom meeting not properly configured. Please contact support.');
+      }
+      
+      // Use the stored Zoom URL for participants
+      let zoomUrl = meeting.zoomJoinUrl;
+      
+      // For hosts, use the start URL if available
+      if (isHost && meeting.zoomStartUrl) {
+        zoomUrl = meeting.zoomStartUrl;
+      }
+      
+      this.logger.log(`Using Zoom meeting ${meeting.zoomMeetingId} for ${participantName}`);
+      
+      return {
+        token: '', // No token needed for Zoom
+        roomId: meeting.meetingId,
+        role: isHost ? 'host' : 'participant',
+        zoomUrl,
+        zoomMeetingId: meeting.zoomMeetingId,
+        zoomPassword: meeting.zoomPassword,
+        useZoom: true,
+      };
+    } else {
+      // Use VideoSDK as before
+      const token = await this.videoSDKService.generateToken({
+        roomId: meeting.meetingId,
+        participantId: userId,
+        participantName: participantName,
+        role: isHost ? 'host' : 'participant',
+      });
+      
+      this.logger.log(`VideoSDK token generated successfully for meeting ${meeting.meetingId}`);
+      
+      return {
+        token,
+        roomId: meeting.meetingId,
+        role: isHost ? 'host' : 'participant',
+        useZoom: false,
+      };
+    }
   }
 
   async leaveMeeting(meetingId: string, userId: string) {

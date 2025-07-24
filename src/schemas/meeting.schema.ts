@@ -90,6 +90,19 @@ export class Meeting {
   @Prop()
   recordingUrl?: string;
 
+  // Zoom-specific fields
+  @Prop()
+  zoomMeetingId?: string;
+
+  @Prop()
+  zoomJoinUrl?: string;
+
+  @Prop()
+  zoomStartUrl?: string;
+
+  @Prop()
+  zoomPassword?: string;
+
   @Prop({ default: Date.now })
   createdAt: Date;
 
