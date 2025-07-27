@@ -25,7 +25,10 @@ import { WebhookEvent, WebhookEventStatus } from './webhook-event.schema';
 import { Model } from 'mongoose';
 import { UserService } from 'src/users/users.service';
 import { SubscriptionPlan } from 'src/users/user.dto';
-import { SubscriptionPlan as SubscriptionPlanSchema, SubscriptionPlanDocument } from 'src/subscriptions/subscription-plan.schema';
+import {
+  SubscriptionPlan as SubscriptionPlanSchema,
+  SubscriptionPlanDocument,
+} from 'src/subscriptions/subscription-plan.schema';
 import { getLastDayOfMonth } from 'src/helpers/date';
 import { EventRegistrationsService } from 'src/event/event-registration.service';
 import { Event } from 'src/event/schemas/event.schema';
@@ -50,7 +53,7 @@ export class StripeService {
     @InjectModel(WebhookEvent.name)
     private webhookEventModel: Model<WebhookEvent>,
     @InjectModel(Event.name) private eventModel: Model<Event>,
-    @InjectModel(SubscriptionPlanSchema.name) 
+    @InjectModel(SubscriptionPlanSchema.name)
     private subscriptionPlanModel: Model<SubscriptionPlanDocument>,
   ) {
     this.stripe = new Stripe(
@@ -64,12 +67,20 @@ export class StripeService {
     const price = await this.stripe.prices.retrieve(priceId);
     const isRecurring = price.recurring !== null;
     const subscriptionPlan = await this.mapPriceIdToPlan(priceId);
-    
+
     // Get BNPL methods based on amount and currency
-    const bnplMethods = this.getBNPLMethods(price.unit_amount / 100, price.currency, isRecurring);
-    
-    this.logger.log(`Creating checkout session with payment methods: ${['card', ...bnplMethods].join(', ')}`);
-    this.logger.log(`Amount: ${price.unit_amount / 100} ${price.currency}, Recurring: ${isRecurring}`);
+    const bnplMethods = this.getBNPLMethods(
+      price.unit_amount / 100,
+      price.currency,
+      isRecurring,
+    );
+
+    this.logger.log(
+      `Creating checkout session with payment methods: ${['card', ...bnplMethods].join(', ')}`,
+    );
+    this.logger.log(
+      `Amount: ${price.unit_amount / 100} ${price.currency}, Recurring: ${isRecurring}`,
+    );
 
     // Get or create Stripe customer
     const user = await this.userService.findById(userId);
@@ -88,20 +99,47 @@ export class StripeService {
     }
 
     const session = await this.stripe.checkout.sessions.create({
-      payment_method_types: ['card', ...bnplMethods] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+      payment_method_types: [
+        'card',
+        ...bnplMethods,
+      ] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
       mode: isRecurring ? 'subscription' : 'payment',
       customer: customerId,
       success_url: `${this.configService.get<string>('FRONTEND_URL')}/payment/success?session_id={CHECKOUT_SESSION_ID}&plan=${subscriptionPlan}`,
       cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/pricing`,
       line_items: [{ price: priceId, quantity: 1 }],
       // BNPL requires shipping address collection
-      shipping_address_collection: bnplMethods.length > 0 ? {
-        allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
-      } : undefined,
+      shipping_address_collection:
+        bnplMethods.length > 0
+          ? {
+              allowed_countries: [
+                'US',
+                'CA',
+                'GB',
+                'AU',
+                'NZ',
+                'DE',
+                'FR',
+                'ES',
+                'IT',
+                'NL',
+                'BE',
+                'AT',
+                'CH',
+                'SE',
+                'NO',
+                'DK',
+                'FI',
+              ],
+            }
+          : undefined,
       // Phone number collection is required for some BNPL methods
-      phone_number_collection: bnplMethods.length > 0 ? {
-        enabled: true,
-      } : undefined,
+      phone_number_collection:
+        bnplMethods.length > 0
+          ? {
+              enabled: true,
+            }
+          : undefined,
       metadata: { userId, priceId, plan: subscriptionPlan }, // ✅ Store userId, priceId & plan
     });
 
@@ -141,13 +179,20 @@ export class StripeService {
 
       promotionCodeId = promoCodeResult.data[0].id;
     }
-    
+
     // Get price details to determine BNPL eligibility
     const price = await this.stripe.prices.retrieve(priceId);
-    const bnplMethods = this.getBNPLMethods(price.unit_amount / 100, price.currency, false);
+    const bnplMethods = this.getBNPLMethods(
+      price.unit_amount / 100,
+      price.currency,
+      false,
+    );
 
     const session = await this.stripe.checkout.sessions.create({
-      payment_method_types: ['card', ...bnplMethods] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+      payment_method_types: [
+        'card',
+        ...bnplMethods,
+      ] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
       mode: 'payment',
       line_items: [{ price: priceId, quantity: 1 }],
       discounts: promotionCodeId
@@ -157,13 +202,37 @@ export class StripeService {
       cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/events/${eventId}`,
       customer_email: email,
       // BNPL requires shipping address collection
-      shipping_address_collection: bnplMethods.length > 0 ? {
-        allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
-      } : undefined,
+      shipping_address_collection:
+        bnplMethods.length > 0
+          ? {
+              allowed_countries: [
+                'US',
+                'CA',
+                'GB',
+                'AU',
+                'NZ',
+                'DE',
+                'FR',
+                'ES',
+                'IT',
+                'NL',
+                'BE',
+                'AT',
+                'CH',
+                'SE',
+                'NO',
+                'DK',
+                'FI',
+              ],
+            }
+          : undefined,
       // Phone number collection is required for some BNPL methods
-      phone_number_collection: bnplMethods.length > 0 ? {
-        enabled: true,
-      } : undefined,
+      phone_number_collection:
+        bnplMethods.length > 0
+          ? {
+              enabled: true,
+            }
+          : undefined,
       metadata: {
         eventId,
         firstName,
@@ -297,26 +366,36 @@ export class StripeService {
     let totalPrice = event.price || 0;
     let adultsCount = 0;
     let childrenCount = 0;
-    
+
     if (additionalInfo?.additionalAttendees) {
       adultsCount = additionalInfo.additionalAttendees.adults || 0;
       childrenCount = additionalInfo.additionalAttendees.children || 0;
       // Adult: $75, Child: $48
-      totalPrice += (adultsCount * 75) + (childrenCount * 48);
-      
-      this.logger.log(`Additional attendees: ${adultsCount} adults, ${childrenCount} children`);
-      this.logger.log(`Price calculation: Base $${event.price} + Adults $${adultsCount * 75} + Children $${childrenCount * 48} = Total $${totalPrice}`);
+      totalPrice += adultsCount * 75 + childrenCount * 48;
+
+      this.logger.log(
+        `Additional attendees: ${adultsCount} adults, ${childrenCount} children`,
+      );
+      this.logger.log(
+        `Price calculation: Base $${event.price} + Adults $${adultsCount * 75} + Children $${childrenCount * 48} = Total $${totalPrice}`,
+      );
     }
-    
+
     // Apply Klarna fee if payment method is Klarna
-    let originalPrice = totalPrice;
+    const originalPrice = totalPrice;
     if (paymentMethod === 'klarna') {
-      const klarnaFeePercentage = parseFloat(this.configService.get<string>('KLARNA_FEE_PERCENTAGE') || '0.0644');
+      const klarnaFeePercentage = parseFloat(
+        this.configService.get<string>('KLARNA_FEE_PERCENTAGE') || '0.0644',
+      );
       totalPrice = totalPrice * (1 + klarnaFeePercentage);
-      this.logger.log(`Klarna fee applied: ${(klarnaFeePercentage * 100).toFixed(2)}%`);
-      this.logger.log(`Price with Klarna fee: $${originalPrice} → $${totalPrice.toFixed(2)}`);
+      this.logger.log(
+        `Klarna fee applied: ${(klarnaFeePercentage * 100).toFixed(2)}%`,
+      );
+      this.logger.log(
+        `Price with Klarna fee: $${originalPrice} → $${totalPrice.toFixed(2)}`,
+      );
     }
-    
+
     // Create price
     let price;
     if (productId) {
@@ -343,16 +422,17 @@ export class StripeService {
         },
       });
     }
-    
+
     // Determine payment methods based on selection
-    let paymentMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = [];
-    
+    let paymentMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+      [];
+
     if (paymentMethod === 'klarna') {
       paymentMethods = ['klarna'];
     } else {
       paymentMethods = ['card'];
     }
-    
+
     this.logger.log(`Creating event checkout for ${event.name || event.title}`);
     this.logger.log(`Payment method: ${paymentMethod}`);
     this.logger.log(`Total price: $${totalPrice.toFixed(2)} USD`);
@@ -370,7 +450,25 @@ export class StripeService {
       // Klarna requires shipping address collection
       ...(paymentMethod === 'klarna' && {
         shipping_address_collection: {
-          allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
+          allowed_countries: [
+            'US',
+            'CA',
+            'GB',
+            'AU',
+            'NZ',
+            'DE',
+            'FR',
+            'ES',
+            'IT',
+            'NL',
+            'BE',
+            'AT',
+            'CH',
+            'SE',
+            'NO',
+            'DK',
+            'FI',
+          ],
         },
       }),
       // Phone number collection is required for Klarna
@@ -395,10 +493,15 @@ export class StripeService {
         additionalAdults: adultsCount.toString(),
         additionalChildren: childrenCount.toString(),
         totalPrice: totalPrice.toString(),
-        guestDetails: JSON.stringify(additionalInfo?.additionalAttendees?.details || []),
+        guestDetails: JSON.stringify(
+          additionalInfo?.additionalAttendees?.details || [],
+        ),
         paymentMethod: paymentMethod,
         originalPrice: originalPrice.toString(),
-        klarnaFee: paymentMethod === 'klarna' ? (totalPrice - originalPrice).toFixed(2) : '0',
+        klarnaFee:
+          paymentMethod === 'klarna'
+            ? (totalPrice - originalPrice).toFixed(2)
+            : '0',
       },
     });
 
@@ -415,9 +518,12 @@ export class StripeService {
     const { amount, metadata, email, paymentMethod } = params;
 
     // Payment method configuration
-    const paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = ['card'];
+    const paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+      ['card'];
     if (paymentMethod === 'klarna') {
-      paymentMethodTypes.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+      paymentMethodTypes.push(
+        'klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+      );
     }
 
     const session = await this.stripe.checkout.sessions.create({
@@ -500,12 +606,21 @@ export class StripeService {
 
     // Configure payment methods including BNPL
     const paymentMethods = options?.paymentMethods || ['card'];
-    const bnplMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = [];
+    const bnplMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+      [];
 
-    if (paymentMethods.includes('klarna')) bnplMethods.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+    if (paymentMethods.includes('klarna'))
+      bnplMethods.push(
+        'klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+      );
     if (paymentMethods.includes('afterpay_clearpay'))
-      bnplMethods.push('afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
-    if (paymentMethods.includes('affirm')) bnplMethods.push('affirm' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+      bnplMethods.push(
+        'afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+      );
+    if (paymentMethods.includes('affirm'))
+      bnplMethods.push(
+        'affirm' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+      );
 
     // Create line items
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
@@ -563,7 +678,10 @@ export class StripeService {
 
     // Create checkout session
     const session = await this.stripe.checkout.sessions.create({
-      payment_method_types: ['card', ...bnplMethods] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+      payment_method_types: [
+        'card',
+        ...bnplMethods,
+      ] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
       mode: isRecurring ? 'subscription' : 'payment',
       customer: customerId,
       line_items: lineItems,
@@ -574,13 +692,37 @@ export class StripeService {
         options?.cancelUrl ||
         `${this.configService.get<string>('FRONTEND_URL')}/pricing`,
       // BNPL requires shipping address collection
-      shipping_address_collection: bnplMethods.length > 0 ? {
-        allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
-      } : undefined,
+      shipping_address_collection:
+        bnplMethods.length > 0
+          ? {
+              allowed_countries: [
+                'US',
+                'CA',
+                'GB',
+                'AU',
+                'NZ',
+                'DE',
+                'FR',
+                'ES',
+                'IT',
+                'NL',
+                'BE',
+                'AT',
+                'CH',
+                'SE',
+                'NO',
+                'DK',
+                'FI',
+              ],
+            }
+          : undefined,
       // Phone number collection is required for some BNPL methods
-      phone_number_collection: bnplMethods.length > 0 ? {
-        enabled: true,
-      } : undefined,
+      phone_number_collection:
+        bnplMethods.length > 0
+          ? {
+              enabled: true,
+            }
+          : undefined,
       metadata: {
         userId: userId.toString(),
         plan,
@@ -642,7 +784,10 @@ export class StripeService {
   }
 
   // ✅ **Create Classes Checkout Session**
-  async createClassesCheckoutSession(userId: string, paymentMethod: 'card' | 'klarna' = 'card') {
+  async createClassesCheckoutSession(
+    userId: string,
+    paymentMethod: 'card' | 'klarna' = 'card',
+  ) {
     // Get user details
     const user = await this.userService.findById(userId);
     if (!user) {
@@ -676,19 +821,25 @@ export class StripeService {
     }
 
     // Calculate price based on payment method
-    let basePrice = 500; // $500 USD
+    const basePrice = 500; // $500 USD
     let finalPrice = basePrice;
-    
+
     // Apply Klarna fee if payment method is Klarna
     if (paymentMethod === 'klarna') {
-      const klarnaFeePercentage = parseFloat(this.configService.get<string>('KLARNA_FEE_PERCENTAGE') || '0.0644');
+      const klarnaFeePercentage = parseFloat(
+        this.configService.get<string>('KLARNA_FEE_PERCENTAGE') || '0.0644',
+      );
       finalPrice = basePrice * (1 + klarnaFeePercentage);
-      this.logger.log(`Klarna fee applied: ${(klarnaFeePercentage * 100).toFixed(2)}%`);
-      this.logger.log(`Price with Klarna fee: $${basePrice} → $${finalPrice.toFixed(2)}`);
+      this.logger.log(
+        `Klarna fee applied: ${(klarnaFeePercentage * 100).toFixed(2)}%`,
+      );
+      this.logger.log(
+        `Price with Klarna fee: $${basePrice} → $${finalPrice.toFixed(2)}`,
+      );
     }
-    
+
     let priceObj;
-    
+
     if (productId) {
       // Create a one-time price for the existing product
       priceObj = await this.stripe.prices.create({
@@ -712,8 +863,9 @@ export class StripeService {
     }
 
     // Determine payment method types based on selection
-    let paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = [];
-    
+    let paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+      [];
+
     if (paymentMethod === 'klarna') {
       paymentMethodTypes = ['klarna'];
     } else {
@@ -731,7 +883,25 @@ export class StripeService {
       // Klarna requires shipping address collection
       ...(paymentMethod === 'klarna' && {
         shipping_address_collection: {
-          allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'CH', 'SE', 'NO', 'DK', 'FI'],
+          allowed_countries: [
+            'US',
+            'CA',
+            'GB',
+            'AU',
+            'NZ',
+            'DE',
+            'FR',
+            'ES',
+            'IT',
+            'NL',
+            'BE',
+            'AT',
+            'CH',
+            'SE',
+            'NO',
+            'DK',
+            'FI',
+          ],
         },
       }),
       // Phone number collection is required for Klarna
@@ -749,7 +919,9 @@ export class StripeService {
       },
     });
 
-    this.logger.log(`Created classes checkout session for user ${userId}: ${session.id} with payment method: ${paymentMethod}`);
+    this.logger.log(
+      `Created classes checkout session for user ${userId}: ${session.id} with payment method: ${paymentMethod}`,
+    );
 
     return { url: session.url, sessionId: session.id };
   }
@@ -1002,34 +1174,35 @@ export class StripeService {
       }
 
       // Send email notification
-      if (this.emailService) {
+      if (this.emailService && event) {
         try {
-          const event = await this.eventModel.findById(eventId);
-          if (event) {
-            await this.emailService.sendEventRegistrationEmail(email, {
-              firstName,
-              eventName: event.name || event.title,
-              eventType: eventType as
-                | 'master_course'
-                | 'community_event'
-                | 'vip_event',
-              eventDate: event.date ? new Date(event.date) : undefined,
-              eventTime: (event as any).time,
-              eventLocation:
-                event.location ||
-                ((event as any).isOnline ? 'Evento en línea' : undefined),
-              eventDescription: event.description,
-              ticketNumber: registration?._id?.toString() || session.id,
-              isPaid: registrationType === 'paid',
-              amount: session.amount_total
-                ? session.amount_total / 100
-                : undefined,
-              currency: session.currency,
-              additionalAdults: parseInt(session.metadata?.additionalAdults || '0'),
-              additionalChildren: parseInt(session.metadata?.additionalChildren || '0'),
-            });
+          await this.emailService.sendEventRegistrationEmail(email, {
+            firstName,
+            eventName: event.title || event.name,
+            eventType: (event.type || eventType) as
+              | 'master_course'
+              | 'community_event'
+              | 'vip_event',
+            eventDate: event.date ? new Date(event.date) : undefined,
+            eventStartDate: event.startDate ? new Date(event.startDate) : undefined,
+            eventEndDate: event.endDate ? new Date(event.endDate) : undefined,
+            eventTime: (event as any).time,
+            eventLocation: event.location,
+            hotelName: event.metadata?.hotel,
+            hotelAddress: event.metadata?.hotelAddress,
+            eventDescription: event.description,
+            ticketNumber: registration?._id?.toString() || session.id,
+            isPaid: registrationType === 'paid',
+            amount: session.amount_total
+              ? session.amount_total / 100
+              : undefined,
+            currency: session.currency,
+            additionalAdults: parsedAdditionalInfo?.additionalAttendees?.adults || 0,
+            additionalChildren: parsedAdditionalInfo?.additionalAttendees?.children || 0,
+          });
 
-            // Add to Brevo marketing list
+          // Add to Brevo marketing list
+          if (event) {
             await this.emailService.addEventRegistrantToMarketingList(
               email,
               firstName,
@@ -1061,47 +1234,48 @@ export class StripeService {
   // ✅ **Handle Classes Purchase**
   private async handleClassesPurchase(session: Stripe.Checkout.Session) {
     this.logger.log('📚 Processing classes purchase');
-    
+
     const userId = session.metadata?.userId;
-    
+
     if (!userId) {
       this.logger.error('Missing userId for classes purchase');
       return;
     }
-    
+
     const amount = session.amount_total ? session.amount_total / 100 : 0;
     const currency = session.currency || 'usd';
-    
+
     try {
       // Create transaction record
       const transaction = await this.transactionModel.create({
         userId,
         amount,
         currency,
-        status: session.payment_status === 'paid' 
-          ? PaymentStatus.SUCCEEDED 
-          : PaymentStatus.PENDING,
+        status:
+          session.payment_status === 'paid'
+            ? PaymentStatus.SUCCEEDED
+            : PaymentStatus.PENDING,
         plan: SubscriptionPlan.CLASSES,
         type: TransactionType.ONE_TIME_PURCHASE,
         stripeSessionId: session.id,
         stripeCustomerId: session.customer as string,
         stripePaymentIntentId: session.payment_intent as string,
         paymentMethod: this.mapStripePaymentMethodType(
-          session.payment_method_types?.[0] || 'card'
+          session.payment_method_types?.[0] || 'card',
         ),
         billingCycle: BillingCycle.ONE_TIME,
         metadata: session.metadata,
       });
-      
+
       // Add CLASSES subscription with 15-day expiration
       const expirationDate = new Date();
       expirationDate.setDate(expirationDate.getDate() + 15);
-      
+
       // Remove any existing CLASSES subscription
       await this.userService.updateUser(userId, {
         $pull: { subscriptions: { plan: SubscriptionPlan.CLASSES } },
       });
-      
+
       // Add new CLASSES subscription
       await this.userService.updateUser(userId, {
         $push: {
@@ -1113,7 +1287,7 @@ export class StripeService {
           },
         },
       });
-      
+
       // Record subscription history
       await this.subscriptionHistoryModel.create({
         userId,
@@ -1127,11 +1301,11 @@ export class StripeService {
         expirationDate,
         metadata: session.metadata,
       });
-      
+
       this.logger.log(
-        `✅ Classes access granted to user ${userId} until ${expirationDate}`
+        `✅ Classes access granted to user ${userId} until ${expirationDate}`,
       );
-      
+
       // Send confirmation email
       try {
         const user = await this.userService.findById(userId);
@@ -1148,7 +1322,10 @@ export class StripeService {
           });
         }
       } catch (emailError) {
-        this.logger.error('Failed to send classes purchase confirmation email:', emailError);
+        this.logger.error(
+          'Failed to send classes purchase confirmation email:',
+          emailError,
+        );
       }
     } catch (error) {
       this.logger.error('Error processing classes purchase:', error);
@@ -1189,8 +1366,10 @@ export class StripeService {
     }
 
     // Handle event registration update (adding attendees)
-    if (session.metadata?.type === 'event_registration_update' && 
-        session.metadata?.updateType === 'add_attendees') {
+    if (
+      session.metadata?.type === 'event_registration_update' &&
+      session.metadata?.updateType === 'add_attendees'
+    ) {
       const {
         registrationId,
         additionalAdults,
@@ -1552,7 +1731,7 @@ export class StripeService {
     }
 
     const subscriptionId = subscription.id;
-    const userSubscription = user.subscriptions.find(() =>
+    const userSubscription = user.subscriptions.find((sub) =>
       user.activeSubscriptions.includes(subscriptionId),
     );
 
@@ -1578,22 +1757,30 @@ export class StripeService {
   }
 
   // ✅ **Map Stripe `priceId` to SubscriptionPlan Enum**
-  private async mapPriceIdToPlan(priceId: string): Promise<SubscriptionPlan | null> {
+  private async mapPriceIdToPlan(
+    priceId: string,
+  ): Promise<SubscriptionPlan | null> {
     // Try to find the plan in database first
     try {
-      const environment = this.configService.get<string>('NODE_ENV', 'development');
-      const query = environment === 'production' 
-        ? { 'stripeIds.production.priceId': priceId }
-        : { 'stripeIds.development.priceId': priceId };
-      
+      const environment = this.configService.get<string>(
+        'NODE_ENV',
+        'development',
+      );
+      const query =
+        environment === 'production'
+          ? { 'stripeIds.production.priceId': priceId }
+          : { 'stripeIds.development.priceId': priceId };
+
       const plan = await this.subscriptionPlanModel.findOne(query).exec();
       if (plan) {
         return plan.planId as SubscriptionPlan;
       }
     } catch (error) {
-      this.logger.warn(`Failed to find plan for price ID ${priceId} in database`);
+      this.logger.warn(
+        `Failed to find plan for price ID ${priceId} in database`,
+      );
     }
-    
+
     // Fallback to hardcoded mapping (to be removed once database is confirmed working)
     const priceToPlanMap: { [key: string]: SubscriptionPlan } = {
       /* These are Dev subscriptions */
@@ -1794,7 +1981,7 @@ export class StripeService {
     userId: string,
     subscriptionPlan: SubscriptionPlan,
     forceNow: boolean = false,
-  ) {
+  ): Promise<any> {
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -1859,7 +2046,7 @@ export class StripeService {
     // Check if plan changed
     const plan = subscription.metadata?.plan as SubscriptionPlan;
     if (plan) {
-      const previousPlan = user.subscriptions.find(() =>
+      const previousPlan = user.subscriptions.find((sub) =>
         user.activeSubscriptions.includes(subscription.id),
       )?.plan;
 
@@ -2001,7 +2188,10 @@ export class StripeService {
 
       // Get client secret from payment intent
       let clientSecret = null;
-      if (session.payment_intent && typeof session.payment_intent === 'object') {
+      if (
+        session.payment_intent &&
+        typeof session.payment_intent === 'object'
+      ) {
         clientSecret = session.payment_intent.client_secret;
       }
 
@@ -2068,62 +2258,99 @@ export class StripeService {
    * @param isRecurring Whether this is a recurring payment
    * @returns Array of BNPL payment method strings
    */
-  private getBNPLMethods(amount: number, currency: string, isRecurring: boolean = false): Stripe.Checkout.SessionCreateParams.PaymentMethodType[] {
-    const bnplMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] = [];
-    
+  private getBNPLMethods(
+    amount: number,
+    currency: string,
+    isRecurring: boolean = false,
+  ): Stripe.Checkout.SessionCreateParams.PaymentMethodType[] {
+    const bnplMethods: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
+      [];
+
     // Check if BNPL is enabled via environment variable
-    const bnplEnabled = this.configService.get<string>('STRIPE_BNPL_ENABLED', 'true') === 'true';
+    const bnplEnabled =
+      this.configService.get<string>('STRIPE_BNPL_ENABLED', 'true') === 'true';
     if (!bnplEnabled) {
       this.logger.debug('BNPL methods disabled via configuration');
       return bnplMethods;
     }
-    
+
     // BNPL methods are generally not available for subscriptions
     if (isRecurring) {
       return bnplMethods;
     }
-    
+
     // Currency must be lowercase for Stripe
     const lowerCurrency = currency.toLowerCase();
-    
+
     // Klarna availability
     // Minimum: $1 USD, Maximum: $10,000 USD
     // Available in: USD, EUR, GBP, SEK, NOK, DKK, and more
-    if (['usd', 'eur', 'gbp', 'sek', 'nok', 'dkk', 'chf', 'aud', 'nzd', 'cad', 'pln', 'czk'].includes(lowerCurrency)) {
+    if (
+      [
+        'usd',
+        'eur',
+        'gbp',
+        'sek',
+        'nok',
+        'dkk',
+        'chf',
+        'aud',
+        'nzd',
+        'cad',
+        'pln',
+        'czk',
+      ].includes(lowerCurrency)
+    ) {
       if (lowerCurrency === 'usd' && amount >= 1 && amount <= 10000) {
-        bnplMethods.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+        bnplMethods.push(
+          'klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+        );
       } else if (lowerCurrency === 'eur' && amount >= 1 && amount <= 10000) {
-        bnplMethods.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+        bnplMethods.push(
+          'klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+        );
       } else if (amount >= 1 && amount <= 15000) {
         // Other currencies have different limits
-        bnplMethods.push('klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+        bnplMethods.push(
+          'klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+        );
       }
     }
-    
+
     // Afterpay/Clearpay availability
     // Minimum: $1 USD, Maximum: $2,000 USD (varies by region)
     // Available in: USD, CAD, GBP, AUD, NZD, EUR
     if (['usd', 'cad', 'gbp', 'aud', 'nzd', 'eur'].includes(lowerCurrency)) {
       if (lowerCurrency === 'usd' && amount >= 1 && amount <= 2000) {
-        bnplMethods.push('afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+        bnplMethods.push(
+          'afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+        );
       } else if (lowerCurrency === 'aud' && amount >= 1 && amount <= 2000) {
-        bnplMethods.push('afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+        bnplMethods.push(
+          'afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+        );
       } else if (amount >= 1 && amount <= 1000) {
         // Other currencies typically have lower limits
-        bnplMethods.push('afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+        bnplMethods.push(
+          'afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+        );
       }
     }
-    
+
     // Affirm availability (US only)
     // Minimum: $50 USD, Maximum: $30,000 USD
     if (lowerCurrency === 'usd' && amount >= 50 && amount <= 30000) {
-      bnplMethods.push('affirm' as Stripe.Checkout.SessionCreateParams.PaymentMethodType);
+      bnplMethods.push(
+        'affirm' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+      );
     }
-    
+
     if (bnplMethods.length > 0) {
-      this.logger.debug(`BNPL methods available for ${amount} ${currency}: ${bnplMethods.join(', ')}`);
+      this.logger.debug(
+        `BNPL methods available for ${amount} ${currency}: ${bnplMethods.join(', ')}`,
+      );
     }
-    
+
     return bnplMethods;
   }
 }

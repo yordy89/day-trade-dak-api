@@ -11,7 +11,13 @@ import {
   HttpCode,
   Logger,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { AdminService } from '../admin.service';
 import { JwtAuthGuard } from '../../guards/jwt-auth-guard';
 import { RolesGuard } from '../../guards/roles.guard';
@@ -31,7 +37,10 @@ export class AdminController {
 
   @Get('users/stats')
   @ApiOperation({ summary: 'Get user statistics' })
-  @ApiResponse({ status: 200, description: 'User statistics retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'User statistics retrieved successfully',
+  })
   async getUserStatistics(@Request() req: RequestWithUser) {
     // Log admin action
     await this.adminService.logAdminAction({
@@ -48,7 +57,10 @@ export class AdminController {
 
   @Get('subscriptions/stats')
   @ApiOperation({ summary: 'Get subscription statistics' })
-  @ApiResponse({ status: 200, description: 'Subscription statistics retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Subscription statistics retrieved successfully',
+  })
   async getSubscriptionStatistics(@Request() req: RequestWithUser) {
     // Log admin action
     await this.adminService.logAdminAction({
@@ -65,7 +77,10 @@ export class AdminController {
 
   @Get('logs')
   @ApiOperation({ summary: 'Get admin activity logs' })
-  @ApiResponse({ status: 200, description: 'Admin logs retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Admin logs retrieved successfully',
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'adminId', required: false, type: String })
@@ -100,7 +115,10 @@ export class AdminController {
 
   @Get('activity/:adminId')
   @ApiOperation({ summary: 'Get admin activity summary' })
-  @ApiResponse({ status: 200, description: 'Admin activity summary retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Admin activity summary retrieved successfully',
+  })
   @ApiQuery({ name: 'days', required: false, type: Number })
   async getAdminActivitySummary(
     @Param('adminId') adminId: string,
@@ -109,7 +127,9 @@ export class AdminController {
   ) {
     // Only super admins can view other admin's activity
     if (req.user.role !== Role.SUPER_ADMIN && req.user.userId !== adminId) {
-      this.logger.warn(`Admin ${req.user.email} attempted to view activity of admin ${adminId}`);
+      this.logger.warn(
+        `Admin ${req.user.email} attempted to view activity of admin ${adminId}`,
+      );
       await this.adminService.logAdminAction({
         adminId: req.user.userId,
         adminEmail: req.user.email,

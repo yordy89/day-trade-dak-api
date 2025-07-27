@@ -154,87 +154,105 @@ export class UserService {
   async countActiveUsers(): Promise<number> {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    return this.userModel.countDocuments({
-      lastLogin: { $gte: thirtyDaysAgo }
-    }).exec();
+
+    return this.userModel
+      .countDocuments({
+        lastLogin: { $gte: thirtyDaysAgo },
+      })
+      .exec();
   }
 
   async countSubscribedUsers(): Promise<number> {
-    return this.userModel.countDocuments({
-      'subscriptions.0': { $exists: true },
-      'subscriptions.status': 'active'
-    }).exec();
+    return this.userModel
+      .countDocuments({
+        'subscriptions.0': { $exists: true },
+        'subscriptions.status': 'active',
+      })
+      .exec();
   }
 
   async countNewUsersToday(): Promise<number> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    return this.userModel.countDocuments({
-      createdAt: { $gte: today }
-    }).exec();
+
+    return this.userModel
+      .countDocuments({
+        createdAt: { $gte: today },
+      })
+      .exec();
   }
 
   async countNewUsersThisWeek(): Promise<number> {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
-    
-    return this.userModel.countDocuments({
-      createdAt: { $gte: weekAgo }
-    }).exec();
+
+    return this.userModel
+      .countDocuments({
+        createdAt: { $gte: weekAgo },
+      })
+      .exec();
   }
 
   async countNewUsersThisMonth(): Promise<number> {
     const monthAgo = new Date();
     monthAgo.setMonth(monthAgo.getMonth() - 1);
-    
-    return this.userModel.countDocuments({
-      createdAt: { $gte: monthAgo }
-    }).exec();
+
+    return this.userModel
+      .countDocuments({
+        createdAt: { $gte: monthAgo },
+      })
+      .exec();
   }
 
   async getSubscriptionsByPlan(): Promise<any> {
-    const result = await this.userModel.aggregate([
-      { $unwind: '$subscriptions' },
-      { $match: { 'subscriptions.status': 'active' } },
-      {
-        $group: {
-          _id: '$subscriptions.plan',
-          count: { $sum: 1 },
-          revenue: { $sum: '$subscriptions.price' }
-        }
-      },
-      { $sort: { count: -1 } }
-    ]).exec();
+    const result = await this.userModel
+      .aggregate([
+        { $unwind: '$subscriptions' },
+        { $match: { 'subscriptions.status': 'active' } },
+        {
+          $group: {
+            _id: '$subscriptions.plan',
+            count: { $sum: 1 },
+            revenue: { $sum: '$subscriptions.price' },
+          },
+        },
+        { $sort: { count: -1 } },
+      ])
+      .exec();
 
-    return result.map(item => ({
+    return result.map((item) => ({
       plan: item._id,
       count: item.count,
-      revenue: item.revenue
+      revenue: item.revenue,
     }));
   }
 
   async getExpiringSubscriptions(days: number): Promise<any[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + days);
-    
-    return this.userModel.find({
-      'subscriptions.status': 'active',
-      'subscriptions.currentPeriodEnd': {
-        $gte: new Date(),
-        $lte: futureDate
-      }
-    }).select('email subscriptions').exec();
+
+    return this.userModel
+      .find({
+        'subscriptions.status': 'active',
+        'subscriptions.currentPeriodEnd': {
+          $gte: new Date(),
+          $lte: futureDate,
+        },
+      })
+      .select('email subscriptions')
+      .exec();
   }
 
   async getRecentCancellations(days: number): Promise<any[]> {
     const daysAgo = new Date();
     daysAgo.setDate(daysAgo.getDate() - days);
-    
-    return this.userModel.find({
-      'subscriptions.status': 'canceled',
-      'subscriptions.updatedAt': { $gte: daysAgo }
-    }).select('email subscriptions').exec();
+
+    return this.userModel
+      .find({
+        'subscriptions.status': 'canceled',
+        'subscriptions.updatedAt': { $gte: daysAgo },
+      })
+      .select('email subscriptions')
+      .exec();
   }
 }

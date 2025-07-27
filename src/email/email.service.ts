@@ -218,21 +218,31 @@ export class EmailService {
         },
       );
 
-      this.logger.log(`Contact ${email} added to Brevo lists: ${listIds.join(', ')}`);
+      this.logger.log(
+        `Contact ${email} added to Brevo lists: ${listIds.join(', ')}`,
+      );
       return response.data;
     } catch (error) {
       if (error.response?.status === 400) {
         const errorCode = error.response?.data?.code;
         const errorMessage = error.response?.data?.message || '';
-        
+
         // Handle duplicate contact
-        if (errorCode === 'duplicate_parameter' && errorMessage.includes('Contact already exist')) {
+        if (
+          errorCode === 'duplicate_parameter' &&
+          errorMessage.includes('Contact already exist')
+        ) {
           return this.updateContactLists(email, listIds, attributes);
         }
-        
+
         // Handle duplicate SMS - retry without SMS
-        if (errorCode === 'duplicate_parameter' && errorMessage.includes('SMS')) {
-          this.logger.warn(`SMS number already exists, creating contact without SMS`);
+        if (
+          errorCode === 'duplicate_parameter' &&
+          errorMessage.includes('SMS')
+        ) {
+          this.logger.warn(
+            `SMS number already exists, creating contact without SMS`,
+          );
           const { SMS, ...attributesWithoutSMS } = attributes || {};
           try {
             const response = await axios.post(
@@ -250,18 +260,24 @@ export class EmailService {
                 },
               },
             );
-            this.logger.log(`Contact ${email} added to Brevo lists (without SMS): ${listIds.join(', ')}`);
+            this.logger.log(
+              `Contact ${email} added to Brevo lists (without SMS): ${listIds.join(', ')}`,
+            );
             return response.data;
           } catch (retryError) {
             // If still fails, might be existing contact, try update
             if (retryError.response?.status === 400) {
-              return this.updateContactLists(email, listIds, attributesWithoutSMS);
+              return this.updateContactLists(
+                email,
+                listIds,
+                attributesWithoutSMS,
+              );
             }
             throw retryError;
           }
         }
       }
-      
+
       this.logger.error(
         `Failed to add contact ${email} to Brevo:`,
         error.response?.data || error.message,
@@ -299,7 +315,9 @@ export class EmailService {
             updateError.response?.data?.code === 'duplicate_parameter' &&
             updateError.response?.data?.message?.includes('SMS')
           ) {
-            this.logger.warn(`SMS number already exists for another contact, updating without SMS`);
+            this.logger.warn(
+              `SMS number already exists for another contact, updating without SMS`,
+            );
             const { SMS, ...attributesWithoutSMS } = attributes;
             if (Object.keys(attributesWithoutSMS).length > 0) {
               await axios.put(
@@ -338,11 +356,16 @@ export class EmailService {
           );
         } catch (listError) {
           // Log but continue with other lists
-          this.logger.warn(`Failed to add ${email} to list ${listId}:`, listError.response?.data?.message || listError.message);
+          this.logger.warn(
+            `Failed to add ${email} to list ${listId}:`,
+            listError.response?.data?.message || listError.message,
+          );
         }
       }
 
-      this.logger.log(`Contact ${email} updated in Brevo lists: ${listIds.join(', ')}`);
+      this.logger.log(
+        `Contact ${email} updated in Brevo lists: ${listIds.join(', ')}`,
+      );
       return { message: 'Contact updated successfully' };
     } catch (error) {
       this.logger.error(
@@ -364,9 +387,11 @@ export class EmailService {
     try {
       // Define list IDs for different purposes (you'll need to get these from Brevo)
       const listIds = [];
-      
+
       // Add to general event registrants list
-      const generalEventListId = parseInt(process.env.BREVO_EVENT_LIST_ID || '0');
+      const generalEventListId = parseInt(
+        process.env.BREVO_EVENT_LIST_ID || '0',
+      );
       if (generalEventListId > 0) {
         listIds.push(generalEventListId);
       }
@@ -382,7 +407,9 @@ export class EmailService {
       }
 
       if (listIds.length === 0) {
-        this.logger.warn('No Brevo list IDs configured for event registrations');
+        this.logger.warn(
+          'No Brevo list IDs configured for event registrations',
+        );
         return null;
       }
 
@@ -422,15 +449,16 @@ export class EmailService {
     },
   ) {
     const subject = 'Confirmación - Invitados Adicionales Agregados';
-    
+
     // Calculate pricing details
     const adultPrice = details.adultPrice || 75;
     const childPrice = details.childPrice || 48;
     const adultsSubtotal = details.additionalAdults * adultPrice;
     const childrenSubtotal = details.additionalChildren * childPrice;
     const baseAmount = adultsSubtotal + childrenSubtotal;
-    const klarnaFee = details.paymentMethod === 'klarna' ? baseAmount * 0.0644 : 0;
-    
+    const klarnaFee =
+      details.paymentMethod === 'klarna' ? baseAmount * 0.0644 : 0;
+
     const emailData: AdditionalAttendeesData = {
       firstName: name,
       eventName: details.eventName,
@@ -447,7 +475,7 @@ export class EmailService {
       paymentMethod: details.paymentMethod || 'card',
       manageRegistrationUrl: `${process.env.FRONTEND_URL || 'https://app.daytradedak.com'}/community-event/manage-registration`,
     };
-    
+
     const html = additionalAttendeesTemplate(emailData);
 
     return this.send(to, subject, html);

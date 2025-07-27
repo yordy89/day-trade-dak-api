@@ -41,8 +41,7 @@ export class WebhookEvent extends Document {
 
 export const WebhookEventSchema = SchemaFactory.createForClass(WebhookEvent);
 
-// Add indexes
-WebhookEventSchema.index({ stripeEventId: 1 });
+// Add indexes (removed stripeEventId since it's already unique in @Prop)
 WebhookEventSchema.index({ eventType: 1 });
 WebhookEventSchema.index({ status: 1 });
 WebhookEventSchema.index({ createdAt: -1 });

@@ -12,7 +12,13 @@ import {
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../guards/jwt-auth-guard';
 import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/role.decorator';
@@ -33,7 +39,9 @@ export class AdminUsersController {
   ) {}
 
   @Get('hosts')
-  @ApiOperation({ summary: 'Get admin and super-admin users who can host meetings' })
+  @ApiOperation({
+    summary: 'Get admin and super-admin users who can host meetings',
+  })
   async getAdminHosts(@Request() req: RequestWithUser) {
     // Log admin action
     await this.adminService.logAdminAction({
@@ -72,7 +80,7 @@ export class AdminUsersController {
     // Debug log
     console.log('Request user:', req.user);
     console.log('User ID:', req.user?.userId || req.user?._id);
-    
+
     // Log admin action
     await this.adminService.logAdminAction({
       adminId: req.user?.userId || req.user?._id || 'unknown',
@@ -148,7 +156,10 @@ export class AdminUsersController {
     @Request() req: RequestWithUser,
   ) {
     const previousUser = await this.adminUsersService.getUserById(userId);
-    const updatedUser = await this.adminUsersService.updateUser(userId, updateUserDto);
+    const updatedUser = await this.adminUsersService.updateUser(
+      userId,
+      updateUserDto,
+    );
 
     // Log admin action
     await this.adminService.logAdminAction({
@@ -174,7 +185,10 @@ export class AdminUsersController {
     @Request() req: RequestWithUser,
   ) {
     const previousUser = await this.adminUsersService.getUserById(userId);
-    const updatedUser = await this.adminUsersService.updateUserStatus(userId, status);
+    const updatedUser = await this.adminUsersService.updateUserStatus(
+      userId,
+      status,
+    );
 
     // Log admin action
     await this.adminService.logAdminAction({
@@ -218,7 +232,12 @@ export class AdminUsersController {
 
   @Get('export')
   @ApiOperation({ summary: 'Export users to CSV' })
-  @ApiQuery({ name: 'format', required: false, type: String, enum: ['csv', 'json'] })
+  @ApiQuery({
+    name: 'format',
+    required: false,
+    type: String,
+    enum: ['csv', 'json'],
+  })
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'status', required: false, type: String })
   @ApiQuery({ name: 'subscription', required: false, type: String })

@@ -17,6 +17,9 @@ import { SubscriptionGuard } from 'src/guards/subscription.guard';
 import { RequiresSubscription } from 'src/decorators/subscription.decorator';
 import { S3ServiceOptimized } from 'src/aws/s3/s3.service.optimized';
 import { VariableKeys } from 'src/constants';
+import { ModuleAccessGuard } from 'src/guards/module-access.guard';
+import { RequireModule } from 'src/decorators/require-module.decorator';
+import { ModuleType } from 'src/module-permissions/module-permission.schema';
 
 @Controller('videos')
 export class VideoController {
@@ -26,8 +29,9 @@ export class VideoController {
     private readonly configService: ConfigService,
   ) {}
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.MASTER_CLASES)
+  @RequireModule(ModuleType.MASTER_CLASSES)
   @Get()
   getAllVideos() {
     return this.videoService.findAll();
@@ -39,22 +43,25 @@ export class VideoController {
     return this.videoService.create(createVideoDto);
   }
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.MASTER_CLASES)
+  @RequireModule(ModuleType.MASTER_CLASSES)
   @Put(':id')
   updateVideo(@Param('id') id: string, @Body() updateVideoDto: UpdateVideoDto) {
     return this.videoService.update(id, updateVideoDto);
   }
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.LIVE_RECORDED)
+  @RequireModule(ModuleType.LIVE_RECORDED)
   @Get('classVideos')
   async getAllClassVideos() {
     return this.s3Service.listVideos(VariableKeys.AWS_ClASS_FOLDER);
   }
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.MASTER_CLASES)
+  @RequireModule(ModuleType.MASTER_CLASSES)
   @Get('mentorshipVideos')
   async getAllMentorshipVideos() {
     console.log(
@@ -71,8 +78,9 @@ export class VideoController {
     return this.s3Service.listVideos(VariableKeys.AWS_S3_STOCK_VIDEO_FOLDER);
   }
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.PSICOTRADING)
+  @RequireModule(ModuleType.PSICOTRADING)
   @Get('psicotradingVideos')
   async getAllPsicoTradingVideos() {
     return this.s3Service.listVideos(
@@ -80,8 +88,9 @@ export class VideoController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.PEACE_WITH_MONEY)
+  @RequireModule(ModuleType.PEACE_WITH_MONEY)
   @Get('cursos/curso1')
   async getAllCurso1Videos() {
     const videos = await this.s3Service.listVideos(
@@ -101,8 +110,9 @@ export class VideoController {
     return sorted;
   }
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.CLASSES)
+  @RequireModule(ModuleType.CLASSES)
   @Get('classesVideos')
   async getAllClassesVideos() {
     const videos = await this.s3Service.listVideos(
@@ -122,15 +132,17 @@ export class VideoController {
     return sorted;
   }
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.LIVE_RECORDED)
+  @RequireModule(ModuleType.LIVE_RECORDED)
   @Get('videos/:key')
   async getVideo(@Param('key') key: string) {
     return { videoUrl: await this.s3Service.getSignedUrl(`videos/${key}`) };
   }
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.CLASSES)
+  @RequireModule(ModuleType.CLASSES)
   @Get('classes/video/:key')
   async getClassVideo(@Param('key') key: string) {
     // Classes videos are stored directly without 'videos/' prefix

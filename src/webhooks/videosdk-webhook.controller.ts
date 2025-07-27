@@ -50,34 +50,37 @@ export class VideoSDKWebhookController {
         case 'session-started':
           await this.handleSessionStarted(event.data);
           break;
-        
+
         case 'session-ended':
           await this.handleSessionEnded(event.data);
           break;
-        
+
         case 'participant-joined':
           await this.handleParticipantJoined(event.data);
           break;
-        
+
         case 'participant-left':
           await this.handleParticipantLeft(event.data);
           break;
-        
+
         case 'recording-started':
           await this.handleRecordingStarted(event.data);
           break;
-        
+
         case 'recording-stopped':
           await this.handleRecordingStopped(event.data);
           break;
-        
+
         default:
           this.logger.warn(`Unhandled webhook type: ${event.webhookType}`);
       }
 
       return { received: true };
     } catch (error) {
-      this.logger.error(`Error processing webhook: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error processing webhook: ${error.message}`,
+        error.stack,
+      );
       // Return success to avoid webhook retries
       return { received: true, error: error.message };
     }
@@ -85,11 +88,11 @@ export class VideoSDKWebhookController {
 
   private async handleSessionStarted(data: any) {
     const { meetingId, roomId } = data;
-    
-    const meeting = await this.meetingModel.findOne({ 
-      meetingId: roomId || meetingId 
+
+    const meeting = await this.meetingModel.findOne({
+      meetingId: roomId || meetingId,
     });
-    
+
     if (meeting && meeting.status !== 'live') {
       meeting.status = 'live';
       meeting.startedAt = new Date(data.startTime || Date.now());
@@ -100,11 +103,11 @@ export class VideoSDKWebhookController {
 
   private async handleSessionEnded(data: any) {
     const { meetingId, roomId, duration } = data;
-    
-    const meeting = await this.meetingModel.findOne({ 
-      meetingId: roomId || meetingId 
+
+    const meeting = await this.meetingModel.findOne({
+      meetingId: roomId || meetingId,
     });
-    
+
     if (meeting && meeting.status === 'live') {
       meeting.status = 'completed';
       meeting.endedAt = new Date(data.endTime || Date.now());
@@ -118,30 +121,37 @@ export class VideoSDKWebhookController {
 
   private async handleParticipantJoined(data: any) {
     const { roomId, participantId } = data;
-    
+
     const meeting = await this.meetingModel.findOne({ meetingId: roomId });
-    
+
     if (meeting && participantId) {
       // Add to attendees if not already there
       if (!meeting.attendees.includes(participantId)) {
         meeting.attendees.push(participantId);
         await meeting.save();
-        this.logger.log(`Participant ${participantId} added to meeting ${meeting._id}`);
+        this.logger.log(
+          `Participant ${participantId} added to meeting ${meeting._id}`,
+        );
       }
     }
   }
 
   private async handleParticipantLeft(data: any) {
     const { roomId, participantId } = data;
-    
+
     const meeting = await this.meetingModel.findOne({ meetingId: roomId });
-    
+
     if (meeting) {
-      this.logger.log(`Participant ${participantId} left meeting ${meeting._id}`);
+      this.logger.log(
+        `Participant ${participantId} left meeting ${meeting._id}`,
+      );
       // Note: We don't remove from attendees as they did attend
-      
+
       // If this was the host and no other participants, end the meeting
-      if (meeting.host.toString() === participantId && meeting.status === 'live') {
+      if (
+        meeting.host.toString() === participantId &&
+        meeting.status === 'live'
+      ) {
         // Check if there are other participants still in the meeting
         // This would require additional tracking or VideoSDK API call
         this.logger.log('Host left the meeting, considering ending it');
@@ -151,9 +161,9 @@ export class VideoSDKWebhookController {
 
   private async handleRecordingStarted(data: any) {
     const { roomId } = data;
-    
+
     const meeting = await this.meetingModel.findOne({ meetingId: roomId });
-    
+
     if (meeting) {
       meeting.enableRecording = true;
       await meeting.save();
@@ -163,9 +173,9 @@ export class VideoSDKWebhookController {
 
   private async handleRecordingStopped(data: any) {
     const { roomId, recordingUrl } = data;
-    
+
     const meeting = await this.meetingModel.findOne({ meetingId: roomId });
-    
+
     if (meeting && recordingUrl) {
       meeting.recordingUrl = recordingUrl;
       await meeting.save();

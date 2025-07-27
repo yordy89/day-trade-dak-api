@@ -46,7 +46,8 @@ export class ModulePermission {
   subscriptionId?: Types.ObjectId;
 }
 
-export const ModulePermissionSchema = SchemaFactory.createForClass(ModulePermission);
+export const ModulePermissionSchema =
+  SchemaFactory.createForClass(ModulePermission);
 
 // Indexes for performance
 ModulePermissionSchema.index({ userId: 1, moduleType: 1 });
@@ -56,5 +57,5 @@ ModulePermissionSchema.index({ isActive: 1 });
 // Ensure only one active permission per user per module
 ModulePermissionSchema.index(
   { userId: 1, moduleType: 1, isActive: 1 },
-  { unique: true, partialFilterExpression: { isActive: true } }
+  { unique: true, partialFilterExpression: { isActive: true } },
 );

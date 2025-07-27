@@ -55,6 +55,46 @@ export class Event {
 
   @Prop({ default: 0 })
   currentRegistrations: number;
+
+  @Prop({ type: Object, default: {} })
+  metadata: {
+    hotel?: string;
+    hotelAddress?: string;
+    includesAccommodation?: boolean;
+    includesMeals?: boolean;
+    includesSaturdayDinner?: boolean;
+  };
+
+  @Prop({ type: [String], default: [] })
+  included: string[];
+
+  @Prop({ type: [String], default: [] })
+  notIncluded: string[];
+
+  @Prop({ type: [String], default: [] })
+  requirements: string[];
+
+  @Prop({ type: Object, default: {} })
+  contact: {
+    email?: string;
+    phone?: string;
+    whatsapp?: string;
+  };
+
+  @Prop({ type: Object })
+  coordinates: {
+    lat?: number;
+    lng?: number;
+  };
+
+  @Prop({
+    enum: ['active', 'draft', 'completed'],
+    default: 'active',
+  })
+  status: string;
+
+  @Prop({ default: false })
+  featuredInCRM: boolean;
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);

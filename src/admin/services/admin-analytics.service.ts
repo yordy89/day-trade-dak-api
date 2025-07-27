@@ -20,8 +20,12 @@ export class AdminAnalyticsService {
     currency?: string;
   }) {
     const { startDate, endDate, currency = 'USD' } = options;
-    
-    console.log('AdminAnalyticsService.getPaymentStats - Input:', { startDate, endDate, currency });
+
+    console.log('AdminAnalyticsService.getPaymentStats - Input:', {
+      startDate,
+      endDate,
+      currency,
+    });
 
     // Get current period metrics
     const currentMetrics = await this.paymentAnalyticsService.getPaymentMetrics(
@@ -30,45 +34,78 @@ export class AdminAnalyticsService {
     );
 
     // Calculate previous period for comparison
-    const periodLength = endDate && startDate ? 
-      Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) : 30;
-    const previousStartDate = startDate ? 
-      subDays(startDate, periodLength) : subDays(new Date(), 60);
+    const periodLength =
+      endDate && startDate
+        ? Math.floor(
+            (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
+          )
+        : 30;
+    const previousStartDate = startDate
+      ? subDays(startDate, periodLength)
+      : subDays(new Date(), 60);
     const previousEndDate = startDate || subDays(new Date(), 30);
 
-    const previousMetrics = await this.paymentAnalyticsService.getPaymentMetrics(
-      previousStartDate,
-      previousEndDate,
-    );
+    const previousMetrics =
+      await this.paymentAnalyticsService.getPaymentMetrics(
+        previousStartDate,
+        previousEndDate,
+      );
 
     // Get subscription metrics
-    const subscriptionMetrics = await this.paymentAnalyticsService.getSubscriptionMetrics(
-      startDate,
-      endDate,
-    );
+    const subscriptionMetrics =
+      await this.paymentAnalyticsService.getSubscriptionMetrics(
+        startDate,
+        endDate,
+      );
 
-    const previousSubscriptionMetrics = await this.paymentAnalyticsService.getSubscriptionMetrics(
-      previousStartDate,
-      previousEndDate,
-    );
+    const previousSubscriptionMetrics =
+      await this.paymentAnalyticsService.getSubscriptionMetrics(
+        previousStartDate,
+        previousEndDate,
+      );
 
     // Calculate changes
-    const revenueChange = previousMetrics.totalRevenue > 0 ?
-      ((currentMetrics.totalRevenue - previousMetrics.totalRevenue) / previousMetrics.totalRevenue) * 100 : 0;
-    
-    const transactionsChange = previousMetrics.totalTransactions > 0 ?
-      ((currentMetrics.totalTransactions - previousMetrics.totalTransactions) / previousMetrics.totalTransactions) * 100 : 0;
-    
-    const subscriptionsChange = previousSubscriptionMetrics.activeSubscriptions > 0 ?
-      ((subscriptionMetrics.activeSubscriptions - previousSubscriptionMetrics.activeSubscriptions) / previousSubscriptionMetrics.activeSubscriptions) * 100 : 0;
-    
-    const recurringChange = previousSubscriptionMetrics.monthlyRecurringRevenue > 0 ?
-      ((subscriptionMetrics.monthlyRecurringRevenue - previousSubscriptionMetrics.monthlyRecurringRevenue) / previousSubscriptionMetrics.monthlyRecurringRevenue) * 100 : 0;
+    const revenueChange =
+      previousMetrics.totalRevenue > 0
+        ? ((currentMetrics.totalRevenue - previousMetrics.totalRevenue) /
+            previousMetrics.totalRevenue) *
+          100
+        : 0;
 
-    const aovChange = previousMetrics.averageTransactionValue > 0 ?
-      ((currentMetrics.averageTransactionValue - previousMetrics.averageTransactionValue) / previousMetrics.averageTransactionValue) * 100 : 0;
+    const transactionsChange =
+      previousMetrics.totalTransactions > 0
+        ? ((currentMetrics.totalTransactions -
+            previousMetrics.totalTransactions) /
+            previousMetrics.totalTransactions) *
+          100
+        : 0;
 
-    const churnChange = previousSubscriptionMetrics.churnRate - subscriptionMetrics.churnRate;
+    const subscriptionsChange =
+      previousSubscriptionMetrics.activeSubscriptions > 0
+        ? ((subscriptionMetrics.activeSubscriptions -
+            previousSubscriptionMetrics.activeSubscriptions) /
+            previousSubscriptionMetrics.activeSubscriptions) *
+          100
+        : 0;
+
+    const recurringChange =
+      previousSubscriptionMetrics.monthlyRecurringRevenue > 0
+        ? ((subscriptionMetrics.monthlyRecurringRevenue -
+            previousSubscriptionMetrics.monthlyRecurringRevenue) /
+            previousSubscriptionMetrics.monthlyRecurringRevenue) *
+          100
+        : 0;
+
+    const aovChange =
+      previousMetrics.averageTransactionValue > 0
+        ? ((currentMetrics.averageTransactionValue -
+            previousMetrics.averageTransactionValue) /
+            previousMetrics.averageTransactionValue) *
+          100
+        : 0;
+
+    const churnChange =
+      previousSubscriptionMetrics.churnRate - subscriptionMetrics.churnRate;
 
     const result = {
       totalRevenue: currentMetrics.totalRevenue,
@@ -84,7 +121,7 @@ export class AdminAnalyticsService {
       churnRate: subscriptionMetrics.churnRate,
       churnChange: Math.round(churnChange * 10) / 10,
     };
-    
+
     console.log('AdminAnalyticsService.getPaymentStats - Result:', result);
     return result;
   }
@@ -120,17 +157,20 @@ export class AdminAnalyticsService {
 
     // Build query
     const query: any = {};
-    
-    console.log('AdminAnalyticsService.getPaymentTransactions - Input filters:', {
-      startDate,
-      endDate,
-      search,
-      status,
-      method,
-      plans,
-      minAmount,
-      maxAmount
-    });
+
+    console.log(
+      'AdminAnalyticsService.getPaymentTransactions - Input filters:',
+      {
+        startDate,
+        endDate,
+        search,
+        status,
+        method,
+        plans,
+        minAmount,
+        maxAmount,
+      },
+    );
 
     if (startDate || endDate) {
       query.createdAt = {};
@@ -150,7 +190,7 @@ export class AdminAnalyticsService {
 
     if (status) {
       // Handle comma-separated values
-      const statusArray = status.split(',').filter(s => s.trim());
+      const statusArray = status.split(',').filter((s) => s.trim());
       if (statusArray.length === 1) {
         query.status = statusArray[0];
       } else if (statusArray.length > 1) {
@@ -160,7 +200,7 @@ export class AdminAnalyticsService {
 
     if (method) {
       // Handle comma-separated values
-      const methodArray = method.split(',').filter(m => m.trim());
+      const methodArray = method.split(',').filter((m) => m.trim());
       if (methodArray.length === 1) {
         query.paymentMethod = methodArray[0];
       } else if (methodArray.length > 1) {
@@ -171,23 +211,23 @@ export class AdminAnalyticsService {
     if (plans) {
       // Map frontend plan values to backend values
       const planMapping: Record<string, string> = {
-        'live_weekly_manual': 'LiveWeeklyManual',
-        'live_weekly_recurring': 'LiveWeeklyRecurring',
-        'masterclases': 'MasterClases',
-        'liverecorded': 'LiveRecorded',
-        'psicotrading': 'Psicotrading',
-        'classes': 'Classes',
-        'clases': 'Classes',
-        'peace_with_money': 'PeaceWithMoney',
-        'curso_opciones': 'CursoOpciones',
-        'community_event': 'CommunityEvent',
-        'vip_event': 'VipEvent'
+        live_weekly_manual: 'LiveWeeklyManual',
+        live_weekly_recurring: 'LiveWeeklyRecurring',
+        masterclases: 'MasterClases',
+        liverecorded: 'LiveRecorded',
+        psicotrading: 'Psicotrading',
+        classes: 'Classes',
+        clases: 'Classes',
+        peace_with_money: 'PeaceWithMoney',
+        curso_opciones: 'CursoOpciones',
+        community_event: 'CommunityEvent',
+        vip_event: 'VipEvent',
       };
 
       // Handle comma-separated values
-      const plansArray = plans.split(',').filter(p => p.trim());
-      const mappedPlans = plansArray.map(plan => planMapping[plan] || plan);
-      
+      const plansArray = plans.split(',').filter((p) => p.trim());
+      const mappedPlans = plansArray.map((plan) => planMapping[plan] || plan);
+
       if (mappedPlans.length === 1) {
         query.plan = mappedPlans[0];
       } else if (mappedPlans.length > 1) {
@@ -222,12 +262,19 @@ export class AdminAnalyticsService {
     // Execute query with pagination
     const skip = (page - 1) * limit;
     const sort: any = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
-    
-    console.log('AdminAnalyticsService.getPaymentTransactions - Final query:', JSON.stringify(query, null, 2));
+
+    console.log(
+      'AdminAnalyticsService.getPaymentTransactions - Final query:',
+      JSON.stringify(query, null, 2),
+    );
     if (query.createdAt) {
       console.log('Date filter details:', {
-        startDate: query.createdAt.$gte ? query.createdAt.$gte.toISOString() : 'none',
-        endDate: query.createdAt.$lte ? query.createdAt.$lte.toISOString() : 'none'
+        startDate: query.createdAt.$gte
+          ? query.createdAt.$gte.toISOString()
+          : 'none',
+        endDate: query.createdAt.$lte
+          ? query.createdAt.$lte.toISOString()
+          : 'none',
       });
     }
 
@@ -244,17 +291,20 @@ export class AdminAnalyticsService {
     ]);
 
     // Transform transactions for frontend
-    const transformedTransactions = transactions.map(transaction => {
+    const transformedTransactions = transactions.map((transaction) => {
       // Handle populated user data
       const user = transaction.userId as any;
-      const customerName = user && user.firstName && user.lastName ? 
-        `${user.firstName} ${user.lastName}` : 'Unknown';
+      const customerName =
+        user && user.firstName && user.lastName
+          ? `${user.firstName} ${user.lastName}`
+          : 'Unknown';
       const customerEmail = user?.email || 'Unknown';
       const customerId = user?._id?.toString() || '';
 
       return {
         _id: transaction._id.toString(),
-        transactionId: transaction.stripePaymentIntentId || transaction._id.toString(),
+        transactionId:
+          transaction.stripePaymentIntentId || transaction._id.toString(),
         customerName,
         customerEmail,
         customerId,
@@ -278,30 +328,31 @@ export class AdminAnalyticsService {
       page,
       limit,
     };
-    
+
     console.log('AdminAnalyticsService.getPaymentTransactions - Result:', {
       transactionCount: transformedTransactions.length,
       total,
       page,
-      limit
+      limit,
     });
-    
+
     return result;
   }
 
-  async getSubscriptionStats(options: {
-    startDate?: Date;
-    endDate?: Date;
-  }) {
+  async getSubscriptionStats(options: { startDate?: Date; endDate?: Date }) {
     const { startDate, endDate } = options;
-    
-    console.log('AdminAnalyticsService.getSubscriptionStats - Input:', { startDate, endDate });
 
-    // Get subscription metrics from payment analytics service
-    const subscriptionMetrics = await this.paymentAnalyticsService.getSubscriptionMetrics(
+    console.log('AdminAnalyticsService.getSubscriptionStats - Input:', {
       startDate,
       endDate,
-    );
+    });
+
+    // Get subscription metrics from payment analytics service
+    const subscriptionMetrics =
+      await this.paymentAnalyticsService.getSubscriptionMetrics(
+        startDate,
+        endDate,
+      );
 
     // Get revenue breakdown by plan
     const revenueByPlan = await this.paymentAnalyticsService.getRevenueByPlan(
@@ -310,26 +361,47 @@ export class AdminAnalyticsService {
     );
 
     // Get previous period for comparison
-    const periodLength = endDate && startDate ? 
-      Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) : 30;
-    const previousStartDate = startDate ? 
-      subDays(startDate, periodLength) : subDays(new Date(), 60);
+    const periodLength =
+      endDate && startDate
+        ? Math.floor(
+            (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
+          )
+        : 30;
+    const previousStartDate = startDate
+      ? subDays(startDate, periodLength)
+      : subDays(new Date(), 60);
     const previousEndDate = startDate || subDays(new Date(), 30);
 
-    const previousMetrics = await this.paymentAnalyticsService.getSubscriptionMetrics(
-      previousStartDate,
-      previousEndDate,
-    );
+    const previousMetrics =
+      await this.paymentAnalyticsService.getSubscriptionMetrics(
+        previousStartDate,
+        previousEndDate,
+      );
 
     // Calculate growth rates
-    const mrrGrowth = previousMetrics.monthlyRecurringRevenue > 0 ?
-      ((subscriptionMetrics.monthlyRecurringRevenue - previousMetrics.monthlyRecurringRevenue) / previousMetrics.monthlyRecurringRevenue) * 100 : 0;
-    
-    const subscriberGrowth = previousMetrics.activeSubscriptions > 0 ?
-      ((subscriptionMetrics.activeSubscriptions - previousMetrics.activeSubscriptions) / previousMetrics.activeSubscriptions) * 100 : 0;
-    
-    const ltvGrowth = previousMetrics.averageRevenuePerUser > 0 ?
-      ((subscriptionMetrics.averageRevenuePerUser - previousMetrics.averageRevenuePerUser) / previousMetrics.averageRevenuePerUser) * 100 : 0;
+    const mrrGrowth =
+      previousMetrics.monthlyRecurringRevenue > 0
+        ? ((subscriptionMetrics.monthlyRecurringRevenue -
+            previousMetrics.monthlyRecurringRevenue) /
+            previousMetrics.monthlyRecurringRevenue) *
+          100
+        : 0;
+
+    const subscriberGrowth =
+      previousMetrics.activeSubscriptions > 0
+        ? ((subscriptionMetrics.activeSubscriptions -
+            previousMetrics.activeSubscriptions) /
+            previousMetrics.activeSubscriptions) *
+          100
+        : 0;
+
+    const ltvGrowth =
+      previousMetrics.averageRevenuePerUser > 0
+        ? ((subscriptionMetrics.averageRevenuePerUser -
+            previousMetrics.averageRevenuePerUser) /
+            previousMetrics.averageRevenuePerUser) *
+          100
+        : 0;
 
     // Build plan breakdown
     const planBreakdown = revenueByPlan.reduce((acc, item) => {
@@ -352,7 +424,7 @@ export class AdminAnalyticsService {
       ltvGrowth: Math.round(ltvGrowth * 10) / 10,
       planBreakdown,
     };
-    
+
     console.log('AdminAnalyticsService.getSubscriptionStats - Result:', result);
     return result;
   }

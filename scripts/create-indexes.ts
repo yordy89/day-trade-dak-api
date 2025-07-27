@@ -20,11 +20,12 @@ const indexes: IndexDefinition[] = [
     index: { email: 1 },
     options: { unique: true, name: 'email_unique' },
   },
-  {
-    collection: 'users',
-    index: { stripeCustomerId: 1 },
-    options: { sparse: true, name: 'stripe_customer_id' },
-  },
+  // Removed stripeCustomerId index - let Mongoose handle it from schema
+  // {
+  //   collection: 'users',
+  //   index: { stripeCustomerId: 1 },
+  //   options: { sparse: true, name: 'stripe_customer_id' },
+  // },
   {
     collection: 'users',
     index: { activeSubscriptions: 1 },

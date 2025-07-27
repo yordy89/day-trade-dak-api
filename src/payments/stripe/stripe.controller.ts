@@ -91,7 +91,10 @@ export class StripeController {
   ) {
     const userId = body.userId || req.user._id.toString();
     const paymentMethod = body.paymentMethod || 'card';
-    return this.stripeService.createClassesCheckoutSession(userId, paymentMethod);
+    return this.stripeService.createClassesCheckoutSession(
+      userId,
+      paymentMethod,
+    );
   }
 
   // **Stripe Webhook Handling**
@@ -269,7 +272,10 @@ export class StripeController {
 
   // **Redirect to checkout session URL**
   @Get('checkout-redirect/:sessionId')
-  async redirectToCheckout(@Param('sessionId') sessionId: string, @Res() res: Response) {
+  async redirectToCheckout(
+    @Param('sessionId') sessionId: string,
+    @Res() res: Response,
+  ) {
     try {
       const session = await this.stripeService.getCheckoutSessionUrl(sessionId);
       if (session.url) {

@@ -11,7 +11,7 @@ async function updateTampaCommunityEvent() {
     console.log('🌟 Updating Tampa Community Event...\n');
 
     const eventId = '68716f1002c52f87285859b1';
-    
+
     // Update the event with correct information
     const updateData = {
       name: 'Mentoría Presencial con Mijail Medina',
@@ -23,7 +23,8 @@ async function updateTampaCommunityEvent() {
       date: new Date('2025-09-25T08:30:00'),
       startDate: new Date('2025-09-25T08:30:00'),
       endDate: new Date('2025-09-27T17:30:00'),
-      location: 'Hilton Garden Inn Tampa Ybor Historic District, 1700 E 9th Ave, Tampa, FL 33605',
+      location:
+        'Hilton Garden Inn Tampa Ybor Historic District, 1700 E 9th Ave, Tampa, FL 33605',
       vipPrice: 0,
       bannerImage: '/assets/images/comunity-event-backgorund.png',
       isActive: true,
@@ -39,7 +40,7 @@ async function updateTampaCommunityEvent() {
         includesSaturdayDinner: true,
         coordinates: {
           lat: 27.9594,
-          lng: -82.4423
+          lng: -82.4423,
         },
         schedule: {
           day1: {
@@ -56,8 +57,8 @@ async function updateTampaCommunityEvent() {
                 'Entrada justificada, clara y explicada paso a paso',
                 'Gestión profesional del trade en vivo',
                 'Comentarios mentales del mentor durante la operación',
-                'Reflexión post-trade: ¿Qué se respetó? ¿Qué se aprendió?'
-              ]
+                'Reflexión post-trade: ¿Qué se respetó? ¿Qué se aprendió?',
+              ],
             },
             afternoon: {
               title: 'TARDE - Módulo 1: Análisis Técnico Pre-Market',
@@ -68,9 +69,9 @@ async function updateTampaCommunityEvent() {
                 'Lectura de gráficos en varias temporalidades',
                 'Construcción de un plan de acción diario',
                 'Cómo evitar la improvisación con una estructura clara',
-                'Ejercicio práctico: Análisis pre-market con feedback en vivo'
-              ]
-            }
+                'Ejercicio práctico: Análisis pre-market con feedback en vivo',
+              ],
+            },
           },
           day2: {
             date: '2025-09-26',
@@ -85,8 +86,8 @@ async function updateTampaCommunityEvent() {
                 'Análisis de correlaciones entre activos',
                 'Manejo de posiciones múltiples',
                 'Control emocional bajo presión del mercado',
-                'Evaluación y ajuste de estrategias en vivo'
-              ]
+                'Evaluación y ajuste de estrategias en vivo',
+              ],
             },
             afternoon: {
               title: 'TARDE - Módulos 2, 3 y 4',
@@ -99,8 +100,8 @@ async function updateTampaCommunityEvent() {
                     'Confirmaciones visuales y contextuales',
                     'Lectura del precio y comportamiento del volumen',
                     'Cómo filtrar entradas de bajo nivel',
-                    'Checklist de entrada profesional'
-                  ]
+                    'Checklist de entrada profesional',
+                  ],
                 },
                 {
                   name: 'Módulo 3: Gestión de Riesgo',
@@ -108,19 +109,19 @@ async function updateTampaCommunityEvent() {
                     'Cálculo de riesgo por operación basado en tu capital',
                     'Cómo definir el tamaño de posición ideal',
                     'Uso correcto del stop loss y take profits',
-                    'Planificación mensual de crecimiento de cuenta'
-                  ]
+                    'Planificación mensual de crecimiento de cuenta',
+                  ],
                 },
                 {
                   name: 'Módulo 4: Precisión Bajo Presión',
                   content: [
                     'Cuándo reforzar una entrada ya abierta',
                     'Cómo distinguir entre pullback y nueva oportunidad',
-                    'Simulación de entradas con feedback en tiempo real'
-                  ]
-                }
-              ]
-            }
+                    'Simulación de entradas con feedback en tiempo real',
+                  ],
+                },
+              ],
+            },
           },
           day3: {
             date: '2025-09-27',
@@ -135,8 +136,8 @@ async function updateTampaCommunityEvent() {
                 'Identificar patrones mentales que sabotean tus trades',
                 'Construcción de un ritual mental pre-sesión',
                 'Disciplina emocional en entornos de incertidumbre',
-                'Ejercicio guiado: Visualización del "Yo Trader" profesional'
-              ]
+                'Ejercicio guiado: Visualización del "Yo Trader" profesional',
+              ],
             },
             afternoon: {
               title: 'TARDE - Actividad Recreativa & Cierre',
@@ -146,14 +147,15 @@ async function updateTampaCommunityEvent() {
                 'Conversaciones abiertas con el mentor y compañeros',
                 'Círculo de visión: ¿A dónde voy como trader después de esto?',
                 'Foto oficial y cierre inspirador',
-                'Networking y creación de lazos con la comunidad'
+                'Networking y creación de lazos con la comunidad',
               ],
               specialDinner: {
                 time: '6:00 PM - 8:00 PM',
-                description: 'Cena especial del sábado incluida para todos los participantes y sus invitados'
-              }
-            }
-          }
+                description:
+                  'Cena especial del sábado incluida para todos los participantes y sus invitados',
+              },
+            },
+          },
         },
         included: [
           '3 días intensivos de mentoría presencial',
@@ -162,31 +164,31 @@ async function updateTampaCommunityEvent() {
           'Cena especial del sábado',
           'Material y plantillas profesionales',
           'Certificado de participación',
-          'Networking con traders serios'
+          'Networking con traders serios',
         ],
         notIncluded: [
           'Alojamiento',
           'Desayunos y almuerzos',
           'Transporte',
-          'Vuelos'
+          'Vuelos',
         ],
         requirements: [
           'Laptop para las sesiones prácticas',
           'Libreta para tomar notas',
           'Compromiso con el aprendizaje',
-          'Puntualidad en todas las sesiones'
+          'Puntualidad en todas las sesiones',
         ],
         contact: {
           phone: '+1 (786) 355-1346',
-          email: 'support@daytradedak.com'
-        }
-      }
+          email: 'support@daytradedak.com',
+        },
+      },
     };
 
     const result = await eventModel.findByIdAndUpdate(
       eventId,
       { $set: updateData },
-      { new: true }
+      { new: true },
     );
 
     if (result) {

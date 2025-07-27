@@ -83,9 +83,13 @@ async function populateSubscriptionPrices() {
 
     // Determine which price mappings to use based on environment
     const isProduction = process.env.NODE_ENV === 'production';
-    const priceMappings = isProduction ? PROD_PRICE_MAPPINGS : DEV_PRICE_MAPPINGS;
+    const priceMappings = isProduction
+      ? PROD_PRICE_MAPPINGS
+      : DEV_PRICE_MAPPINGS;
 
-    console.log(`Using ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} Stripe price IDs`);
+    console.log(
+      `Using ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} Stripe price IDs`,
+    );
 
     let updatedCount = 0;
     let errorCount = 0;
@@ -153,7 +157,7 @@ async function populateSubscriptionPrices() {
 
     // Add conditional pricing metadata
     console.log('\nAdding conditional pricing metadata...');
-    
+
     // Master Classes has conditional pricing
     await subscriptionPlansCollection.updateOne(
       { planId: 'MasterClases' },

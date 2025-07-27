@@ -9,7 +9,12 @@ import {
   Req,
   ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../guards/jwt-auth-guard';
 import { RolesGuard } from '../guards/roles.guard';
 import { Roles } from '../decorators/role.decorator';
@@ -28,7 +33,10 @@ export class PermissionsController {
   @Get()
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Get all admin users with their permissions' })
-  @ApiResponse({ status: 200, description: 'List of admin users with permissions' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of admin users with permissions',
+  })
   async getAllAdminPermissions(@Req() req: RequestWithUser) {
     return this.permissionsService.findAllAdminUsers();
   }
@@ -47,7 +55,8 @@ export class PermissionsController {
       throw new ForbiddenException('You can only view your own permissions');
     }
 
-    const permissions = await this.permissionsService.findUserPermissions(userId);
+    const permissions =
+      await this.permissionsService.findUserPermissions(userId);
     return { userId, permissions };
   }
 

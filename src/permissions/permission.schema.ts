@@ -71,8 +71,7 @@ export class Permission extends Document {
 
 export const PermissionSchema = SchemaFactory.createForClass(Permission);
 
-// Create index for faster lookups
-PermissionSchema.index({ userId: 1 });
+// Index removed - userId already has unique index from @Prop
 
 // Default permissions for different roles
 export const DEFAULT_ADMIN_PERMISSIONS: Partial<PermissionSet> = {

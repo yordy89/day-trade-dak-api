@@ -1,4 +1,12 @@
-import { IsOptional, IsString, IsEnum, IsDateString, IsNumber, Min, IsIn } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsEnum,
+  IsDateString,
+  IsNumber,
+  Min,
+  IsIn,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class EventFiltersDto {

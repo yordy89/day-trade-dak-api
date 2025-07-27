@@ -35,16 +35,18 @@ export class AdminService {
       const logData: any = {
         ...data,
         adminId: data.adminId,
-        ipAddress: data.ipAddress || '0.0.0.0'
+        ipAddress: data.ipAddress || '0.0.0.0',
       };
-      
+
       if (data.resourceId) {
         logData.resourceId = data.resourceId;
       }
 
       const log = new this.adminLogModel(logData);
       await log.save();
-      this.logger.log(`Admin action logged: ${data.action} on ${data.resource} by ${data.adminEmail}`);
+      this.logger.log(
+        `Admin action logged: ${data.action} on ${data.resource} by ${data.adminEmail}`,
+      );
       return log;
     } catch (error) {
       this.logger.error('Failed to log admin action', error);
@@ -62,7 +64,8 @@ export class AdminService {
       const subscribedUsers = await this.usersService.countSubscribedUsers();
       const newUsersToday = await this.usersService.countNewUsersToday();
       const newUsersThisWeek = await this.usersService.countNewUsersThisWeek();
-      const newUsersThisMonth = await this.usersService.countNewUsersThisMonth();
+      const newUsersThisMonth =
+        await this.usersService.countNewUsersThisMonth();
 
       return {
         total: totalUsers,
@@ -85,9 +88,12 @@ export class AdminService {
    */
   async getSubscriptionStatistics() {
     try {
-      const subscriptionsByPlan = await this.usersService.getSubscriptionsByPlan();
-      const expiringSubscriptions = await this.usersService.getExpiringSubscriptions(30);
-      const recentCancellations = await this.usersService.getRecentCancellations(30);
+      const subscriptionsByPlan =
+        await this.usersService.getSubscriptionsByPlan();
+      const expiringSubscriptions =
+        await this.usersService.getExpiringSubscriptions(30);
+      const recentCancellations =
+        await this.usersService.getRecentCancellations(30);
 
       return {
         byPlan: subscriptionsByPlan,
@@ -188,7 +194,7 @@ export class AdminService {
       },
     ]);
 
-    return logs.map(log => ({
+    return logs.map((log) => ({
       action: log._id.action,
       resource: log._id.resource,
       count: log.count,

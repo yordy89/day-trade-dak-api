@@ -1,6 +1,9 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { SubscriptionPlan, SubscriptionPlanSchema } from './subscription-plan.schema';
+import {
+  SubscriptionPlan,
+  SubscriptionPlanSchema,
+} from './subscription-plan.schema';
 import { User, UserSchema } from '../users/user.schema';
 import { SubscriptionsService } from './subscriptions.service';
 import { SubscriptionsController } from './subscriptions.controller';

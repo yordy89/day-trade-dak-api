@@ -57,7 +57,7 @@ export class JwtAuthGuard implements CanActivate {
         _id: user._id.toString(),
         email: user.email,
         role: user.role,
-        ...user.toObject()
+        ...user.toObject(),
       };
       return true;
     } catch (err) {

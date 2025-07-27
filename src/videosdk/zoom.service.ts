@@ -18,13 +18,23 @@ export class ZoomService {
 
   constructor(private configService: ConfigService) {
     // Using Personal Meeting ID approach - no API needed
-    this.defaultMeetingId = this.configService.get<string>('ZOOM_PERSONAL_MEETING_ID', '');
-    this.defaultPassword = this.configService.get<string>('ZOOM_MEETING_PASSWORD', '');
+    this.defaultMeetingId = this.configService.get<string>(
+      'ZOOM_PERSONAL_MEETING_ID',
+      '',
+    );
+    this.defaultPassword = this.configService.get<string>(
+      'ZOOM_MEETING_PASSWORD',
+      '',
+    );
     this.zoomDomain = this.configService.get<string>('ZOOM_DOMAIN', 'zoom.us');
 
     this.logger.log('Zoom Service initialized');
-    this.logger.log(`Meeting ID: ${this.defaultMeetingId ? 'Configured' : 'NOT CONFIGURED'}`);
-    this.logger.log(`Password: ${this.defaultPassword ? 'Configured' : 'NOT CONFIGURED'}`);
+    this.logger.log(
+      `Meeting ID: ${this.defaultMeetingId ? 'Configured' : 'NOT CONFIGURED'}`,
+    );
+    this.logger.log(
+      `Password: ${this.defaultPassword ? 'Configured' : 'NOT CONFIGURED'}`,
+    );
   }
 
   /**
@@ -34,7 +44,7 @@ export class ZoomService {
   generateMeetingUrl(config: Partial<ZoomMeetingConfig>): string {
     const meetingId = config.meetingId || this.defaultMeetingId;
     const password = config.password || this.defaultPassword;
-    
+
     if (!meetingId) {
       throw new Error('Zoom meeting ID is not configured');
     }
@@ -48,7 +58,7 @@ export class ZoomService {
 
     // Add query parameters
     const params = new URLSearchParams();
-    
+
     // Add password if provided
     if (password) {
       params.append('pwd', password);
@@ -83,7 +93,7 @@ export class ZoomService {
   generateHostUrl(config: Partial<ZoomMeetingConfig>): string {
     return this.generateMeetingUrl({
       ...config,
-      role: 'host'
+      role: 'host',
     });
   }
 
@@ -100,7 +110,7 @@ export class ZoomService {
   getMeetingConfig(): { meetingId: string; hasPassword: boolean } {
     return {
       meetingId: this.defaultMeetingId,
-      hasPassword: !!this.defaultPassword
+      hasPassword: !!this.defaultPassword,
     };
   }
 
@@ -110,7 +120,7 @@ export class ZoomService {
   formatMeetingId(meetingId?: string): string {
     const id = meetingId || this.defaultMeetingId;
     if (!id) return '';
-    
+
     // Format as XXX XXX XXXX or XXX XXXX XXXX depending on length
     const cleaned = id.replace(/\D/g, '');
     if (cleaned.length === 10) {

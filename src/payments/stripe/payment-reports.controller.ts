@@ -292,25 +292,31 @@ export class PaymentReportsController {
     schema: {
       type: 'object',
       properties: {
-        type: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'custom'] },
+        type: {
+          type: 'string',
+          enum: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'custom'],
+        },
         format: { type: 'string', enum: ['pdf', 'csv', 'excel'] },
         dateRange: {
           type: 'object',
           properties: {
             start: { type: 'string', format: 'date' },
-            end: { type: 'string', format: 'date' }
-          }
+            end: { type: 'string', format: 'date' },
+          },
         },
-        includeCharts: { type: 'boolean' }
-      }
-    }
+        includeCharts: { type: 'boolean' },
+      },
+    },
   })
-  async generateReport(@Body() reportConfig: {
-    type: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
-    format: 'pdf' | 'csv' | 'excel';
-    dateRange?: { start: string; end: string };
-    includeCharts?: boolean;
-  }) {
+  async generateReport(
+    @Body()
+    reportConfig: {
+      type: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
+      format: 'pdf' | 'csv' | 'excel';
+      dateRange?: { start: string; end: string };
+      includeCharts?: boolean;
+    },
+  ) {
     let startDate: Date;
     let endDate: Date;
     const now = new Date();
@@ -339,15 +345,20 @@ export class PaymentReportsController {
         break;
       case 'custom':
         if (!reportConfig.dateRange) {
-          throw new BadRequestException('Date range required for custom reports');
+          throw new BadRequestException(
+            'Date range required for custom reports',
+          );
         }
         startDate = new Date(reportConfig.dateRange.start);
         endDate = new Date(reportConfig.dateRange.end);
         break;
     }
 
-    const reportData = await this.analyticsService.generatePaymentReport(startDate, endDate);
-    
+    const reportData = await this.analyticsService.generatePaymentReport(
+      startDate,
+      endDate,
+    );
+
     // TODO: Format report based on requested format (PDF, CSV, Excel)
     // For now, return raw data
     return {
@@ -355,7 +366,7 @@ export class PaymentReportsController {
       format: reportConfig.format,
       dateRange: { start: startDate, end: endDate },
       data: reportData,
-      generatedAt: new Date()
+      generatedAt: new Date(),
     };
   }
 }

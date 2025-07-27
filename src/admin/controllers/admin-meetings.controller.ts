@@ -12,7 +12,13 @@ import {
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../guards/jwt-auth-guard';
 import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/role.decorator';
@@ -119,12 +125,9 @@ export class AdminMeetingsController {
     @Body() createMeetingDto: CreateMeetingDto,
     @Request() req: RequestWithUser,
   ) {
-    // Use the hostId from DTO if provided, otherwise use the current user
-    const hostId = createMeetingDto.hostId || req.user?.userId || req.user?._id;
-    
     const meeting = await this.adminMeetingsService.createMeeting(
       createMeetingDto,
-      hostId,
+      createMeetingDto.hostId,
     );
 
     // Log admin action
@@ -149,8 +152,12 @@ export class AdminMeetingsController {
     @Body() updateMeetingDto: UpdateMeetingDto,
     @Request() req: RequestWithUser,
   ) {
-    const previousMeeting = await this.adminMeetingsService.getMeetingById(meetingId);
-    const updatedMeeting = await this.adminMeetingsService.updateMeeting(meetingId, updateMeetingDto);
+    const previousMeeting =
+      await this.adminMeetingsService.getMeetingById(meetingId);
+    const updatedMeeting = await this.adminMeetingsService.updateMeeting(
+      meetingId,
+      updateMeetingDto,
+    );
 
     // Log admin action
     await this.adminService.logAdminAction({
@@ -240,7 +247,8 @@ export class AdminMeetingsController {
   @Post('daily/update-schedule')
   @ApiOperation({ summary: 'Manually update daily meeting schedule' })
   async updateDailyMeetingSchedule(@Request() req: RequestWithUser) {
-    const meeting = await this.adminMeetingsService.updateDailyMeetingSchedule();
+    const meeting =
+      await this.adminMeetingsService.updateDailyMeetingSchedule();
 
     // Log admin action
     await this.adminService.logAdminAction({
@@ -258,7 +266,7 @@ export class AdminMeetingsController {
   }
 
   @Post('cron/trigger-cleanup')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Manually trigger the daily meeting cleanup and creation cron job',
   })
   async triggerDailyCleanup(@Request() req: RequestWithUser) {

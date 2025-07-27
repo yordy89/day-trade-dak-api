@@ -7,6 +7,9 @@ import { UsersModule } from 'src/users/users.module';
 import { AuthModule } from 'src/auth/auth.module';
 import { VideoClass, VideoClassSchema } from './videoClass.schema';
 import { S3Module } from 'src/aws/s3/s3.module';
+import { GuardsModule } from 'src/guards/guards.module';
+import { ModulePermissionsModule } from 'src/module-permissions/module-permissions.module';
+import { SubscriptionsModule } from 'src/subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -17,6 +20,9 @@ import { S3Module } from 'src/aws/s3/s3.module';
     UsersModule,
     AuthModule,
     S3Module,
+    GuardsModule,
+    ModulePermissionsModule,
+    SubscriptionsModule,
   ],
   controllers: [VideoController],
   providers: [VideoService],

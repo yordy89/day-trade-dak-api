@@ -1,11 +1,16 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from '../permissions/permissions.service';
 import { Role } from '../constants';
 import { PermissionSet } from '../permissions/permission.schema';
 
 export const PERMISSIONS_KEY = 'permissions';
-export const RequirePermissions = (...permissions: (keyof PermissionSet)[]) => 
+export const RequirePermissions = (...permissions: (keyof PermissionSet)[]) =>
   Reflect.metadata(PERMISSIONS_KEY, permissions);
 
 @Injectable()
@@ -16,10 +21,9 @@ export class PermissionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredPermissions = this.reflector.getAllAndOverride<(keyof PermissionSet)[]>(
-      PERMISSIONS_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const requiredPermissions = this.reflector.getAllAndOverride<
+      (keyof PermissionSet)[]
+    >(PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
 
     if (!requiredPermissions || requiredPermissions.length === 0) {
       return true;
@@ -45,7 +49,9 @@ export class PermissionGuard implements CanActivate {
       );
 
       if (!hasPermission) {
-        throw new ForbiddenException(`Missing required permission: ${permission}`);
+        throw new ForbiddenException(
+          `Missing required permission: ${permission}`,
+        );
       }
     }
 

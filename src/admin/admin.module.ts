@@ -19,13 +19,26 @@ import { AdminLog, AdminLogSchema } from './schemas/admin-log.schema';
 import { User, UserSchema } from '../users/user.schema';
 import { Meeting, MeetingSchema } from '../schemas/meeting.schema';
 import { Event, EventSchema } from '../event/schemas/event.schema';
-import { EventRegistration, EventRegistrationSchema } from '../event/schemas/eventRegistration.schema';
+import {
+  EventRegistration,
+  EventRegistrationSchema,
+} from '../event/schemas/eventRegistration.schema';
 import { MeetingCronService } from '../services/meeting-cron.service';
-import { Transaction, TransactionSchema } from '../payments/stripe/transaction.schema';
-import { SubscriptionHistory, SubscriptionHistorySchema } from '../payments/stripe/subscription-history.schema';
+import {
+  Transaction,
+  TransactionSchema,
+} from '../payments/stripe/transaction.schema';
+import {
+  SubscriptionHistory,
+  SubscriptionHistorySchema,
+} from '../payments/stripe/subscription-history.schema';
 import { PaymentAnalyticsService } from '../payments/stripe/payment-analytics.service';
-import { SubscriptionPlan, SubscriptionPlanSchema } from '../subscriptions/subscription-plan.schema';
+import {
+  SubscriptionPlan,
+  SubscriptionPlanSchema,
+} from '../subscriptions/subscription-plan.schema';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { LiveKitModule } from '../livekit/livekit.module';
 
 @Module({
   imports: [
@@ -43,9 +56,33 @@ import { PermissionsModule } from '../permissions/permissions.module';
     AuthModule,
     VideoSDKModule,
     PermissionsModule,
+    LiveKitModule,
   ],
-  controllers: [AdminController, AdminUsersController, AdminAnalyticsController, AdminMeetingsController, AdminEventsController, AdminSubscriptionsController],
-  providers: [AdminService, AdminUsersService, AdminAnalyticsService, AdminMeetingsService, AdminEventsService, AdminSubscriptionsService, MeetingCronService, PaymentAnalyticsService],
-  exports: [AdminService, AdminUsersService, AdminAnalyticsService, AdminMeetingsService, AdminEventsService, AdminSubscriptionsService],
+  controllers: [
+    AdminController,
+    AdminUsersController,
+    AdminAnalyticsController,
+    AdminMeetingsController,
+    AdminEventsController,
+    AdminSubscriptionsController,
+  ],
+  providers: [
+    AdminService,
+    AdminUsersService,
+    AdminAnalyticsService,
+    AdminMeetingsService,
+    AdminEventsService,
+    AdminSubscriptionsService,
+    MeetingCronService,
+    PaymentAnalyticsService,
+  ],
+  exports: [
+    AdminService,
+    AdminUsersService,
+    AdminAnalyticsService,
+    AdminMeetingsService,
+    AdminEventsService,
+    AdminSubscriptionsService,
+  ],
 })
 export class AdminModule {}

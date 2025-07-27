@@ -36,6 +36,11 @@ import { StripeModule } from 'src/payments/stripe/stripe.module';
     EventsService,
     EventRegistrationsService,
   ],
-  exports: ['EventsService', EventsServiceOptimized, EventsService, EventRegistrationsService],
+  exports: [
+    'EventsService',
+    EventsServiceOptimized,
+    EventsService,
+    EventRegistrationsService,
+  ],
 })
 export class EventModule {}

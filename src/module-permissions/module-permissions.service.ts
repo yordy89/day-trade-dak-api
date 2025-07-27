@@ -1,7 +1,16 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { ModulePermission, ModulePermissionDocument, ModuleType } from './module-permission.schema';
+import {
+  ModulePermission,
+  ModulePermissionDocument,
+  ModuleType,
+} from './module-permission.schema';
 import { CreateModulePermissionDto } from './dto/create-module-permission.dto';
 import { UpdateModulePermissionDto } from './dto/update-module-permission.dto';
 import { User, UserDocument } from '../users/user.schema';
@@ -82,6 +91,34 @@ export class ModulePermissionsService {
       return true;
     }
 
+    // Check if user has an active subscription for this module
+    // Map module types to subscription plans
+    const moduleToSubscriptionMap: Partial<Record<ModuleType, string>> = {
+      [ModuleType.CLASSES]: 'Classes',
+      [ModuleType.LIVE_WEEKLY]: 'LiveWeeklyManual',
+      [ModuleType.LIVE_RECORDED]: 'LiveRecorded',
+      [ModuleType.MASTER_CLASSES]: 'MasterClases',
+      [ModuleType.PSICOTRADING]: 'Psicotrading',
+    };
+
+    const requiredSubscription = moduleToSubscriptionMap[moduleType];
+    if (requiredSubscription && user?.subscriptions) {
+      const hasSubscription = user.subscriptions.some((sub: any) => {
+        if (typeof sub === 'string') {
+          return sub === requiredSubscription;
+        }
+        // Check if subscription is active and not expired
+        return sub.plan === requiredSubscription && 
+               (!sub.status || sub.status === 'active') &&
+               (!sub.expiresAt || new Date(sub.expiresAt) > new Date()) &&
+               (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > new Date());
+      });
+      
+      if (hasSubscription) {
+        return true;
+      }
+    }
+
     // Check for active permission
     const permission = await this.modulePermissionModel.findOne({
       userId,
@@ -123,12 +160,12 @@ export class ModulePermissionsService {
   ): Promise<void> {
     const result = await this.modulePermissionModel.updateOne(
       { userId, moduleType, isActive: true },
-      { 
-        $set: { 
+      {
+        $set: {
           isActive: false,
           hasAccess: false,
           updatedAt: new Date(),
-        } 
+        },
       },
     );
 
@@ -181,7 +218,7 @@ export class ModulePermissionsService {
       })
       .populate('userId', 'firstName lastName email profileImage');
 
-    return permissions.map(p => ({
+    return permissions.map((p) => ({
       user: p.userId,
       permission: {
         expiresAt: p.expiresAt,
@@ -200,7 +237,7 @@ export class ModulePermissionsService {
       grantedBy: string;
     },
   ): Promise<any> {
-    const operations = userIds.map(userId => ({
+    const operations = userIds.map((userId) => ({
       updateOne: {
         filter: { userId, moduleType },
         update: {
@@ -218,7 +255,7 @@ export class ModulePermissionsService {
     }));
 
     const result = await this.modulePermissionModel.bulkWrite(operations);
-    
+
     this.logger.log(
       `Bulk granted ${moduleType} access to ${userIds.length} users`,
       'ModulePermissionsService',

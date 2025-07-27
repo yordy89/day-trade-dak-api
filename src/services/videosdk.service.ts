@@ -38,7 +38,7 @@ export class VideoSDKService {
             Authorization: this.getAuthToken(),
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       return response.data;
@@ -56,14 +56,11 @@ export class VideoSDKService {
 
   async getRoomDetails(roomId: string) {
     try {
-      const response = await axios.get(
-        `${this.apiEndpoint}/rooms/${roomId}`,
-        {
-          headers: {
-            Authorization: this.getAuthToken(),
-          },
-        }
-      );
+      const response = await axios.get(`${this.apiEndpoint}/rooms/${roomId}`, {
+        headers: {
+          Authorization: this.getAuthToken(),
+        },
+      });
 
       return response.data;
     } catch (error) {
@@ -80,7 +77,7 @@ export class VideoSDKService {
           headers: {
             Authorization: this.getAuthToken(),
           },
-        }
+        },
       );
 
       return response.data;
@@ -100,7 +97,7 @@ export class VideoSDKService {
             Authorization: this.getAuthToken(),
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       return response.data;
@@ -131,7 +128,7 @@ export class VideoSDKService {
           headers: {
             Authorization: this.getAuthToken(),
           },
-        }
+        },
       );
 
       return response.data;

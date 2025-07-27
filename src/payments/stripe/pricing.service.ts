@@ -4,10 +4,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { UserService } from 'src/users/users.service';
 import { SubscriptionPlan } from 'src/users/user.dto';
-import { 
-  SubscriptionPlan as SubscriptionPlanSchema, 
+import {
+  SubscriptionPlan as SubscriptionPlanSchema,
   SubscriptionPlanDocument,
-  ConditionalPricingRule 
+  ConditionalPricingRule,
 } from 'src/subscriptions/subscription-plan.schema';
 
 export interface PricingRule {
@@ -53,15 +53,17 @@ export class PricingService implements OnModuleInit {
 
   private async loadPricingRules() {
     try {
-      const plans = await this.subscriptionPlanModel.find({ isActive: true }).exec();
-      
+      const plans = await this.subscriptionPlanModel
+        .find({ isActive: true })
+        .exec();
+
       this.pricingRules.clear();
       this.planCache.clear();
-      
+
       for (const plan of plans) {
         // Cache the plan document
         this.planCache.set(plan.planId, plan);
-        
+
         // Convert to PricingRule format for backward compatibility
         const pricingRule: PricingRule = {
           plan: plan.planId as SubscriptionPlan,
@@ -69,10 +71,10 @@ export class PricingService implements OnModuleInit {
           currency: plan.pricing.currency,
           conditions: this.convertConditionalPricing(plan.conditionalPricing),
         };
-        
+
         this.pricingRules.set(plan.planId as SubscriptionPlan, pricingRule);
       }
-      
+
       this.lastCacheUpdate = Date.now();
       this.logger.log(`Loaded ${plans.length} pricing rules from database`);
     } catch (error) {
@@ -82,13 +84,15 @@ export class PricingService implements OnModuleInit {
     }
   }
 
-  private convertConditionalPricing(conditionalPricing: ConditionalPricingRule[]): PricingRule['conditions'] {
+  private convertConditionalPricing(
+    conditionalPricing: ConditionalPricingRule[],
+  ): PricingRule['conditions'] {
     if (!conditionalPricing || conditionalPricing.length === 0) {
       return undefined;
     }
 
     const conditions: PricingRule['conditions'] = {};
-    
+
     for (const rule of conditionalPricing) {
       if (rule.type === 'free') {
         conditions.freeWithPlan = rule.requiredPlans as SubscriptionPlan[];
@@ -102,7 +106,7 @@ export class PricingService implements OnModuleInit {
         }
       }
     }
-    
+
     return Object.keys(conditions).length > 0 ? conditions : undefined;
   }
 
@@ -118,7 +122,7 @@ export class PricingService implements OnModuleInit {
     targetPlan: SubscriptionPlan,
   ): Promise<CalculatedPrice> {
     await this.refreshCacheIfNeeded();
-    
+
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new Error('User not found');
@@ -198,7 +202,7 @@ export class PricingService implements OnModuleInit {
 
   async calculatePricesForAllPlans(userId: string): Promise<CalculatedPrice[]> {
     await this.refreshCacheIfNeeded();
-    
+
     const plans = Array.from(this.pricingRules.keys());
     const prices = await Promise.all(
       plans.map((plan) => this.calculatePrice(userId, plan)),
@@ -209,19 +213,25 @@ export class PricingService implements OnModuleInit {
 
   async getPriceIdForPlan(plan: SubscriptionPlan): Promise<string> {
     await this.refreshCacheIfNeeded();
-    
+
     const planDoc = this.planCache.get(plan);
     if (!planDoc) {
       throw new Error(`No plan found in database for: ${plan}`);
     }
 
-    const environment = this.configService.get<string>('NODE_ENV', 'development');
-    const stripeIds = environment === 'production' 
-      ? planDoc.stripeIds.production 
-      : planDoc.stripeIds.development;
+    const environment = this.configService.get<string>(
+      'NODE_ENV',
+      'development',
+    );
+    const stripeIds =
+      environment === 'production'
+        ? planDoc.stripeIds.production
+        : planDoc.stripeIds.development;
 
     if (!stripeIds.priceId) {
-      throw new Error(`No price ID configured for plan: ${plan} in ${environment} environment`);
+      throw new Error(
+        `No price ID configured for plan: ${plan} in ${environment} environment`,
+      );
     }
 
     return stripeIds.priceId;

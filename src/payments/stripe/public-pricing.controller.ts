@@ -1,10 +1,16 @@
-import { Controller, Get, Query, Param, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Param,
+  NotFoundException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { 
-  SubscriptionPlan as SubscriptionPlanSchema, 
-  SubscriptionPlanDocument 
+import {
+  SubscriptionPlan as SubscriptionPlanSchema,
+  SubscriptionPlanDocument,
 } from 'src/subscriptions/subscription-plan.schema';
 
 @ApiTags('public')
@@ -17,11 +23,20 @@ export class PublicPricingController {
 
   @Get('subscription-plans')
   @ApiOperation({ summary: 'Get all active subscription plans (public)' })
-  @ApiQuery({ name: 'type', required: false, description: 'Filter by plan type' })
-  @ApiQuery({ name: 'lang', required: false, description: 'Language (en/es)', enum: ['en', 'es'] })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    description: 'Filter by plan type',
+  })
+  @ApiQuery({
+    name: 'lang',
+    required: false,
+    description: 'Language (en/es)',
+    enum: ['en', 'es'],
+  })
   async getPublicSubscriptionPlans(
     @Query('type') type?: string,
-    @Query('lang') lang: 'en' | 'es' = 'en'
+    @Query('lang') lang: 'en' | 'es' = 'en',
   ): Promise<any[]> {
     const query: any = { isActive: true };
     if (type) {
@@ -34,51 +49,61 @@ export class PublicPricingController {
       .exec();
 
     // Transform for public consumption
-    return plans.map(plan => ({
+    return plans.map((plan) => ({
       planId: plan.planId,
       // Handle both old and new displayName formats
-      displayName: typeof plan.displayName === 'string' 
-        ? plan.displayName 
-        : (plan.displayName?.[lang] || plan.displayName?.en || ''),
-      // Handle both old and new description formats  
-      description: typeof plan.description === 'string'
-        ? plan.description
-        : (plan.description?.[lang] || plan.description?.en || ''),
+      displayName:
+        typeof plan.displayName === 'string'
+          ? plan.displayName
+          : plan.displayName?.[lang] || plan.displayName?.en || '',
+      // Handle both old and new description formats
+      description:
+        typeof plan.description === 'string'
+          ? plan.description
+          : plan.description?.[lang] || plan.description?.en || '',
       type: plan.type,
-      pricing: plan.pricing ? {
-        amount: plan.pricing.baseAmount,
-        currency: plan.pricing.currency,
-        interval: plan.pricing.interval,
-        intervalCount: plan.pricing.intervalCount,
-      } : {
-        amount: plan.amount || 0,
-        currency: plan.currency || 'usd',
-        interval: plan.interval,
-        intervalCount: plan.intervalCount || 1,
-      },
+      pricing: plan.pricing
+        ? {
+            amount: plan.pricing.baseAmount,
+            currency: plan.pricing.currency,
+            interval: plan.pricing.interval,
+            intervalCount: plan.pricing.intervalCount,
+          }
+        : {
+            amount: plan.amount || 0,
+            currency: plan.currency || 'usd',
+            interval: plan.interval,
+            intervalCount: plan.intervalCount || 1,
+          },
       // Handle both old and new features formats
-      features: Array.isArray(plan.features) 
-        ? plan.features 
-        : (plan.features?.[lang] || plan.features?.en || []),
+      features: Array.isArray(plan.features)
+        ? plan.features
+        : plan.features?.[lang] || plan.features?.en || [],
       uiMetadata: plan.uiMetadata || {
         color: '#000000',
         icon: 'Star',
         popular: plan.isPopular || false,
-        sortOrder: plan.sortOrder || 0
+        sortOrder: plan.sortOrder || 0,
       },
       trialPeriodDays: plan.trialPeriodDays || 0,
       // Don't expose conditional pricing rules publicly
-      hasConditionalPricing: plan.conditionalPricing && plan.conditionalPricing.length > 0,
+      hasConditionalPricing:
+        plan.conditionalPricing && plan.conditionalPricing.length > 0,
     }));
   }
 
   @Get('subscription-plans/:planId')
   @ApiOperation({ summary: 'Get a specific subscription plan (public)' })
   @ApiParam({ name: 'planId', description: 'Plan ID' })
-  @ApiQuery({ name: 'lang', required: false, description: 'Language (en/es)', enum: ['en', 'es'] })
+  @ApiQuery({
+    name: 'lang',
+    required: false,
+    description: 'Language (en/es)',
+    enum: ['en', 'es'],
+  })
   async getPublicSubscriptionPlan(
     @Param('planId') planId: string,
-    @Query('lang') lang: 'en' | 'es' = 'en'
+    @Query('lang') lang: 'en' | 'es' = 'en',
   ): Promise<any> {
     const plan = await this.subscriptionPlanModel
       .findOne({ planId, isActive: true })
@@ -91,37 +116,42 @@ export class PublicPricingController {
     return {
       planId: plan.planId,
       // Handle both old and new displayName formats
-      displayName: typeof plan.displayName === 'string' 
-        ? plan.displayName 
-        : (plan.displayName?.[lang] || plan.displayName?.en || ''),
-      // Handle both old and new description formats  
-      description: typeof plan.description === 'string'
-        ? plan.description
-        : (plan.description?.[lang] || plan.description?.en || ''),
+      displayName:
+        typeof plan.displayName === 'string'
+          ? plan.displayName
+          : plan.displayName?.[lang] || plan.displayName?.en || '',
+      // Handle both old and new description formats
+      description:
+        typeof plan.description === 'string'
+          ? plan.description
+          : plan.description?.[lang] || plan.description?.en || '',
       type: plan.type,
-      pricing: plan.pricing ? {
-        amount: plan.pricing.baseAmount,
-        currency: plan.pricing.currency,
-        interval: plan.pricing.interval,
-        intervalCount: plan.pricing.intervalCount,
-      } : {
-        amount: plan.amount || 0,
-        currency: plan.currency || 'usd',
-        interval: plan.interval,
-        intervalCount: plan.intervalCount || 1,
-      },
+      pricing: plan.pricing
+        ? {
+            amount: plan.pricing.baseAmount,
+            currency: plan.pricing.currency,
+            interval: plan.pricing.interval,
+            intervalCount: plan.pricing.intervalCount,
+          }
+        : {
+            amount: plan.amount || 0,
+            currency: plan.currency || 'usd',
+            interval: plan.interval,
+            intervalCount: plan.intervalCount || 1,
+          },
       // Handle both old and new features formats
-      features: Array.isArray(plan.features) 
-        ? plan.features 
-        : (plan.features?.[lang] || plan.features?.en || []),
+      features: Array.isArray(plan.features)
+        ? plan.features
+        : plan.features?.[lang] || plan.features?.en || [],
       uiMetadata: plan.uiMetadata || {
         color: '#000000',
         icon: 'Star',
         popular: plan.isPopular || false,
-        sortOrder: plan.sortOrder || 0
+        sortOrder: plan.sortOrder || 0,
       },
       trialPeriodDays: plan.trialPeriodDays || 0,
-      hasConditionalPricing: plan.conditionalPricing && plan.conditionalPricing.length > 0,
+      hasConditionalPricing:
+        plan.conditionalPricing && plan.conditionalPricing.length > 0,
     };
   }
 }

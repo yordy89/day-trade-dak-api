@@ -21,6 +21,16 @@ export class EventsController {
     return this.eventsService.findAll();
   }
 
+  @Get('community/active')
+  findActiveCommunityEvent() {
+    return this.eventsService.findActiveCommunityEvent();
+  }
+
+  @Get('community/:id')
+  findCommunityEventById(@Param('id') id: string) {
+    return this.eventsService.findCommunityEventById(id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.eventsService.findOne(id);

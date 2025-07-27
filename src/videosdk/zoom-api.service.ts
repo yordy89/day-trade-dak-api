@@ -12,6 +12,10 @@ export interface CreateZoomMeetingDto {
   joinBeforeHost?: boolean;
   muteUponEntry?: boolean;
   recordAutomatically?: boolean;
+  requireRegistration?: boolean; // Enable registration with auto-approval
+  autoAdmit?: boolean; // Disable waiting room for automation
+  enableChat?: boolean; // Control chat availability
+  autoLockMinutes?: number; // Auto-lock meeting after X minutes
 }
 
 export interface ZoomMeetingResponse {
@@ -91,12 +95,21 @@ export class ZoomApiService {
     // Server-to-Server OAuth App credentials
     this.accountId = this.configService.get<string>('ZOOM_ACCOUNT_ID', '');
     this.clientId = this.configService.get<string>('ZOOM_CLIENT_ID', '');
-    this.clientSecret = this.configService.get<string>('ZOOM_CLIENT_SECRET', '');
+    this.clientSecret = this.configService.get<string>(
+      'ZOOM_CLIENT_SECRET',
+      '',
+    );
 
     this.logger.log('Zoom API Service initialized');
-    this.logger.log(`Account ID: ${this.accountId ? 'Configured' : 'NOT CONFIGURED'}`);
-    this.logger.log(`Client ID: ${this.clientId ? 'Configured' : 'NOT CONFIGURED'}`);
-    this.logger.log(`Client Secret: ${this.clientSecret ? 'Configured' : 'NOT CONFIGURED'}`);
+    this.logger.log(
+      `Account ID: ${this.accountId ? 'Configured' : 'NOT CONFIGURED'}`,
+    );
+    this.logger.log(
+      `Client ID: ${this.clientId ? 'Configured' : 'NOT CONFIGURED'}`,
+    );
+    this.logger.log(
+      `Client Secret: ${this.clientSecret ? 'Configured' : 'NOT CONFIGURED'}`,
+    );
 
     if (!this.accountId || !this.clientId || !this.clientSecret) {
       this.logger.error('Zoom API credentials are not fully configured');
@@ -113,34 +126,36 @@ export class ZoomApiService {
     }
 
     try {
-      const credentials = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
-      
-      const response = await axios.post(
-        'https://zoom.us/oauth/token',
-        null,
-        {
-          params: {
-            grant_type: 'account_credentials',
-            account_id: this.accountId,
-          },
-          headers: {
-            'Authorization': `Basic ${credentials}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        }
-      );
+      const credentials = Buffer.from(
+        `${this.clientId}:${this.clientSecret}`,
+      ).toString('base64');
+
+      const response = await axios.post('https://zoom.us/oauth/token', null, {
+        params: {
+          grant_type: 'account_credentials',
+          account_id: this.accountId,
+        },
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
 
       this.accessToken = response.data.access_token;
       // Set expiration 5 minutes before actual expiration for safety
-      this.tokenExpiresAt = Date.now() + ((response.data.expires_in - 300) * 1000);
-      
+      this.tokenExpiresAt =
+        Date.now() + (response.data.expires_in - 300) * 1000;
+
       this.logger.log('Successfully obtained Zoom access token');
       return this.accessToken;
     } catch (error: any) {
-      this.logger.error('Failed to get Zoom access token:', error.response?.data || error.message);
+      this.logger.error(
+        'Failed to get Zoom access token:',
+        error.response?.data || error.message,
+      );
       throw new HttpException(
         'Failed to authenticate with Zoom API',
-        HttpStatus.INTERNAL_SERVER_ERROR
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -156,7 +171,7 @@ export class ZoomApiService {
   }> {
     try {
       const accessToken = await this.getAccessToken();
-      
+
       const meetingData = {
         topic: dto.topic,
         type: 2, // Scheduled meeting
@@ -174,14 +189,48 @@ export class ZoomApiService {
           mute_upon_entry: dto.muteUponEntry ?? true,
           watermark: false,
           use_pmi: false, // Always create unique meeting IDs
-          approval_type: 2, // No registration required
+          approval_type: dto.requireRegistration ? 0 : 2, // 0 = Auto approve, 2 = No registration
+          registration_type: dto.requireRegistration ? 1 : undefined, // 1 = Required for joining
           audio: 'both',
           auto_recording: dto.recordAutomatically ? 'cloud' : 'none',
-          enforce_login: false,
-          waiting_room: dto.waitingRoom ?? true,
-          allow_multiple_devices: true,
-          show_join_info: true,
+          enforce_login: false, // Participants don't need Zoom accounts
+          waiting_room: dto.autoAdmit ? false : (dto.waitingRoom ?? false), // Disable for automation
+          allow_multiple_devices: false, // Prevent credential sharing
+          show_join_info: false, // Hide meeting info to prevent sharing
           email_notification: false,
+          registrants_confirmation_email: false, // No confirmation emails
+          registrants_email_notification: false, // No notification emails
+          // Security settings to prevent participants from inviting others
+          meeting_invitees: [], // Empty array means no one can invite
+          private_meeting: true, // Make meeting private
+          show_share_button: false, // Hide share button
+          allow_participants_to_rename: false, // Prevent renaming
+          who_can_share_screen: 'host', // Only host can share screen
+          who_can_share_screen_when_someone_is_sharing: 'host', // Only host can interrupt
+          annotation: false, // Disable annotation by participants
+          whiteboard: false, // Disable whiteboard for participants
+          remote_control: false, // Disable remote control
+          non_verbal_feedback: false, // Disable reactions
+          breakout_room: false, // Disable breakout rooms
+          remote_support: false, // Disable remote support
+          closed_caption: false, // Disable closed captions
+          far_end_camera_control: false, // Disable camera control
+          share_dual_camera: false, // Disable dual camera sharing
+          // Participant removal settings
+          allow_removed_participants_to_rejoin: false, // Prevent removed users from rejoining
+          // Chat settings
+          meeting_chat: {
+            enable: dto.enableChat ?? false, // Disable chat by default
+            type: 1, // 1 = In-meeting chat disabled
+            allow_attendees_chat_with: 1, // 1 = No one
+            allow_auto_save_chat: false,
+          },
+          // Additional security
+          enable_dedicated_group_chat: false,
+          allow_show_zoom_windows: false,
+          allow_live_streaming: false,
+          // Lock meeting settings
+          lock_meeting_after_mins: dto.autoLockMinutes, // Auto-lock after X minutes
         },
       };
 
@@ -190,13 +239,15 @@ export class ZoomApiService {
         meetingData,
         {
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
-      this.logger.log(`Created Zoom meeting: ${response.data.id} - ${response.data.topic}`);
+      this.logger.log(
+        `Created Zoom meeting: ${response.data.id} - ${response.data.topic}`,
+      );
 
       return {
         zoomMeetingId: response.data.id.toString(),
@@ -207,22 +258,25 @@ export class ZoomApiService {
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError;
-        this.logger.error('Zoom API Error:', axiosError.response?.data || axiosError.message);
-        
+        this.logger.error(
+          'Zoom API Error:',
+          axiosError.response?.data || axiosError.message,
+        );
+
         if (axiosError.response?.status === 401) {
           // Clear cached token and retry once
           this.accessToken = null;
           this.tokenExpiresAt = 0;
           throw new HttpException(
             'Zoom authentication failed. Please check your credentials.',
-            HttpStatus.UNAUTHORIZED
+            HttpStatus.UNAUTHORIZED,
           );
         }
       }
-      
+
       throw new HttpException(
         error.response?.data?.message || 'Failed to create Zoom meeting',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR
+        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -233,22 +287,25 @@ export class ZoomApiService {
   async getMeeting(meetingId: string): Promise<ZoomMeetingResponse> {
     try {
       const accessToken = await this.getAccessToken();
-      
+
       const response = await axios.get<ZoomMeetingResponse>(
         `${this.apiEndpoint}/meetings/${meetingId}`,
         {
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            Authorization: `Bearer ${accessToken}`,
           },
-        }
+        },
       );
 
       return response.data;
     } catch (error: any) {
-      this.logger.error('Failed to get meeting details:', error.response?.data || error.message);
+      this.logger.error(
+        'Failed to get meeting details:',
+        error.response?.data || error.message,
+      );
       throw new HttpException(
         'Failed to get meeting details',
-        HttpStatus.INTERNAL_SERVER_ERROR
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -256,33 +313,35 @@ export class ZoomApiService {
   /**
    * Update meeting status or settings
    */
-  async updateMeeting(meetingId: string, updates: Partial<{
-    topic: string;
-    start_time: string;
-    duration: number;
-    password: string;
-    settings: any;
-  }>): Promise<void> {
+  async updateMeeting(
+    meetingId: string,
+    updates: Partial<{
+      topic: string;
+      start_time: string;
+      duration: number;
+      password: string;
+      settings: any;
+    }>,
+  ): Promise<void> {
     try {
       const accessToken = await this.getAccessToken();
-      
-      await axios.patch(
-        `${this.apiEndpoint}/meetings/${meetingId}`,
-        updates,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+
+      await axios.patch(`${this.apiEndpoint}/meetings/${meetingId}`, updates, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
       this.logger.log(`Updated Zoom meeting: ${meetingId}`);
     } catch (error: any) {
-      this.logger.error('Failed to update meeting:', error.response?.data || error.message);
+      this.logger.error(
+        'Failed to update meeting:',
+        error.response?.data || error.message,
+      );
       throw new HttpException(
         'Failed to update meeting',
-        HttpStatus.INTERNAL_SERVER_ERROR
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -293,19 +352,19 @@ export class ZoomApiService {
   async deleteMeeting(meetingId: string): Promise<void> {
     try {
       const accessToken = await this.getAccessToken();
-      
-      await axios.delete(
-        `${this.apiEndpoint}/meetings/${meetingId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
+
+      await axios.delete(`${this.apiEndpoint}/meetings/${meetingId}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
 
       this.logger.log(`Deleted Zoom meeting: ${meetingId}`);
     } catch (error: any) {
-      this.logger.error('Failed to delete meeting:', error.response?.data || error.message);
+      this.logger.error(
+        'Failed to delete meeting:',
+        error.response?.data || error.message,
+      );
       // Don't throw error for delete - meeting might already be deleted
     }
   }
@@ -316,19 +375,22 @@ export class ZoomApiService {
   async getMeetingRecordings(meetingId: string): Promise<any> {
     try {
       const accessToken = await this.getAccessToken();
-      
+
       const response = await axios.get(
         `${this.apiEndpoint}/meetings/${meetingId}/recordings`,
         {
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            Authorization: `Bearer ${accessToken}`,
           },
-        }
+        },
       );
 
       return response.data;
     } catch (error: any) {
-      this.logger.error('Failed to get recordings:', error.response?.data || error.message);
+      this.logger.error(
+        'Failed to get recordings:',
+        error.response?.data || error.message,
+      );
       return null;
     }
   }
@@ -350,5 +412,54 @@ export class ZoomApiService {
    */
   isConfigured(): boolean {
     return !!(this.accountId && this.clientId && this.clientSecret);
+  }
+
+  /**
+   * Validate if a meeting exists and is active
+   */
+  async validateMeeting(meetingId: string, retries: number = 3): Promise<boolean> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const accessToken = await this.getAccessToken();
+        
+        const response = await axios.get<ZoomMeetingResponse>(
+          `${this.apiEndpoint}/meetings/${meetingId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+            timeout: 5000, // 5 second timeout
+          },
+        );
+        
+        // Check if meeting exists and is not deleted
+        const isValid = response.data && response.data.status !== 'deleted';
+        
+        if (isValid) {
+          this.logger.debug(`Zoom meeting ${meetingId} is valid, status: ${response.data.status}`);
+        }
+        
+        return isValid;
+      } catch (error: any) {
+        // 404 means meeting doesn't exist
+        if (error.response?.status === 404) {
+          this.logger.warn(`Zoom meeting ${meetingId} not found`);
+          return false;
+        }
+        
+        this.logger.warn(
+          `Failed to validate Zoom meeting ${meetingId} (attempt ${attempt}/${retries}): ${error.message}`,
+        );
+        
+        if (attempt < retries) {
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+        } else {
+          // Log the full error on final attempt
+          this.logger.error(`Failed to validate Zoom meeting ${meetingId} after ${retries} attempts`, error);
+        }
+      }
+    }
+    return false;
   }
 }
