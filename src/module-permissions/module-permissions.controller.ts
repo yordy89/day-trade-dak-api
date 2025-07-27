@@ -10,7 +10,12 @@ import {
   Req,
   Query,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../guards/jwt-auth-guard';
 import { RolesGuard } from '../guards/roles.guard';
 import { Roles } from '../decorators/role.decorator';
@@ -76,6 +81,21 @@ export class ModulePermissionsController {
     return { hasAccess, userId, moduleType };
   }
 
+  @Get('my-access/:moduleType')
+  @ApiOperation({ summary: 'Check if current user has access to a module' })
+  @ApiResponse({ status: 200, description: 'Access status' })
+  async checkMyAccess(
+    @Param('moduleType') moduleType: ModuleType,
+    @Req() req: RequestWithUser,
+  ) {
+    const userId = req.user._id.toString();
+    const hasAccess = await this.modulePermissionsService.hasModuleAccess(
+      userId,
+      moduleType,
+    );
+    return { hasAccess, userId, moduleType };
+  }
+
   @Put(':userId/:moduleType')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Update module permission' })
@@ -110,7 +130,8 @@ export class ModulePermissionsController {
   @ApiOperation({ summary: 'Grant module access to multiple users' })
   @ApiResponse({ status: 200, description: 'Bulk grant completed' })
   async bulkGrant(
-    @Body() body: {
+    @Body()
+    body: {
       userIds: string[];
       moduleType: ModuleType;
       expiresAt?: string;
@@ -135,7 +156,7 @@ export class ModulePermissionsController {
   @ApiResponse({ status: 200, description: 'Expiration check completed' })
   async expirePermissions() {
     const count = await this.modulePermissionsService.expirePermissions();
-    return { 
+    return {
       message: `Expired ${count} permissions`,
       expiredCount: count,
     };

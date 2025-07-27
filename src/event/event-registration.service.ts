@@ -1,6 +1,11 @@
 // src/event-registrations/event-registrations.service.ts
 
-import { Injectable, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -87,14 +92,16 @@ export class EventRegistrationsService {
     baseAmount: number,
   ) {
     // Get the registration
-    const registration = await this.eventRegistrationModel.findById(registrationId);
+    const registration =
+      await this.eventRegistrationModel.findById(registrationId);
     if (!registration) {
       throw new BadRequestException('Registration not found');
     }
 
     // Calculate fees if using Klarna
     const klarnaFeePercentage = 0.0644;
-    const klarnaFee = paymentMethod === 'klarna' ? baseAmount * klarnaFeePercentage : 0;
+    const klarnaFee =
+      paymentMethod === 'klarna' ? baseAmount * klarnaFeePercentage : 0;
     const totalAmount = baseAmount + klarnaFee;
 
     // Create checkout session metadata
@@ -103,8 +110,10 @@ export class EventRegistrationsService {
       updateType: 'add_attendees',
       registrationId: registrationId,
       eventId: registration.eventId.toString(),
-      previousAdults: registration.additionalInfo?.['additionalAttendees']?.['adults'] || 0,
-      previousChildren: registration.additionalInfo?.['additionalAttendees']?.['children'] || 0,
+      previousAdults:
+        registration.additionalInfo?.['additionalAttendees']?.['adults'] || 0,
+      previousChildren:
+        registration.additionalInfo?.['additionalAttendees']?.['children'] || 0,
       additionalAdults: additionalAdults.toString(),
       additionalChildren: additionalChildren.toString(),
       email: registration.email,
@@ -112,12 +121,13 @@ export class EventRegistrationsService {
     };
 
     // Create Stripe checkout session for the additional amount
-    const checkoutResponse = await this.stripeService.createEventAttendeeCheckoutSession({
-      amount: totalAmount,
-      metadata,
-      email: registration.email,
-      paymentMethod,
-    });
+    const checkoutResponse =
+      await this.stripeService.createEventAttendeeCheckoutSession({
+        amount: totalAmount,
+        metadata,
+        email: registration.email,
+        paymentMethod,
+      });
 
     return {
       checkoutUrl: checkoutResponse.url,
@@ -141,8 +151,10 @@ export class EventRegistrationsService {
     }
 
     // Get current attendees
-    const currentAdults = registration.additionalInfo?.['additionalAttendees']?.['adults'] || 0;
-    const currentChildren = registration.additionalInfo?.['additionalAttendees']?.['children'] || 0;
+    const currentAdults =
+      registration.additionalInfo?.['additionalAttendees']?.['adults'] || 0;
+    const currentChildren =
+      registration.additionalInfo?.['additionalAttendees']?.['children'] || 0;
 
     // Update attendee counts
     const updatedAdditionalInfo = {

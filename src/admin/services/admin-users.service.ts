@@ -59,7 +59,7 @@ export class AdminUsersService {
         { email: new RegExp(search, 'i') },
         { fullName: new RegExp(search, 'i') },
         { _id: search.match(/^[0-9a-fA-F]{24}$/) ? search : undefined },
-      ].filter(condition => condition._id !== undefined);
+      ].filter((condition) => condition._id !== undefined);
     }
 
     // Status filter
@@ -139,12 +139,15 @@ export class AdminUsersService {
     });
 
     await user.save();
-    
+
     // Create default permissions for admin users
     if (user.role === Role.ADMIN) {
-      await this.permissionsService.createDefaultPermissions(user._id.toString(), user.role);
+      await this.permissionsService.createDefaultPermissions(
+        user._id.toString(),
+        user.role,
+      );
     }
-    
+
     // Return user without sensitive data
     const { password, ...userWithoutPassword } = user.toObject();
     return userWithoutPassword;
@@ -152,13 +155,14 @@ export class AdminUsersService {
 
   async updateUser(userId: string, updateData: any) {
     // Remove sensitive fields that shouldn't be updated directly
-    const { password, _id, email, stripeCustomerId, ...safeUpdateData } = updateData;
+    const { password, _id, email, stripeCustomerId, ...safeUpdateData } =
+      updateData;
 
     const user = await this.userModel
       .findByIdAndUpdate(
         userId,
         { $set: safeUpdateData },
-        { new: true, runValidators: true }
+        { new: true, runValidators: true },
       )
       .select('-password -recoveryToken')
       .lean();
@@ -177,11 +181,7 @@ export class AdminUsersService {
     }
 
     const user = await this.userModel
-      .findByIdAndUpdate(
-        userId,
-        { $set: { status } },
-        { new: true }
-      )
+      .findByIdAndUpdate(userId, { $set: { status } }, { new: true })
       .select('-password -recoveryToken')
       .lean();
 
@@ -191,7 +191,7 @@ export class AdminUsersService {
 
     return {
       ...user,
-      status: user.status || 'active'
+      status: user.status || 'active',
     };
   }
 
@@ -203,7 +203,7 @@ export class AdminUsersService {
     }
 
     // TODO: Clean up related data (subscriptions, logs, etc.)
-    
+
     await this.userModel.deleteOne({ _id: userId });
   }
 
@@ -240,7 +240,7 @@ export class AdminUsersService {
       'Created At',
     ];
 
-    const rows = users.map(user => [
+    const rows = users.map((user) => [
       user._id,
       user.email,
       (user as any).fullName || '',
@@ -248,14 +248,18 @@ export class AdminUsersService {
       (user as any).status || 'active',
       user.subscriptions?.[0]?.plan || 'free',
       user.subscriptions?.[0]?.status || 'none',
-      (user as any).lastLogin ? new Date((user as any).lastLogin).toISOString() : '',
-      (user as any).createdAt ? new Date((user as any).createdAt).toISOString() : '',
+      (user as any).lastLogin
+        ? new Date((user as any).lastLogin).toISOString()
+        : '',
+      (user as any).createdAt
+        ? new Date((user as any).createdAt).toISOString()
+        : '',
     ]);
 
     // Create CSV content
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
     ].join('\n');
 
     return {

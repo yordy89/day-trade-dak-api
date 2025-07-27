@@ -105,4 +105,10 @@ export default () => ({
     enableMonitoring: process.env.ENABLE_PERFORMANCE_MONITORING === 'true',
     metricsInterval: parseInt(process.env.METRICS_INTERVAL, 10) || 60000,
   },
+
+  // Zoom Web SDK
+  zoomWebSDK: {
+    sdkKey: process.env.ZOOM_SDK_KEY,
+    sdkSecret: process.env.ZOOM_SDK_SECRET,
+  },
 });

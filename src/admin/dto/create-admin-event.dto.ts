@@ -1,10 +1,59 @@
-import { IsString, IsNumber, IsBoolean, IsDate, IsEnum, IsOptional, Min, IsUrl } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsBoolean,
+  IsDate,
+  IsEnum,
+  IsOptional,
+  Min,
+  IsUrl,
+  IsObject,
+  IsArray,
+  ValidateNested,
+  IsEmail,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum EventType {
   MASTER_COURSE = 'master_course',
   COMMUNITY_EVENT = 'community_event',
   GENERAL = 'general',
+}
+
+export class EventMetadataDto {
+  @IsString()
+  @IsOptional()
+  hotel?: string;
+
+  @IsString()
+  @IsOptional()
+  hotelAddress?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  includesAccommodation?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  includesMeals?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  includesSaturdayDinner?: boolean;
+}
+
+export class EventContactDto {
+  @IsEmail()
+  @IsOptional()
+  email?: string;
+
+  @IsString()
+  @IsOptional()
+  phone?: string;
+
+  @IsString()
+  @IsOptional()
+  whatsapp?: string;
 }
 
 export class CreateAdminEventDto {
@@ -37,7 +86,7 @@ export class CreateAdminEventDto {
   @IsOptional()
   location?: string;
 
-  @IsUrl()
+  @IsString()
   @IsOptional()
   bannerImage?: string;
 
@@ -67,4 +116,47 @@ export class CreateAdminEventDto {
   @Min(0)
   @IsOptional()
   capacity?: number;
+
+  @IsObject()
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EventMetadataDto)
+  metadata?: EventMetadataDto;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  included?: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  notIncluded?: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  requirements?: string[];
+
+  @IsObject()
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EventContactDto)
+  contact?: EventContactDto;
+
+  @IsObject()
+  @IsOptional()
+  coordinates?: {
+    lat?: number;
+    lng?: number;
+  };
+
+  @IsString()
+  @IsOptional()
+  @IsEnum(['active', 'draft', 'completed'])
+  status?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  featuredInCRM?: boolean;
 }

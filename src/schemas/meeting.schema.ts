@@ -29,10 +29,10 @@ export class Meeting {
   @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
   participants: Types.ObjectId[];
 
-  @Prop({ 
-    required: true, 
+  @Prop({
+    required: true,
     enum: ['scheduled', 'live', 'completed', 'cancelled'],
-    default: 'scheduled'
+    default: 'scheduled',
   })
   status: string;
 
@@ -72,9 +72,9 @@ export class Meeting {
   @Prop({ default: false })
   enableWaitingRoom: boolean;
 
-  @Prop({ 
+  @Prop({
     enum: ['daily_live', 'mentorship', 'support', 'special_event', 'other'],
-    default: 'other'
+    default: 'other',
   })
   meetingType: string;
 
@@ -90,6 +90,36 @@ export class Meeting {
   @Prop()
   recordingUrl?: string;
 
+  // Zoom-specific fields
+  @Prop()
+  zoomMeetingId?: string;
+
+  @Prop()
+  zoomJoinUrl?: string;
+
+  @Prop()
+  zoomStartUrl?: string;
+
+  @Prop()
+  zoomPassword?: string;
+
+  // LiveKit-specific fields
+  @Prop({ enum: ['zoom', 'videosdk', 'livekit'], default: 'zoom' })
+  provider?: string;
+
+  @Prop()
+  livekitRoomName?: string;
+
+  @Prop()
+  livekitRoomSid?: string;
+
+  @Prop({ type: Object })
+  livekitMetadata?: {
+    recordingEnabled?: boolean;
+    maxParticipants?: number;
+    roomType?: string;
+  };
+
   @Prop({ default: Date.now })
   createdAt: Date;
 
@@ -103,7 +133,10 @@ export class Meeting {
   @Prop({ default: false })
   restrictedToSubscriptions?: boolean; // If true, only users with allowed subscriptions can join
 
-  @Prop({ 
+  @Prop({ default: false })
+  isLocked?: boolean; // If true, no new participants can join
+
+  @Prop({
     type: Map,
     of: {
       maxDuration: Number,
@@ -111,14 +144,17 @@ export class Meeting {
       maxParticipants: Number,
       canScreenShare: Boolean,
     },
-    default: new Map()
+    default: new Map(),
   })
-  subscriptionFeatures?: Map<string, {
-    maxDuration?: number;
-    canRecord?: boolean;
-    maxParticipants?: number;
-    canScreenShare?: boolean;
-  }>; // Features available per subscription type
+  subscriptionFeatures?: Map<
+    string,
+    {
+      maxDuration?: number;
+      canRecord?: boolean;
+      maxParticipants?: number;
+      canScreenShare?: boolean;
+    }
+  >; // Features available per subscription type
 }
 
 export const MeetingSchema = SchemaFactory.createForClass(Meeting);

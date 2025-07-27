@@ -38,24 +38,24 @@ export class SubscriptionPlan {
   @Prop({ required: true, unique: true })
   planId: string; // e.g., 'LiveWeeklyManual', 'MasterClases'
 
-  @Prop({ 
+  @Prop({
     type: {
       en: { type: String, required: true },
-      es: { type: String, required: true }
+      es: { type: String, required: true },
     },
-    required: true
+    required: true,
   })
   displayName: {
     en: string;
     es: string;
   };
 
-  @Prop({ 
+  @Prop({
     type: {
       en: { type: String, required: true },
-      es: { type: String, required: true }
+      es: { type: String, required: true },
     },
-    required: true
+    required: true,
   })
   description: {
     en: string;
@@ -68,19 +68,19 @@ export class SubscriptionPlan {
       development: {
         type: {
           productId: { type: String, required: true },
-          priceId: { type: String, required: true }
+          priceId: { type: String, required: true },
         },
-        required: true
+        required: true,
       },
       production: {
         type: {
           productId: { type: String, required: true },
-          priceId: { type: String, required: true }
+          priceId: { type: String, required: true },
         },
-        required: true
-      }
+        required: true,
+      },
     },
-    required: true
+    required: true,
   })
   stripeIds: {
     development: StripeIds;
@@ -105,10 +105,14 @@ export class SubscriptionPlan {
     type: {
       baseAmount: { type: Number, required: true }, // Price in cents
       currency: { type: String, required: true, default: 'usd' },
-      interval: { type: String, enum: Object.values(PlanInterval), required: true },
-      intervalCount: { type: Number, default: 1 }
+      interval: {
+        type: String,
+        enum: Object.values(PlanInterval),
+        required: true,
+      },
+      intervalCount: { type: Number, default: 1 },
     },
-    required: true
+    required: true,
   })
   pricing: {
     baseAmount: number;
@@ -131,29 +135,31 @@ export class SubscriptionPlan {
 
   // Conditional pricing rules
   @Prop({
-    type: [{
-      type: {
-        _id: false,
-        type: { type: String, enum: ['discount', 'free'], required: true },
-        requiredPlans: { type: [String], required: true },
-        discountAmount: { type: Number },
-        discountPercentage: { type: Number },
-        discountReason: { type: String }
-      }
-    }],
-    default: []
+    type: [
+      {
+        type: {
+          _id: false,
+          type: { type: String, enum: ['discount', 'free'], required: true },
+          requiredPlans: { type: [String], required: true },
+          discountAmount: { type: Number },
+          discountPercentage: { type: Number },
+          discountReason: { type: String },
+        },
+      },
+    ],
+    default: [],
   })
   conditionalPricing: ConditionalPricingRule[];
 
   @Prop({ required: true, enum: PlanType })
   type: PlanType;
 
-  @Prop({ 
+  @Prop({
     type: {
       en: { type: [String], default: [] },
-      es: { type: [String], default: [] }
+      es: { type: [String], default: [] },
     },
-    default: { en: [], es: [] }
+    default: { en: [], es: [] },
   })
   features: {
     en: string[];
@@ -197,9 +203,9 @@ export class SubscriptionPlan {
       icon: { type: String, required: true },
       badge: { type: String },
       popular: { type: Boolean, default: false },
-      sortOrder: { type: Number, default: 0 }
+      sortOrder: { type: Number, default: 0 },
     },
-    required: true
+    required: true,
   })
   uiMetadata: {
     color: string; // Hex color code for UI
@@ -233,9 +239,9 @@ export class SubscriptionPlan {
   updatedAt?: Date;
 }
 
-export const SubscriptionPlanSchema = SchemaFactory.createForClass(SubscriptionPlan);
+export const SubscriptionPlanSchema =
+  SchemaFactory.createForClass(SubscriptionPlan);
 
-// Add indexes
-SubscriptionPlanSchema.index({ planId: 1 });
+// Add indexes (removed planId since it's already unique in @Prop)
 SubscriptionPlanSchema.index({ type: 1, isActive: 1 });
 SubscriptionPlanSchema.index({ sortOrder: 1 });

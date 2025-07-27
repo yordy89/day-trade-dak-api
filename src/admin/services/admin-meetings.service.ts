@@ -1,18 +1,34 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Meeting, MeetingDocument } from '../../schemas/meeting.schema';
+import { User, UserDocument } from '../../users/user.schema';
 import { CreateMeetingDto } from '../dto/create-meeting.dto';
 import { UpdateMeetingDto } from '../dto/update-meeting.dto';
-import { VideoSDKService } from '../../videosdk/videosdk.service';
+import { ZoomApiService } from '../../videosdk/zoom-api.service';
 import { MeetingCronService } from '../../services/meeting-cron.service';
-import { addDays, addWeeks, addMonths, setHours, setMinutes, parseISO } from 'date-fns';
+import {
+  addDays,
+  addWeeks,
+  addMonths,
+  setHours,
+  setMinutes,
+  parseISO,
+} from 'date-fns';
 
 @Injectable()
 export class AdminMeetingsService {
+  private readonly logger = new Logger(AdminMeetingsService.name);
+
   constructor(
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
-    private videoSDKService: VideoSDKService,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private zoomApiService: ZoomApiService,
     private meetingCronService: MeetingCronService,
   ) {}
 
@@ -72,11 +88,11 @@ export class AdminMeetingsService {
     // Date range filters
     if (startDate || endDate || dateRange) {
       query.scheduledAt = {};
-      
+
       if (startDate) {
         query.scheduledAt.$gte = startDate;
       }
-      
+
       if (endDate) {
         query.scheduledAt.$lte = endDate;
       }
@@ -167,12 +183,36 @@ export class AdminMeetingsService {
   }
 
   async createMeeting(createMeetingDto: CreateMeetingDto, hostId: string) {
-    const { isRecurring, recurringType, recurringDays, recurringEndDate, recurringTime, ...meetingData } = createMeetingDto;
+    const {
+      isRecurring,
+      recurringType,
+      recurringDays,
+      recurringEndDate,
+      recurringTime,
+      ...meetingData
+    } = createMeetingDto;
+
+    // Validate that the host exists
+    const hostUser = await this.userModel.findById(hostId);
+    if (!hostUser) {
+      throw new BadRequestException(
+        'Invalid host ID. The specified user does not exist.',
+      );
+    }
+
+    // Debug log
+    console.log('Creating meeting with config:', {
+      zoomApiConfigured: this.zoomApiService.isConfigured(),
+      hostId: hostId,
+      hostName: `${hostUser.firstName} ${hostUser.lastName}`,
+    });
 
     if (isRecurring) {
       // For all recurring meetings (except daily_live which is handled by cron)
       if (meetingData.meetingType === 'daily_live') {
-        throw new BadRequestException('Daily live meetings are automatically created by the system at midnight. You cannot manually create them.');
+        throw new BadRequestException(
+          'Daily live meetings are automatically created by the system at midnight. You cannot manually create them.',
+        );
       }
       return this.createRecurringMeetings({
         ...createMeetingDto,
@@ -180,28 +220,56 @@ export class AdminMeetingsService {
       });
     }
 
-    // Create VideoSDK room
-    const room = await this.videoSDKService.createMeeting({
-      title: meetingData.title,
-      mode: 'CONFERENCE',
-    });
-
-    // Create single meeting
-    const meeting = new this.meetingModel({
+    let meetingConfig: any = {
       ...meetingData,
       host: hostId,
-      meetingId: room.roomId,
-      roomUrl: `https://app.videosdk.live/rooms/${room.roomId}`,
       status: 'scheduled',
       isRecurring: false,
-    });
+      provider: meetingData.provider || 'zoom', // Default to zoom if not specified
+    };
+
+    // Check provider and create meeting accordingly
+    if (meetingData.provider === 'livekit') {
+      // For LiveKit, we create the room when the meeting starts
+      // For now, just set up the meeting with a placeholder room name
+      const roomName = `meeting_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      meetingConfig = {
+        ...meetingConfig,
+        meetingId: `livekit-${roomName}`,
+        roomUrl: roomName, // Will be used to create the actual room later
+        livekitRoomName: roomName,
+      };
+    } else {
+      // Use Zoom (default)
+      const zoomMeeting = await this.zoomApiService.createMeeting({
+        topic: meetingData.title,
+        scheduledAt: new Date(meetingData.scheduledAt),
+        duration: meetingData.duration,
+        waitingRoom: meetingData.enableWaitingRoom ?? true,
+        joinBeforeHost: false,
+        muteUponEntry: true,
+        recordAutomatically: meetingData.enableRecording ?? false,
+      });
+
+      meetingConfig = {
+        ...meetingConfig,
+        meetingId: `zoom-${zoomMeeting.zoomMeetingId}`,
+        roomUrl: zoomMeeting.joinUrl,
+        zoomMeetingId: zoomMeeting.zoomMeetingId,
+        zoomJoinUrl: zoomMeeting.joinUrl,
+        zoomStartUrl: zoomMeeting.startUrl,
+        zoomPassword: zoomMeeting.password,
+      };
+    }
+
+    // Create single meeting
+    const meeting = new this.meetingModel(meetingConfig);
 
     await meeting.save();
     await meeting.populate('host participants');
 
     return meeting;
   }
-
 
   private async createRecurringMeetings(data: any) {
     const {
@@ -219,14 +287,19 @@ export class AdminMeetingsService {
 
     const meetings = [];
     let currentDate = new Date(data.scheduledAt);
-    const endDate = recurringEndDate ? new Date(recurringEndDate) : addMonths(currentDate, 6); // Default 6 months
+    const endDate = recurringEndDate
+      ? new Date(recurringEndDate)
+      : addMonths(currentDate, 6); // Default 6 months
 
     // Parse recurring time (HH:mm format)
     const [hours, minutes] = recurringTime.split(':').map(Number);
 
     while (currentDate <= endDate) {
       // Set the time for the meeting
-      const meetingDate = setMinutes(setHours(new Date(currentDate), hours), minutes);
+      const meetingDate = setMinutes(
+        setHours(new Date(currentDate), hours),
+        minutes,
+      );
 
       // Check if this day should have a meeting
       let shouldCreateMeeting = false;
@@ -240,33 +313,49 @@ export class AdminMeetingsService {
           break;
         case 'monthly':
           // Create on the same day of each month
-          shouldCreateMeeting = meetingDate.getDate() === new Date(data.scheduledAt).getDate();
+          shouldCreateMeeting =
+            meetingDate.getDate() === new Date(data.scheduledAt).getDate();
           break;
       }
 
       if (shouldCreateMeeting && meetingDate >= new Date()) {
-        // Create VideoSDK room for each instance
-        const room = await this.videoSDKService.createMeeting({
-          title: `${title} - ${meetingDate.toLocaleDateString()}`,
-          mode: 'CONFERENCE',
-        });
-
-        const meeting = new this.meetingModel({
+        let meetingConfig: any = {
           title: `${title} - ${meetingDate.toLocaleDateString()}`,
           description,
           scheduledAt: meetingDate,
           duration,
           participants,
           host,
-          meetingId: room.roomId,
-          roomUrl: `https://app.videosdk.live/rooms/${room.roomId}`,
           status: 'scheduled',
           isRecurring: true,
           recurringType,
           recurringDays,
           recurringEndDate: endDate,
           ...settings,
+        };
+
+        // Always use Zoom for each instance
+        const zoomMeeting = await this.zoomApiService.createMeeting({
+          topic: `${title} - ${meetingDate.toLocaleDateString()}`,
+          scheduledAt: meetingDate,
+          duration: duration,
+          waitingRoom: settings.enableWaitingRoom ?? true,
+          joinBeforeHost: false,
+          muteUponEntry: true,
+          recordAutomatically: settings.enableRecording ?? false,
         });
+
+        meetingConfig = {
+          ...meetingConfig,
+          meetingId: `zoom-${zoomMeeting.zoomMeetingId}`,
+          roomUrl: zoomMeeting.joinUrl,
+          zoomMeetingId: zoomMeeting.zoomMeetingId,
+          zoomJoinUrl: zoomMeeting.joinUrl,
+          zoomStartUrl: zoomMeeting.startUrl,
+          zoomPassword: zoomMeeting.password,
+        };
+
+        const meeting = new this.meetingModel(meetingConfig);
 
         await meeting.save();
         meetings.push(meeting);
@@ -316,8 +405,15 @@ export class AdminMeetingsService {
       throw new NotFoundException('Meeting not found');
     }
 
-    // Delete from VideoSDK if needed
-    // await this.videoSDKService.deleteRoom(meeting.meetingId);
+    // Delete from Zoom if needed
+    if (meeting.zoomMeetingId) {
+      try {
+        await this.zoomApiService.deleteMeeting(meeting.zoomMeetingId);
+      } catch (error) {
+        // Log error but continue with deletion
+        console.error('Failed to delete Zoom meeting:', error);
+      }
+    }
 
     await meeting.deleteOne();
   }
@@ -329,12 +425,52 @@ export class AdminMeetingsService {
       throw new NotFoundException('Meeting not found');
     }
 
-    meeting.status = 'live';
-    meeting.startedAt = new Date();
-    await meeting.save();
-    await meeting.populate('host participants');
+    // Check provider
+    if (meeting.provider === 'livekit') {
+      // For LiveKit, the room is created when starting the meeting
+      // The actual room creation is handled by the LiveKit service
+      // when users join with their tokens
+      meeting.status = 'live';
+      meeting.startedAt = new Date();
+      await meeting.save();
+      await meeting.populate('host participants');
+      return meeting;
+    } else {
+      // Default to Zoom
+      // Verify the Zoom meeting exists before starting
+      if (!meeting.zoomMeetingId) {
+        throw new BadRequestException('Meeting has no Zoom meeting ID');
+      }
+      
+      const meetingExists = await this.zoomApiService.validateMeeting(meeting.zoomMeetingId);
+      
+      if (!meetingExists) {
+        // Meeting doesn't exist in Zoom, create it
+        this.logger.warn(`Zoom meeting ${meeting.zoomMeetingId} not found, creating new meeting`);
+        const zoomMeeting = await this.zoomApiService.createMeeting({
+          topic: meeting.title,
+          scheduledAt: meeting.scheduledAt || new Date(),
+          duration: meeting.duration || 60,
+          waitingRoom: meeting.enableWaitingRoom ?? true,
+          joinBeforeHost: false,
+          muteUponEntry: true,
+          recordAutomatically: meeting.enableRecording ?? false,
+        });
+        
+        // Update meeting with new Zoom details
+        meeting.zoomMeetingId = zoomMeeting.zoomMeetingId;
+        meeting.zoomJoinUrl = zoomMeeting.joinUrl;
+        meeting.zoomStartUrl = zoomMeeting.startUrl;
+        meeting.zoomPassword = zoomMeeting.password;
+      }
 
-    return meeting;
+      meeting.status = 'live';
+      meeting.startedAt = new Date();
+      await meeting.save();
+      await meeting.populate('host participants');
+
+      return meeting;
+    }
   }
 
   async endMeeting(meetingId: string) {
@@ -395,14 +531,14 @@ export class AdminMeetingsService {
 
     // Parse recurring time
     const [hours, minutes] = dailyMeeting.recurringTime!.split(':').map(Number);
-    
+
     // Set the new scheduled time for today
     const newScheduledAt = new Date();
     newScheduledAt.setHours(hours, minutes, 0, 0);
 
     // Update the meeting
     dailyMeeting.scheduledAt = newScheduledAt;
-    
+
     // Reset status to scheduled if it was completed
     if (dailyMeeting.status === 'completed') {
       dailyMeeting.status = 'scheduled';
@@ -420,29 +556,35 @@ export class AdminMeetingsService {
   async triggerDailyCleanup() {
     // Get counts before cleanup
     const beforeCount = await this.meetingModel.countDocuments();
-    
+
     // Manually trigger the cron job for testing
-    const cleanupResult = await this.meetingCronService.dailyMeetingCleanupAndCreate();
-    
+    const cleanupResult =
+      await this.meetingCronService.dailyMeetingCleanupAndCreate();
+
     // Get counts after cleanup
     const afterCount = await this.meetingModel.countDocuments();
-    
+
     // Check if daily meeting exists in DB
-    const dailyMeeting = await this.meetingModel.findOne({
-      meetingType: 'daily_live'
-    }).sort({ createdAt: -1 });
-    
+    const dailyMeeting = await this.meetingModel
+      .findOne({
+        meetingType: 'daily_live',
+      })
+      .sort({ createdAt: -1 });
+
     return {
       cleanupDetails: cleanupResult,
       deletedMeetingsCount: cleanupResult.totalDeleted,
       dailyMeetingCreated: cleanupResult.meetingCreated,
       dailyMeetingId: cleanupResult.createdMeeting?._id || dailyMeeting?._id,
-      dailyMeetingScheduledAt: cleanupResult.createdMeeting?.scheduledAt || dailyMeeting?.scheduledAt,
+      dailyMeetingScheduledAt:
+        cleanupResult.createdMeeting?.scheduledAt || dailyMeeting?.scheduledAt,
       meetingsBeforeCleanup: beforeCount,
       meetingsAfterCleanup: afterCount,
       actualDailyMeetingInDB: !!dailyMeeting,
       tomorrow: new Date(new Date().setDate(new Date().getDate() + 1)),
-      tomorrowDayOfWeek: new Date(new Date().setDate(new Date().getDate() + 1)).getDay(),
+      tomorrowDayOfWeek: new Date(
+        new Date().setDate(new Date().getDate() + 1),
+      ).getDay(),
     };
   }
 }

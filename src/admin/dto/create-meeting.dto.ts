@@ -28,7 +28,11 @@ export class CreateMeetingDto {
   @IsDate()
   scheduledAt: Date;
 
-  @ApiProperty({ description: 'Duration in minutes', minimum: 15, maximum: 480 })
+  @ApiProperty({
+    description: 'Duration in minutes',
+    minimum: 15,
+    maximum: 480,
+  })
   @IsNumber()
   @Min(15)
   @Max(480)
@@ -40,22 +44,26 @@ export class CreateMeetingDto {
   @IsMongoId({ each: true })
   participants?: string[];
 
-  @ApiPropertyOptional({ description: 'Is this a recurring meeting', default: false })
+  @ApiPropertyOptional({
+    description: 'Is this a recurring meeting',
+    default: false,
+  })
   @IsOptional()
   @IsBoolean()
   isRecurring?: boolean;
 
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'Recurrence pattern',
-    enum: ['daily', 'weekly', 'monthly']
+    enum: ['daily', 'weekly', 'monthly'],
   })
   @IsOptional()
   @IsEnum(['daily', 'weekly', 'monthly'])
   recurringType?: string;
 
-  @ApiPropertyOptional({ 
-    description: 'Days of the week for weekly recurrence (0=Sunday, 6=Saturday)',
-    type: [Number]
+  @ApiPropertyOptional({
+    description:
+      'Days of the week for weekly recurrence (0=Sunday, 6=Saturday)',
+    type: [Number],
   })
   @IsOptional()
   @IsArray()
@@ -68,16 +76,18 @@ export class CreateMeetingDto {
   @IsDate()
   recurringEndDate?: Date;
 
-  @ApiPropertyOptional({ description: 'Time for recurring meetings (HH:mm format)' })
+  @ApiPropertyOptional({
+    description: 'Time for recurring meetings (HH:mm format)',
+  })
   @IsOptional()
   @IsString()
   recurringTime?: string;
 
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'Maximum number of participants',
     minimum: 2,
     maximum: 500,
-    default: 100
+    default: 100,
   })
   @IsOptional()
   @IsNumber()
@@ -85,12 +95,18 @@ export class CreateMeetingDto {
   @Max(500)
   maxParticipants?: number;
 
-  @ApiPropertyOptional({ description: 'Is this a public meeting', default: false })
+  @ApiPropertyOptional({
+    description: 'Is this a public meeting',
+    default: false,
+  })
   @IsOptional()
   @IsBoolean()
   isPublic?: boolean;
 
-  @ApiPropertyOptional({ description: 'Requires approval to join', default: false })
+  @ApiPropertyOptional({
+    description: 'Requires approval to join',
+    default: false,
+  })
   @IsOptional()
   @IsBoolean()
   requiresApproval?: boolean;
@@ -115,56 +131,68 @@ export class CreateMeetingDto {
   @IsBoolean()
   enableWaitingRoom?: boolean;
 
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'Type of meeting',
     enum: ['daily_live', 'mentorship', 'support', 'special_event', 'other'],
-    default: 'other'
+    default: 'other',
   })
   @IsOptional()
   @IsEnum(['daily_live', 'mentorship', 'support', 'special_event', 'other'])
   meetingType?: string;
 
-  @ApiPropertyOptional({ description: 'Host user ID (admin/super-admin only)' })
+  @ApiProperty({ description: 'Host user ID (required)' })
+  @IsMongoId({ message: 'Host ID must be a valid user ID' })
+  @IsString({ message: 'Host ID is required' })
+  hostId: string;
+
+  @ApiPropertyOptional({
+    description: 'Meeting provider',
+    enum: ['zoom', 'videosdk', 'livekit'],
+    default: 'zoom',
+  })
   @IsOptional()
-  @IsMongoId()
-  hostId?: string;
+  @IsEnum(['zoom', 'videosdk', 'livekit'])
+  provider?: string;
 
   // Subscription-based access control fields
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'List of subscription plan IDs that can access this meeting',
     type: [String],
-    example: ['LiveWeeklyManual', 'MasterClases']
+    example: ['LiveWeeklyManual', 'MasterClases'],
   })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   allowedSubscriptions?: string[];
 
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'If true, only users with allowed subscriptions can join',
-    default: false
+    default: false,
   })
   @IsOptional()
   @IsBoolean()
   restrictedToSubscriptions?: boolean;
 
-  @ApiPropertyOptional({ 
+  @ApiPropertyOptional({
     description: 'Subscription-specific features for the meeting',
     type: 'object',
     example: {
-      'LiveWeeklyManual': {
+      LiveWeeklyManual: {
         maxDuration: 60,
         canRecord: false,
         maxParticipants: 50,
-        canScreenShare: true
-      }
-    }
+        canScreenShare: true,
+      },
+    },
   })
   @IsOptional()
-  subscriptionFeatures?: Record<string, {
-    maxDuration?: number;
-    canRecord?: boolean;
-    maxParticipants?: number;
-    canScreenShare?: boolean;
-  }>;
+  subscriptionFeatures?: Record<
+    string,
+    {
+      maxDuration?: number;
+      canRecord?: boolean;
+      maxParticipants?: number;
+      canScreenShare?: boolean;
+    }
+  >;
 }

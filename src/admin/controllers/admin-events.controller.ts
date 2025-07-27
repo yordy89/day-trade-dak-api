@@ -44,7 +44,7 @@ export class AdminEventsController {
   ) {
     try {
       const result = await this.adminEventsService.findAllWithFilters(filters);
-      
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -61,18 +61,27 @@ export class AdminEventsController {
       const mappedResult = {
         events: result.events.map((event: any) => ({
           _id: event._id,
+          name: event.name,
           title: event.title || event.name,
           description: event.description,
           date: event.date,
-          startTime: event.startTime,
-          endTime: event.endTime,
+          startDate: event.startDate,
+          endDate: event.endDate,
           location: event.location,
           type: event.type || 'general',
-          status: event.isActive ? 'active' : 'draft',
+          status: event.isActive === false ? 'draft' : 'active',
+          isActive: event.isActive,
+          featuredInCRM: event.featuredInCRM || false,
           capacity: event.capacity,
           registrations: event.currentRegistrations || event.registrations,
           price: event.price,
           vipPrice: event.vipPrice,
+          bannerImage: event.bannerImage,
+          metadata: event.metadata,
+          included: event.included,
+          notIncluded: event.notIncluded,
+          requirements: event.requirements,
+          contact: event.contact,
           createdAt: event.createdAt,
           updatedAt: event.updatedAt,
         })),
@@ -91,7 +100,7 @@ export class AdminEventsController {
   async getEventStats(@Req() req: RequestWithUser) {
     try {
       const stats = await this.adminEventsService.getEventStatistics();
-      
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -110,13 +119,10 @@ export class AdminEventsController {
   }
 
   @Get(':id')
-  async getEvent(
-    @Param('id') id: string,
-    @Req() req: RequestWithUser,
-  ) {
+  async getEvent(@Param('id') id: string, @Req() req: RequestWithUser) {
     try {
       const event = await this.adminEventsService.findOneWithStats(id);
-      
+
       if (!event) {
         throw new NotFoundException('Event not found');
       }
@@ -148,8 +154,9 @@ export class AdminEventsController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const statistics = await this.adminEventsService.getEventStatisticsById(id);
-      
+      const statistics =
+        await this.adminEventsService.getEventStatisticsById(id);
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -178,7 +185,7 @@ export class AdminEventsController {
   ) {
     try {
       const event = await this.adminEventsService.create(createEventDto);
-      
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -210,7 +217,7 @@ export class AdminEventsController {
   ) {
     try {
       const event = await this.adminEventsService.update(id, updateEventDto);
-      
+
       if (!event) {
         throw new NotFoundException('Event not found');
       }
@@ -241,13 +248,10 @@ export class AdminEventsController {
   }
 
   @Delete(':id')
-  async deleteEvent(
-    @Param('id') id: string,
-    @Req() req: RequestWithUser,
-  ) {
+  async deleteEvent(@Param('id') id: string, @Req() req: RequestWithUser) {
     try {
       const result = await this.adminEventsService.softDelete(id);
-      
+
       if (!result) {
         throw new NotFoundException('Event not found');
       }
@@ -286,10 +290,12 @@ export class AdminEventsController {
     @Query('status') status?: string,
   ) {
     try {
-      const result = await this.adminEventsService.getEventRegistrations(
-        id,
-        { page, limit, search, paymentStatus },
-      );
+      const result = await this.adminEventsService.getEventRegistrations(id, {
+        page,
+        limit,
+        search,
+        paymentStatus,
+      });
 
       // Log admin action
       await this.adminService.logAdminAction({
@@ -316,6 +322,10 @@ export class AdminEventsController {
             email: reg.email,
             phone: reg.phone || reg.phoneNumber,
           },
+          firstName: reg.firstName,
+          lastName: reg.lastName,
+          email: reg.email,
+          phoneNumber: reg.phoneNumber || reg.phone,
           ticketType: reg.ticketType || (reg.isVip ? 'vip' : 'regular'),
           status: reg.paymentStatus === 'paid' ? 'confirmed' : 'pending',
           paymentStatus: reg.paymentStatus,
@@ -324,6 +334,8 @@ export class AdminEventsController {
           registrationDate: reg.registeredAt || reg.createdAt,
           createdAt: reg.createdAt,
           updatedAt: reg.updatedAt,
+          additionalInfo: reg.additionalInfo,
+          checkedIn: reg.checkedIn || false,
         })),
         total: result.total,
         page: result.page,
@@ -345,17 +357,15 @@ export class AdminEventsController {
   ) {
     try {
       const { format, filters } = exportDto;
-      
+
       // Get event and registrations
       const event = await this.adminEventsService.findOne(id);
       if (!event) {
         throw new NotFoundException('Event not found');
       }
 
-      const registrations = await this.adminEventsService.getRegistrationsForExport(
-        id,
-        filters,
-      );
+      const registrations =
+        await this.adminEventsService.getRegistrationsForExport(id, filters);
 
       // Generate export based on format
       let fileContent: Buffer;
@@ -364,17 +374,27 @@ export class AdminEventsController {
 
       switch (format) {
         case 'csv':
-          fileContent = await this.adminEventsService.generateCSV(registrations, event);
+          fileContent = await this.adminEventsService.generateCSV(
+            registrations,
+            event,
+          );
           contentType = 'text/csv';
           fileName = `${event.name}-registrations-${Date.now()}.csv`;
           break;
         case 'excel':
-          fileContent = await this.adminEventsService.generateExcel(registrations, event);
-          contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+          fileContent = await this.adminEventsService.generateExcel(
+            registrations,
+            event,
+          );
+          contentType =
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
           fileName = `${event.name}-registrations-${Date.now()}.xlsx`;
           break;
         case 'pdf':
-          fileContent = await this.adminEventsService.generatePDF(registrations, event);
+          fileContent = await this.adminEventsService.generatePDF(
+            registrations,
+            event,
+          );
           contentType = 'application/pdf';
           fileName = `${event.name}-registrations-${Date.now()}.pdf`;
           break;
@@ -407,7 +427,9 @@ export class AdminEventsController {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      throw new BadRequestException(error.message || 'Failed to export registrations');
+      throw new BadRequestException(
+        error.message || 'Failed to export registrations',
+      );
     }
   }
 
@@ -418,7 +440,7 @@ export class AdminEventsController {
   ) {
     try {
       const event = await this.adminEventsService.toggleStatus(id);
-      
+
       if (!event) {
         throw new NotFoundException('Event not found');
       }
@@ -444,7 +466,142 @@ export class AdminEventsController {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      throw new BadRequestException(error.message || 'Failed to toggle event status');
+      throw new BadRequestException(
+        error.message || 'Failed to toggle event status',
+      );
+    }
+  }
+
+  @Get('crm/by-type')
+  async getCRMEventsByType(
+    @Query('type') type: string,
+    @Req() req: RequestWithUser,
+  ) {
+    try {
+      // For CRM, only return active events
+      const filters: EventFiltersDto = {
+        type,
+        status: 'active',
+        page: 1,
+        limit: 100, // Return all active events
+      };
+
+      const result = await this.adminEventsService.findAllWithFilters(filters);
+
+      // Filter only active events that haven't passed their date
+      const now = new Date();
+      const activeEvents = result.events.filter((event: any) => {
+        const eventDate = new Date(event.date);
+        return event.isActive !== false && eventDate >= now;
+      });
+
+      // Map the response to match CRM expectations
+      const mappedEvents = activeEvents.map((event: any) => ({
+        _id: event._id,
+        title: event.title || event.name,
+        description: event.description,
+        date: event.date,
+        location: event.location,
+        type: event.type || 'general',
+        status: 'active',
+        capacity: event.capacity,
+        registrations: event.currentRegistrations || event.registrations || 0,
+        price: event.price,
+        vipPrice: event.vipPrice,
+        createdAt: event.createdAt,
+        updatedAt: event.updatedAt,
+      }));
+
+      return mappedEvents;
+    } catch (error) {
+      throw new BadRequestException('Failed to fetch CRM events');
+    }
+  }
+
+  @Patch(':id/set-featured')
+  async setEventAsFeatured(
+    @Param('id') id: string,
+    @Req() req: RequestWithUser,
+  ) {
+    try {
+      // Get the event first to know its type
+      const event = await this.adminEventsService.findOne(id);
+      if (!event) {
+        throw new NotFoundException('Event not found');
+      }
+
+      // Set as featured
+      const updatedEvent = await this.adminEventsService.setFeaturedEventForType(
+        id,
+        event.type,
+      );
+
+      // Log admin action
+      await this.adminService.logAdminAction({
+        adminId: req.user._id.toString(),
+        adminEmail: req.user.email,
+        action: 'SET_EVENT_AS_FEATURED',
+        resource: 'events',
+        resourceId: id,
+        details: { 
+          eventType: event.type,
+          eventName: event.name,
+        },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        status: 'success',
+      });
+
+      return {
+        message: 'Event set as featured successfully',
+        event: updatedEvent,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to set event as featured',
+      );
+    }
+  }
+
+  @Patch(':id/toggle-featured')
+  async toggleEventFeatured(
+    @Param('id') id: string,
+    @Req() req: RequestWithUser,
+  ) {
+    try {
+      const updatedEvent = await this.adminEventsService.toggleFeaturedStatus(id);
+
+      // Log admin action
+      await this.adminService.logAdminAction({
+        adminId: req.user._id.toString(),
+        adminEmail: req.user.email,
+        action: 'TOGGLE_EVENT_FEATURED',
+        resource: 'events',
+        resourceId: id,
+        details: { 
+          newFeaturedStatus: updatedEvent.featuredInCRM,
+          eventType: updatedEvent.type,
+          eventName: updatedEvent.name,
+        },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        status: 'success',
+      });
+
+      return {
+        message: `Event featured status ${updatedEvent.featuredInCRM ? 'enabled' : 'disabled'} successfully`,
+        event: updatedEvent,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to toggle featured status',
+      );
     }
   }
 }

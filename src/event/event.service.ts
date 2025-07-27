@@ -24,4 +24,22 @@ export class EventsService {
   findOne(id: string) {
     return this.eventModel.findById(id).exec();
   }
+
+  async findActiveCommunityEvent() {
+    // Find the most recent active community event
+    return this.eventModel.findOne({
+      type: 'community_event',
+      isActive: true,
+      date: { $gte: new Date() } // Event date is in the future
+    })
+    .sort({ date: 1 }) // Get the nearest upcoming event
+    .exec();
+  }
+
+  async findCommunityEventById(id: string) {
+    return this.eventModel.findOne({
+      _id: id,
+      type: 'community_event'
+    }).exec();
+  }
 }

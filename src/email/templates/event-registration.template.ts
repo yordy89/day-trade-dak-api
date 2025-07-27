@@ -10,6 +10,8 @@ export interface EventRegistrationData {
   eventName: string;
   eventType: 'master_course' | 'community_event' | 'vip_event';
   eventDate?: Date;
+  eventStartDate?: Date;
+  eventEndDate?: Date;
   eventTime?: string;
   eventLocation?: string;
   eventDescription?: string;
@@ -19,6 +21,8 @@ export interface EventRegistrationData {
   currency?: string;
   additionalAdults?: number;
   additionalChildren?: number;
+  hotelName?: string;
+  hotelAddress?: string;
 }
 
 const formatDate = (date: Date): string => {
@@ -28,6 +32,38 @@ const formatDate = (date: Date): string => {
     month: 'long',
     year: 'numeric',
   }).format(date);
+};
+
+const formatDateRange = (startDate: Date, endDate: Date): string => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  
+  const startDay = start.getDate();
+  const endDay = end.getDate();
+  const month = start.toLocaleDateString('es-ES', { month: 'long' });
+  const year = start.getFullYear();
+  
+  // Get day names
+  const days = [];
+  const current = new Date(start);
+  while (current <= end) {
+    const dayName = current.toLocaleDateString('es-ES', { weekday: 'long' });
+    days.push(dayName.charAt(0).toUpperCase() + dayName.slice(1));
+    current.setDate(current.getDate() + 1);
+  }
+  
+  // Format: "Miércoles - Jueves - Viernes. 13, 14, 15 de noviembre, 2025"
+  const dayNumbers = [];
+  for (let i = 0; i < days.length; i++) {
+    dayNumbers.push(startDay + i);
+  }
+  
+  return `${days.join(' - ')}. ${dayNumbers.join(', ')} de ${month}, ${year}`;
+};
+
+const getFirstDayName = (date: Date): string => {
+  const dayName = date.toLocaleDateString('es-ES', { weekday: 'long' });
+  return dayName.charAt(0).toUpperCase() + dayName.slice(1);
 };
 
 const formatCurrency = (amount: number, currency: string): string => {
@@ -70,6 +106,8 @@ export const eventRegistrationTemplate = (
     eventName,
     eventType,
     eventDate,
+    eventStartDate,
+    eventEndDate,
     eventTime,
     eventLocation,
     eventDescription,
@@ -79,6 +117,8 @@ export const eventRegistrationTemplate = (
     currency,
     additionalAdults = 0,
     additionalChildren = 0,
+    hotelName,
+    hotelAddress,
   } = data;
 
   const { emoji, color, title: eventTypeTitle } = getEventTypeInfo(eventType);
@@ -152,7 +192,8 @@ export const eventRegistrationTemplate = (
             : ''
         }
         ${
-          (additionalAdults > 0 || additionalChildren > 0) && eventType === 'community_event'
+          (additionalAdults > 0 || additionalChildren > 0) &&
+          eventType === 'community_event'
             ? `
         <tr>
           <td colspan="2" style="padding-top: 16px; border-top: 1px solid #e5e7eb;"></td>
@@ -215,13 +256,34 @@ export const eventRegistrationTemplate = (
     </h3>
 
     <ul style="margin: 0 0 30px 0; padding-left: 20px; color: #4b5563; font-size: 16px; line-height: 28px;">
-      <li>📅 Fechas: 25-27 de Septiembre, 2025</li>
-      <li>📍 Lugar: Hilton Garden Inn Tampa Ybor Historic District</li>
-      <li>⏰ Check-in: Jueves 8:00 AM - 8:30 AM</li>
+      ${
+        eventStartDate && eventEndDate
+          ? `<li>📅 Fechas: ${formatDateRange(eventStartDate, eventEndDate)}</li>`
+          : eventDate
+          ? `<li>📅 Fecha: ${formatDate(eventDate)}</li>`
+          : ''
+      }
+      ${
+        hotelName
+          ? `<li>📍 Lugar: ${hotelName}</li>`
+          : eventLocation
+          ? `<li>📍 Lugar: ${eventLocation}</li>`
+          : ''
+      }
+      ${
+        hotelAddress
+          ? `<li>📍 Dirección: ${hotelAddress}</li>`
+          : ''
+      }
+      ${
+        eventStartDate
+          ? `<li>⏰ Check-in: ${getFirstDayName(eventStartDate)} 8:00 AM - 8:30 AM</li>`
+          : '<li>⏰ Check-in: 8:00 AM - 8:30 AM</li>'
+      }
       <li>💻 Trae tu laptop y libreta para tomar notas</li>
       <li>🏨 El alojamiento NO está incluido - reserva con anticipación</li>
       <li>🍽️ Solo la cena del sábado está incluida</li>
-      ${(additionalAdults > 0 || additionalChildren > 0) ? '<li>👥 Tus invitados adicionales SOLO podrán asistir a la cena del sábado</li>' : ''}
+      ${additionalAdults > 0 || additionalChildren > 0 ? '<li>👥 Tus invitados adicionales SOLO podrán asistir a la cena del sábado</li>' : ''}
       <li>✅ Este correo es tu comprobante de registro</li>
     </ul>
 

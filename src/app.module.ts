@@ -36,6 +36,8 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { GuardsModule } from './guards/guards.module';
 import { ModulePermissionsModule } from './module-permissions/module-permissions.module';
+import { ZoomWebhooksModule } from './zoom-webhooks/zoom-webhooks.module';
+import { LiveKitModule } from './livekit/livekit.module';
 
 @Module({
   imports: [
@@ -81,12 +83,14 @@ import { ModulePermissionsModule } from './module-permissions/module-permissions
     FinnhubModule,
     VideoSDKModule,
     AdminModule,
-    MeetingsModule,
-    WebhooksModule,
     WebSocketsModule,
     SubscriptionsModule,
     PermissionsModule,
     ModulePermissionsModule,
+    MeetingsModule,
+    WebhooksModule,
+    ZoomWebhooksModule,
+    LiveKitModule,
   ],
   providers: [
     {

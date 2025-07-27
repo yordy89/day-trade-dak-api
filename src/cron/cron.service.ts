@@ -210,10 +210,11 @@ export class CronService {
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async removeExpiredModulePermissions() {
     this.logger.log('🔐 Running cleanup for expired module permissions...');
-    
+
     try {
-      const expiredCount = await this.modulePermissionsService.expirePermissions();
-      
+      const expiredCount =
+        await this.modulePermissionsService.expirePermissions();
+
       if (expiredCount > 0) {
         this.logger.log(`✅ Expired ${expiredCount} module permissions`);
       } else {
@@ -227,35 +228,48 @@ export class CronService {
   // ✅ Send module permission expiration reminders
   @Cron('0 9 * * *') // Run at 9 AM every day
   async sendModulePermissionExpirationReminders() {
-    this.logger.log('📧 Checking for module permission expiration reminders...');
-    
+    this.logger.log(
+      '📧 Checking for module permission expiration reminders...',
+    );
+
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(23, 59, 59, 999);
-    
+
     const threeDaysFromNow = new Date();
     threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
     threeDaysFromNow.setHours(23, 59, 59, 999);
-    
+
     // Get all module types
     const moduleTypes = [
-      'classes', 'masterClasses', 'liveRecorded', 'psicotrading',
-      'peaceWithMoney', 'liveWeekly', 'communityEvents', 'vipEvents', 'masterCourse'
+      'classes',
+      'masterClasses',
+      'liveRecorded',
+      'psicotrading',
+      'peaceWithMoney',
+      'liveWeekly',
+      'communityEvents',
+      'vipEvents',
+      'masterCourse',
     ];
-    
+
     for (const moduleType of moduleTypes) {
-      const usersWithAccess = await this.modulePermissionsService.getUsersWithModuleAccess(moduleType as any);
-      
+      const usersWithAccess =
+        await this.modulePermissionsService.getUsersWithModuleAccess(
+          moduleType as any,
+        );
+
       for (const { user, permission } of usersWithAccess) {
         if (permission.expiresAt) {
           const expiresAt = new Date(permission.expiresAt);
-          
+
           // Check if expiring within 1-3 days
           if (expiresAt <= threeDaysFromNow && expiresAt >= tomorrow) {
             const daysRemaining = Math.ceil(
-              (expiresAt.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+              (expiresAt.getTime() - new Date().getTime()) /
+                (1000 * 60 * 60 * 24),
             );
-            
+
             if (daysRemaining === 1 || daysRemaining === 3) {
               await this.emailService.sendBasicEmail(
                 user.email,
@@ -266,11 +280,11 @@ export class CronService {
                   <p>Expiration date: <strong>${expiresAt.toLocaleDateString()}</strong></p>
                   <p>To continue accessing this module, please contact your administrator or purchase a subscription.</p>
                   <p>Best regards,<br>Day Trade Dak Team</p>
-                `
+                `,
               );
-              
+
               this.logger.log(
-                `📧 Sent module permission expiration reminder to ${user.email} for ${moduleType} (${daysRemaining} days remaining)`
+                `📧 Sent module permission expiration reminder to ${user.email} for ${moduleType} (${daysRemaining} days remaining)`,
               );
             }
           }

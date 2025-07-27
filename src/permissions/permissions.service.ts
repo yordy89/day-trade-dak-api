@@ -1,7 +1,17 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Permission, PermissionDocument, PermissionSet, DEFAULT_ADMIN_PERMISSIONS, DEFAULT_SUPER_ADMIN_PERMISSIONS } from './permission.schema';
+import {
+  Permission,
+  PermissionDocument,
+  PermissionSet,
+  DEFAULT_ADMIN_PERMISSIONS,
+  DEFAULT_SUPER_ADMIN_PERMISSIONS,
+} from './permission.schema';
 import { User, UserDocument } from '../users/user.schema';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { Role } from '../constants';
@@ -9,31 +19,39 @@ import { Role } from '../constants';
 @Injectable()
 export class PermissionsService {
   constructor(
-    @InjectModel(Permission.name) private permissionModel: Model<PermissionDocument>,
+    @InjectModel(Permission.name)
+    private permissionModel: Model<PermissionDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
   ) {}
 
   async findAllAdminUsers() {
     // Get all users with admin or super_admin role
-    const adminUsers = await this.userModel.find({
-      role: { $in: [Role.ADMIN, Role.SUPER_ADMIN] }
-    }).select('_id email firstName lastName role status').lean();
+    const adminUsers = await this.userModel
+      .find({
+        role: { $in: [Role.ADMIN, Role.SUPER_ADMIN] },
+      })
+      .select('_id email firstName lastName role status')
+      .lean();
 
     // Get permissions for all admin users
-    const userIds = adminUsers.map(user => user._id);
-    const permissions = await this.permissionModel.find({
-      userId: { $in: userIds }
-    }).lean();
+    const userIds = adminUsers.map((user) => user._id);
+    const permissions = await this.permissionModel
+      .find({
+        userId: { $in: userIds },
+      })
+      .lean();
 
     // Create a map for quick lookup
     const permissionsMap = new Map(
-      permissions.map(p => [p.userId.toString(), p.permissions])
+      permissions.map((p) => [p.userId.toString(), p.permissions]),
     );
 
     // Combine user data with permissions
-    return adminUsers.map(user => ({
+    return adminUsers.map((user) => ({
       ...user,
-      permissions: permissionsMap.get(user._id.toString()) || this.getDefaultPermissions(user.role),
+      permissions:
+        permissionsMap.get(user._id.toString()) ||
+        this.getDefaultPermissions(user.role),
     }));
   }
 
@@ -55,7 +73,7 @@ export class PermissionsService {
 
     // Check for existing permissions
     const permission = await this.permissionModel.findOne({ userId }).lean();
-    
+
     if (permission) {
       return permission.permissions;
     }
@@ -65,9 +83,9 @@ export class PermissionsService {
   }
 
   async updateUserPermissions(
-    userId: string, 
+    userId: string,
     updateDto: UpdatePermissionDto,
-    modifiedBy: string
+    modifiedBy: string,
   ): Promise<Permission> {
     const user = await this.userModel.findById(userId).lean();
     if (!user) {
@@ -81,7 +99,9 @@ export class PermissionsService {
 
     // Cannot modify permissions for regular users
     if (user.role === Role.USER) {
-      throw new ForbiddenException('Regular users cannot have admin permissions');
+      throw new ForbiddenException(
+        'Regular users cannot have admin permissions',
+      );
     }
 
     let permission = await this.permissionModel.findOne({ userId });
@@ -104,7 +124,10 @@ export class PermissionsService {
     return permission;
   }
 
-  async resetUserPermissions(userId: string, modifiedBy: string): Promise<Permission> {
+  async resetUserPermissions(
+    userId: string,
+    modifiedBy: string,
+  ): Promise<Permission> {
     const user = await this.userModel.findById(userId).lean();
     if (!user) {
       throw new NotFoundException('User not found');
@@ -115,9 +138,9 @@ export class PermissionsService {
     }
 
     const defaultPerms = this.getDefaultPermissions(user.role);
-    
+
     let permission = await this.permissionModel.findOne({ userId });
-    
+
     if (permission) {
       permission.permissions = defaultPerms as PermissionSet;
       permission.lastModifiedBy = new Types.ObjectId(modifiedBy);
@@ -149,7 +172,10 @@ export class PermissionsService {
     }
   }
 
-  async hasPermission(userId: string, permission: keyof PermissionSet): Promise<boolean> {
+  async hasPermission(
+    userId: string,
+    permission: keyof PermissionSet,
+  ): Promise<boolean> {
     const user = await this.userModel.findById(userId).lean();
     if (!user) {
       return false;

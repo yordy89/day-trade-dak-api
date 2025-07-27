@@ -6,9 +6,7 @@ import { Meeting, MeetingSchema } from '../schemas/meeting.schema';
 @Global()
 @Module({
   imports: [
-    MongooseModule.forFeature([
-      { name: Meeting.name, schema: MeetingSchema },
-    ]),
+    MongooseModule.forFeature([{ name: Meeting.name, schema: MeetingSchema }]),
   ],
   providers: [WebSocketGateway],
   exports: [WebSocketGateway],

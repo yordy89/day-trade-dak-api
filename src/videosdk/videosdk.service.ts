@@ -36,8 +36,12 @@ export class VideoSDKService {
     this.apiEndpoint = 'https://api.videosdk.live/v2';
 
     this.logger.log('VideoSDK Service initialized');
-    this.logger.log(`API Key: ${this.apiKey ? 'Configured' : 'NOT CONFIGURED'}`);
-    this.logger.log(`Secret Key: ${this.secretKey ? 'Configured' : 'NOT CONFIGURED'}`);
+    this.logger.log(
+      `API Key: ${this.apiKey ? 'Configured' : 'NOT CONFIGURED'}`,
+    );
+    this.logger.log(
+      `Secret Key: ${this.secretKey ? 'Configured' : 'NOT CONFIGURED'}`,
+    );
     this.logger.log('Tokens will be generated dynamically for each API call');
 
     if (!this.apiKey) {
@@ -87,7 +91,7 @@ export class VideoSDKService {
     try {
       this.logger.log('Creating meeting with VideoSDK API');
       this.logger.debug(`API Endpoint: ${this.apiEndpoint}/rooms`);
-      
+
       // Create room
       const roomResponse = await axios.post(
         `${this.apiEndpoint}/rooms`,
@@ -113,12 +117,15 @@ export class VideoSDKService {
       this.logger.error('Response headers:', error.response?.headers);
       // Don't pass through 401 errors from VideoSDK as they cause frontend to redirect to login
       // The user is authenticated, the issue is with VideoSDK API credentials
-      const statusCode = error.response?.status === 401 
-        ? HttpStatus.INTERNAL_SERVER_ERROR 
-        : (error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR);
-      
+      const statusCode =
+        error.response?.status === 401
+          ? HttpStatus.INTERNAL_SERVER_ERROR
+          : error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR;
+
       throw new HttpException(
-        error.response?.data?.error || error.response?.data?.message || 'Failed to create meeting with VideoSDK',
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Failed to create meeting with VideoSDK',
         statusCode,
       );
     }
@@ -129,23 +136,26 @@ export class VideoSDKService {
    */
   async generateToken(dto: GenerateTokenDto): Promise<string> {
     try {
-      this.logger.log(`Generating token for participant: ${dto.participantName}, role: ${dto.role}`);
-      
+      this.logger.log(
+        `Generating token for participant: ${dto.participantName}, role: ${dto.role}`,
+      );
+
       if (!this.secretKey) {
         this.logger.error('VideoSDK secret key is not configured');
         throw new Error('VideoSDK secret key is not configured');
       }
-      
+
       if (!this.apiKey) {
         this.logger.error('VideoSDK API key is not configured');
         throw new Error('VideoSDK API key is not configured');
       }
-      
+
       // Set permissions based on role
-      const permissions = dto.role === 'host' 
-        ? ['allow_join', 'allow_mod', 'ask_join'] // Host gets full moderator permissions
-        : ['allow_join']; // Participants only get join permission
-      
+      const permissions =
+        dto.role === 'host'
+          ? ['allow_join', 'allow_mod', 'ask_join'] // Host gets full moderator permissions
+          : ['allow_join']; // Participants only get join permission
+
       const payload = {
         apikey: this.apiKey,
         permissions: permissions,
@@ -159,10 +169,15 @@ export class VideoSDKService {
         expiresIn: '24h',
       });
 
-      this.logger.log(`Generated ${dto.role} token with permissions: ${permissions.join(', ')}`);
+      this.logger.log(
+        `Generated ${dto.role} token with permissions: ${permissions.join(', ')}`,
+      );
       return token;
     } catch (error: any) {
-      this.logger.error('Failed to generate token - Error details:', error.message || error);
+      this.logger.error(
+        'Failed to generate token - Error details:',
+        error.message || error,
+      );
       this.logger.error('Stack trace:', error.stack);
       throw new HttpException(
         `Failed to generate token: ${error.message || 'Unknown error'}`,
@@ -172,18 +187,34 @@ export class VideoSDKService {
   }
 
   /**
-   * Validate if a room exists
+   * Validate if a room exists with retry logic
    */
-  async validateRoom(roomId: string): Promise<boolean> {
-    try {
-      const response = await axios.get(
-        `${this.apiEndpoint}/rooms/validate/${roomId}`,
-        { headers: this.getHeaders() },
-      );
-      return response.data.roomId === roomId;
-    } catch (error) {
-      return false;
+  async validateRoom(roomId: string, retries: number = 3): Promise<boolean> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await axios.get(
+          `${this.apiEndpoint}/rooms/validate/${roomId}`,
+          { 
+            headers: this.getHeaders(),
+            timeout: 5000, // 5 second timeout
+          },
+        );
+        return response.data.roomId === roomId;
+      } catch (error) {
+        this.logger.warn(
+          `Failed to validate room ${roomId} (attempt ${attempt}/${retries}): ${error.message}`,
+        );
+        
+        if (attempt < retries) {
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+        } else {
+          // Log the full error on final attempt
+          this.logger.error(`Failed to validate room ${roomId} after ${retries} attempts`, error);
+        }
+      }
     }
+    return false;
   }
 
   /**

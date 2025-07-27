@@ -2,7 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../../users/user.schema';
-import { SubscriptionPlan, SubscriptionPlanDocument } from '../../subscriptions/subscription-plan.schema';
+import {
+  SubscriptionPlan,
+  SubscriptionPlanDocument,
+} from '../../subscriptions/subscription-plan.schema';
 
 interface SubscriptionFiltersDto {
   page?: string | number;
@@ -18,7 +21,8 @@ interface SubscriptionFiltersDto {
 export class AdminSubscriptionsService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-    @InjectModel(SubscriptionPlan.name) private subscriptionPlanModel: Model<SubscriptionPlanDocument>,
+    @InjectModel(SubscriptionPlan.name)
+    private subscriptionPlanModel: Model<SubscriptionPlanDocument>,
   ) {}
 
   async findAllWithFilters(filters: SubscriptionFiltersDto) {
@@ -161,30 +165,35 @@ export class AdminSubscriptionsService {
 
   async testSubscriptionData() {
     // Test to see what's in the database
-    const usersWithSubs = await this.userModel.find({ 
-      'subscriptions.0': { $exists: true } 
-    }).limit(5).lean();
-    
+    const usersWithSubs = await this.userModel
+      .find({
+        'subscriptions.0': { $exists: true },
+      })
+      .limit(5)
+      .lean();
+
     const allUsers = await this.userModel.countDocuments({});
     const plans = await this.subscriptionPlanModel.find({}).lean();
-    const activePlans = await this.subscriptionPlanModel.countDocuments({ isActive: true });
-    
+    const activePlans = await this.subscriptionPlanModel.countDocuments({
+      isActive: true,
+    });
+
     // Check for users with any subscription field
     const usersWithAnySubscription = await this.userModel.countDocuments({
-      subscriptions: { $exists: true, $ne: [] }
+      subscriptions: { $exists: true, $ne: [] },
     });
-    
+
     return {
       totalUsers: allUsers,
       usersWithSubscriptions: usersWithSubs.length,
       usersWithAnySubscription,
       totalPlans: plans.length,
       activePlans,
-      sampleUsers: usersWithSubs.map(u => ({
+      sampleUsers: usersWithSubs.map((u) => ({
         email: u.email,
         subscriptions: u.subscriptions,
       })),
-      availablePlans: plans.map(p => ({
+      availablePlans: plans.map((p) => ({
         planId: p.planId,
         displayName: p.displayName,
         isActive: p.isActive,
@@ -238,7 +247,12 @@ export class AdminSubscriptionsService {
               from: 'users',
               let: { planId: '$planId' },
               pipeline: [
-                { $unwind: { path: '$subscriptions', preserveNullAndEmptyArrays: false } },
+                {
+                  $unwind: {
+                    path: '$subscriptions',
+                    preserveNullAndEmptyArrays: false,
+                  },
+                },
                 {
                   $match: {
                     $expr: { $eq: ['$subscriptions.plan', '$$planId'] },
@@ -272,7 +286,9 @@ export class AdminSubscriptionsService {
                           else: {
                             $cond: {
                               if: { $eq: ['$pricing.interval', 'weekly'] },
-                              then: { $multiply: ['$pricing.baseAmount', 4.33] },
+                              then: {
+                                $multiply: ['$pricing.baseAmount', 4.33],
+                              },
                               else: 0,
                             },
                           },
@@ -297,32 +313,33 @@ export class AdminSubscriptionsService {
         totalPlans,
         activePlans,
         totalActiveSubscribers,
-        monthlyRecurringRevenue
+        monthlyRecurringRevenue,
       });
 
-    // Calculate growth rate (simplified - comparing to last month)
-    const lastMonthDate = new Date();
-    lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
-    
-    const lastMonthSubscribers = await this.userModel.aggregate([
-      { $unwind: '$subscriptions' },
-      {
-        $match: {
-          'subscriptions.createdAt': { $lte: lastMonthDate },
-          $or: [
-            { 'subscriptions.expiresAt': { $gt: lastMonthDate } },
-            { 'subscriptions.expiresAt': { $exists: false } },
-          ],
+      // Calculate growth rate (simplified - comparing to last month)
+      const lastMonthDate = new Date();
+      lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+
+      const lastMonthSubscribers = await this.userModel.aggregate([
+        { $unwind: '$subscriptions' },
+        {
+          $match: {
+            'subscriptions.createdAt': { $lte: lastMonthDate },
+            $or: [
+              { 'subscriptions.expiresAt': { $gt: lastMonthDate } },
+              { 'subscriptions.expiresAt': { $exists: false } },
+            ],
+          },
         },
-      },
-      { $count: 'total' },
-    ]);
+        { $count: 'total' },
+      ]);
 
       const currentTotal = totalActiveSubscribers[0]?.total || 0;
       const lastMonthTotal = lastMonthSubscribers[0]?.total || 0;
-      const growthRate = lastMonthTotal > 0 
-        ? ((currentTotal - lastMonthTotal) / lastMonthTotal) * 100 
-        : 0;
+      const growthRate =
+        lastMonthTotal > 0
+          ? ((currentTotal - lastMonthTotal) / lastMonthTotal) * 100
+          : 0;
 
       const result = {
         totalSubscriptions: totalPlans,
@@ -363,14 +380,14 @@ export class AdminSubscriptionsService {
 
   async updateSubscription(subscriptionId: string, updateDto: any) {
     const [userId, planId] = subscriptionId.split('-');
-    
+
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
     const subscriptionIndex = user.subscriptions.findIndex(
-      sub => sub.plan === planId
+      (sub) => sub.plan === planId,
     );
 
     if (subscriptionIndex === -1) {
@@ -389,7 +406,7 @@ export class AdminSubscriptionsService {
   async cancelSubscription(planId: string) {
     // For plans, "cancel" means deactivate
     const plan = await this.subscriptionPlanModel.findById(planId);
-    
+
     if (!plan) {
       throw new NotFoundException('Subscription plan not found');
     }
@@ -403,7 +420,7 @@ export class AdminSubscriptionsService {
   async reactivateSubscription(planId: string) {
     // For plans, "reactivate" means activate
     const plan = await this.subscriptionPlanModel.findById(planId);
-    
+
     if (!plan) {
       throw new NotFoundException('Subscription plan not found');
     }
@@ -417,7 +434,9 @@ export class AdminSubscriptionsService {
   async createSubscriptionPlan(planData: any) {
     try {
       // Check if plan with same planId already exists
-      const existingPlan = await this.subscriptionPlanModel.findOne({ planId: planData.planId });
+      const existingPlan = await this.subscriptionPlanModel.findOne({
+        planId: planData.planId,
+      });
       if (existingPlan) {
         throw new Error('A plan with this ID already exists');
       }
@@ -434,7 +453,7 @@ export class AdminSubscriptionsService {
   async updateSubscriptionPlan(planId: string, planData: any) {
     try {
       const plan = await this.subscriptionPlanModel.findById(planId);
-      
+
       if (!plan) {
         throw new NotFoundException('Subscription plan not found');
       }
@@ -451,7 +470,10 @@ export class AdminSubscriptionsService {
     }
   }
 
-  async exportSubscriptions(format: 'csv' | 'excel' | 'pdf', filters: SubscriptionFiltersDto) {
+  async exportSubscriptions(
+    format: 'csv' | 'excel' | 'pdf',
+    filters: SubscriptionFiltersDto,
+  ) {
     try {
       // Get all subscription plans with filters (no pagination for export)
       const allFilters = { ...filters, limit: 10000, page: 1 };
@@ -470,7 +492,8 @@ export class AdminSubscriptionsService {
         case 'excel':
           buffer = await this.generateExcel(subscriptions);
           filename = `subscription-plans-${new Date().toISOString().split('T')[0]}.xlsx`;
-          contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+          contentType =
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
           break;
         case 'pdf':
           buffer = await this.generatePDF(subscriptions);
@@ -487,36 +510,39 @@ export class AdminSubscriptionsService {
   }
 
   private async generateCSV(subscriptions: any[]): Promise<Buffer> {
-    const header = 'ID del Plan,Nombre (ES),Nombre (EN),Tipo,Precio,Intervalo,Suscriptores Activos,Total Suscriptores,Ingresos Mensuales,Estado\n';
-    
-    const rows = subscriptions.map(plan => {
-      const typeLabels: Record<string, string> = {
-        live: 'En Vivo',
-        course: 'Curso',
-        event: 'Evento',
-        bundle: 'Paquete',
-      };
-      
-      const intervalLabels: Record<string, string> = {
-        monthly: 'Mensual',
-        weekly: 'Semanal',
-        yearly: 'Anual',
-        once: 'Único',
-      };
+    const header =
+      'ID del Plan,Nombre (ES),Nombre (EN),Tipo,Precio,Intervalo,Suscriptores Activos,Total Suscriptores,Ingresos Mensuales,Estado\n';
 
-      return [
-        plan.planId,
-        plan.displayName?.es || '',
-        plan.displayName?.en || '',
-        typeLabels[plan.type] || plan.type,
-        plan.pricing?.baseAmount || 0,
-        intervalLabels[plan.pricing?.interval] || plan.pricing?.interval,
-        plan.activeSubscribers || 0,
-        plan.totalSubscribers || 0,
-        plan.monthlyRevenue || 0,
-        plan.isActive ? 'Activo' : 'Inactivo',
-      ].join(',');
-    }).join('\n');
+    const rows = subscriptions
+      .map((plan) => {
+        const typeLabels: Record<string, string> = {
+          live: 'En Vivo',
+          course: 'Curso',
+          event: 'Evento',
+          bundle: 'Paquete',
+        };
+
+        const intervalLabels: Record<string, string> = {
+          monthly: 'Mensual',
+          weekly: 'Semanal',
+          yearly: 'Anual',
+          once: 'Único',
+        };
+
+        return [
+          plan.planId,
+          plan.displayName?.es || '',
+          plan.displayName?.en || '',
+          typeLabels[plan.type] || plan.type,
+          plan.pricing?.baseAmount || 0,
+          intervalLabels[plan.pricing?.interval] || plan.pricing?.interval,
+          plan.activeSubscribers || 0,
+          plan.totalSubscribers || 0,
+          plan.monthlyRevenue || 0,
+          plan.isActive ? 'Activo' : 'Inactivo',
+        ].join(',');
+      })
+      .join('\n');
 
     return Buffer.from(header + rows, 'utf-8');
   }

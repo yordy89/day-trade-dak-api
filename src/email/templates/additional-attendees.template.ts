@@ -32,7 +32,9 @@ const formatDate = (date: Date): string => {
   }).format(date);
 };
 
-export const additionalAttendeesTemplate = (data: AdditionalAttendeesData): string => {
+export const additionalAttendeesTemplate = (
+  data: AdditionalAttendeesData,
+): string => {
   const {
     firstName,
     eventName,
@@ -107,7 +109,9 @@ export const additionalAttendeesTemplate = (data: AdditionalAttendeesData): stri
                 <h2 style="font-size: 20px; font-weight: 700; color: #22c55e; margin: 0 0 15px 0;">
                   ${eventName}
                 </h2>
-                ${eventDate ? `
+                ${
+                  eventDate
+                    ? `
                 <div style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
                   <span style="font-weight: 500; color: rgba(255,255,255,0.6); text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px;">
                     FECHA DEL EVENTO
@@ -116,7 +120,9 @@ export const additionalAttendeesTemplate = (data: AdditionalAttendeesData): stri
                     ${formattedDate}
                   </div>
                 </div>
-                ` : ''}
+                `
+                    : ''
+                }
                 <div style="padding: 10px 0;">
                   <span style="font-weight: 500; color: rgba(255,255,255,0.6); text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px;">
                     NÚMERO DE CONFIRMACIÓN
@@ -133,7 +139,9 @@ export const additionalAttendeesTemplate = (data: AdditionalAttendeesData): stri
                   INVITADOS ADICIONALES
                 </h3>
                 
-                ${additionalAdults > 0 ? `
+                ${
+                  additionalAdults > 0
+                    ? `
                 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.08);">
                   <tr>
                     <td width="40" style="vertical-align: middle;">
@@ -150,9 +158,13 @@ export const additionalAttendeesTemplate = (data: AdditionalAttendeesData): stri
                     </td>
                   </tr>
                 </table>
-                ` : ''}
+                `
+                    : ''
+                }
                 
-                ${additionalChildren > 0 ? `
+                ${
+                  additionalChildren > 0
+                    ? `
                 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="padding: 12px 0;">
                   <tr>
                     <td width="40" style="vertical-align: middle;">
@@ -169,7 +181,9 @@ export const additionalAttendeesTemplate = (data: AdditionalAttendeesData): stri
                     </td>
                   </tr>
                 </table>
-                ` : ''}
+                `
+                    : ''
+                }
               </div>
               
               <!-- Payment Summary -->
@@ -178,32 +192,44 @@ export const additionalAttendeesTemplate = (data: AdditionalAttendeesData): stri
                   RESUMEN DE PAGO
                 </h3>
                 
-                ${additionalAdults > 0 ? `
+                ${
+                  additionalAdults > 0
+                    ? `
                 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 10px;">
                   <tr>
                     <td style="color: rgba(255,255,255,0.6); font-size: 14px; padding: 8px 0;">${additionalAdults} Adulto${additionalAdults > 1 ? 's' : ''}</td>
                     <td style="color: rgba(255,255,255,0.8); font-weight: 500; text-align: right; padding: 8px 0;">${formatCurrency(adultsSubtotal)}</td>
                   </tr>
                 </table>
-                ` : ''}
+                `
+                    : ''
+                }
                 
-                ${additionalChildren > 0 ? `
+                ${
+                  additionalChildren > 0
+                    ? `
                 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 10px;">
                   <tr>
                     <td style="color: rgba(255,255,255,0.6); font-size: 14px; padding: 8px 0;">${additionalChildren} Niño${additionalChildren > 1 ? 's' : ''}</td>
                     <td style="color: rgba(255,255,255,0.8); font-weight: 500; text-align: right; padding: 8px 0;">${formatCurrency(childrenSubtotal)}</td>
                   </tr>
                 </table>
-                ` : ''}
+                `
+                    : ''
+                }
                 
-                ${klarnaFee && klarnaFee > 0 ? `
+                ${
+                  klarnaFee && klarnaFee > 0
+                    ? `
                 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 10px;">
                   <tr>
                     <td style="color: rgba(255,255,255,0.6); font-size: 14px; padding: 8px 0;">Comisión Klarna (6.44%)</td>
                     <td style="color: rgba(255,255,255,0.8); font-weight: 500; text-align: right; padding: 8px 0;">${formatCurrency(klarnaFee)}</td>
                   </tr>
                 </table>
-                ` : ''}
+                `
+                    : ''
+                }
                 
                 <table cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
                   <tr>

@@ -1,19 +1,31 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Event, EventDocument } from '../../event/schemas/event.schema';
-import { EventRegistration, EventRegistrationDocument } from '../../event/schemas/eventRegistration.schema';
+import {
+  EventRegistration,
+  EventRegistrationDocument,
+} from '../../event/schemas/eventRegistration.schema';
 import { CreateAdminEventDto } from '../dto/create-admin-event.dto';
 import { UpdateAdminEventDto } from '../dto/update-admin-event.dto';
 import { EventFiltersDto } from '../dto/event-filters.dto';
 import * as ExcelJS from 'exceljs';
 import * as PDFDocument from 'pdfkit';
+import { CacheService } from '../../cache/cache.service';
 
 @Injectable()
 export class AdminEventsService {
+  private readonly CACHE_PREFIX = 'event';
+  
   constructor(
     @InjectModel(Event.name) private eventModel: Model<EventDocument>,
-    @InjectModel(EventRegistration.name) private registrationModel: Model<EventRegistrationDocument>,
+    @InjectModel(EventRegistration.name)
+    private registrationModel: Model<EventRegistrationDocument>,
+    private readonly cache: CacheService,
   ) {}
 
   async findAllWithFilters(filters: EventFiltersDto) {
@@ -46,9 +58,19 @@ export class AdminEventsService {
       query.type = type;
     }
 
-    // Status filter
-    if (status !== undefined) {
-      query.isActive = status === 'active';
+    // Status filter - check both status field and isActive
+    if (status === 'draft') {
+      query.$or = [
+        { status: 'draft' },
+        { isActive: false }
+      ];
+    } else if (status === 'active') {
+      query.$and = [
+        { $or: [{ status: 'active' }, { status: { $exists: false } }] },
+        { isActive: { $ne: false } }
+      ];
+    } else if (status === 'completed') {
+      query.status = 'completed';
     }
 
     // Date range filter
@@ -62,17 +84,32 @@ export class AdminEventsService {
     const sort: any = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
 
     const [events, total] = await Promise.all([
-      this.eventModel
-        .find(query)
-        .sort(sort)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+      this.eventModel.find(query).sort(sort).skip(skip).limit(limit).lean(),
       this.eventModel.countDocuments(query),
     ]);
 
+    // Get registration counts for each event
+    const eventIds = events.map(e => e._id);
+    const registrationCounts = await this.registrationModel.aggregate([
+      { $match: { eventId: { $in: eventIds.map(id => id.toString()) } } },
+      { $group: { _id: '$eventId', count: { $sum: 1 } } },
+    ]);
+
+    // Create a map of event ID to registration count
+    const countMap = registrationCounts.reduce((acc, curr) => {
+      acc[curr._id] = curr.count;
+      return acc;
+    }, {});
+
+    // Add registration counts to events
+    const eventsWithCounts = events.map(event => ({
+      ...event,
+      registrations: countMap[event._id.toString()] || 0,
+      currentRegistrations: countMap[event._id.toString()] || 0,
+    }));
+
     return {
-      events,
+      events: eventsWithCounts,
       pagination: {
         page,
         limit,
@@ -92,7 +129,7 @@ export class AdminEventsService {
 
   async findOneWithStats(id: string) {
     const event = await this.findOne(id);
-    
+
     // Get registration statistics
     const [
       totalRegistrations,
@@ -101,13 +138,13 @@ export class AdminEventsService {
       totalRevenue,
     ] = await Promise.all([
       this.registrationModel.countDocuments({ eventId: id }),
-      this.registrationModel.countDocuments({ 
-        eventId: id, 
-        paymentStatus: 'paid' 
+      this.registrationModel.countDocuments({
+        eventId: id,
+        paymentStatus: 'paid',
       }),
-      this.registrationModel.countDocuments({ 
-        eventId: id, 
-        paymentStatus: 'free' 
+      this.registrationModel.countDocuments({
+        eventId: id,
+        paymentStatus: 'free',
       }),
       this.registrationModel.aggregate([
         { $match: { eventId: event._id, paymentStatus: 'paid' } },
@@ -115,9 +152,8 @@ export class AdminEventsService {
       ]),
     ]);
 
-    const attendanceRate = event.capacity > 0 
-      ? (totalRegistrations / event.capacity) * 100 
-      : 0;
+    const attendanceRate =
+      event.capacity > 0 ? (totalRegistrations / event.capacity) * 100 : 0;
 
     return {
       ...event.toObject(),
@@ -135,7 +171,9 @@ export class AdminEventsService {
   async create(createEventDto: CreateAdminEventDto): Promise<EventDocument> {
     // Validate dates
     if (createEventDto.startDate && createEventDto.endDate) {
-      if (new Date(createEventDto.startDate) > new Date(createEventDto.endDate)) {
+      if (
+        new Date(createEventDto.startDate) > new Date(createEventDto.endDate)
+      ) {
         throw new BadRequestException('Start date must be before end date');
       }
     }
@@ -159,10 +197,15 @@ export class AdminEventsService {
     return event.save();
   }
 
-  async update(id: string, updateEventDto: UpdateAdminEventDto): Promise<EventDocument> {
+  async update(
+    id: string,
+    updateEventDto: UpdateAdminEventDto,
+  ): Promise<EventDocument> {
     // Validate dates if provided
     if (updateEventDto.startDate && updateEventDto.endDate) {
-      if (new Date(updateEventDto.startDate) > new Date(updateEventDto.endDate)) {
+      if (
+        new Date(updateEventDto.startDate) > new Date(updateEventDto.endDate)
+      ) {
         throw new BadRequestException('Start date must be before end date');
       }
     }
@@ -182,8 +225,10 @@ export class AdminEventsService {
 
   async softDelete(id: string): Promise<boolean> {
     // Check if event has registrations
-    const registrationCount = await this.registrationModel.countDocuments({ eventId: id });
-    
+    const registrationCount = await this.registrationModel.countDocuments({
+      eventId: id,
+    });
+
     if (registrationCount > 0) {
       throw new BadRequestException(
         `Cannot delete event with ${registrationCount} registrations. Please deactivate it instead.`,
@@ -211,11 +256,11 @@ export class AdminEventsService {
     ] = await Promise.all([
       this.eventModel.countDocuments(),
       this.eventModel.countDocuments({ isActive: true }),
-      this.eventModel.countDocuments({ 
+      this.eventModel.countDocuments({
         date: { $gte: new Date() },
         isActive: true,
       }),
-      this.eventModel.countDocuments({ 
+      this.eventModel.countDocuments({
         date: { $lt: new Date() },
       }),
       this.registrationModel.countDocuments(),
@@ -292,7 +337,8 @@ export class AdminEventsService {
       },
       eventId: reg.eventId,
       ticketType: reg.isVip ? 'vip' : 'general',
-      paymentStatus: reg.paymentStatus === 'paid' ? 'completed' : reg.paymentStatus,
+      paymentStatus:
+        reg.paymentStatus === 'paid' ? 'completed' : reg.paymentStatus,
       paymentMethod: reg.paymentMethod,
       transactionId: reg.stripeSessionId,
       amount: reg.amountPaid || 0,
@@ -309,6 +355,8 @@ export class AdminEventsService {
       phoneNumber: reg.phoneNumber,
       isVip: reg.isVip,
       amountPaid: reg.amountPaid,
+      // Include additionalInfo for attendees information
+      additionalInfo: reg.additionalInfo,
     }));
 
     return {
@@ -344,25 +392,37 @@ export class AdminEventsService {
       'Payment Status',
       'Amount Paid',
       'Registration Type',
+      'Additional Adults',
+      'Children',
+      'Total Attendees',
       'Promo Code',
     ];
 
-    const rows = registrations.map(reg => [
-      reg._id.toString(),
-      reg.firstName,
-      reg.lastName,
-      reg.email,
-      reg.phoneNumber || '',
-      new Date(reg.createdAt).toLocaleString(),
-      reg.paymentStatus,
-      reg.amountPaid || 0,
-      reg.registrationType,
-      reg.promoCode || '',
-    ]);
+    const rows = registrations.map((reg) => {
+      const additionalAdults = reg.additionalInfo?.additionalAttendees?.adults || 0;
+      const children = reg.additionalInfo?.additionalAttendees?.children || 0;
+      const totalAttendees = 1 + additionalAdults + children;
+      
+      return [
+        reg._id.toString(),
+        reg.firstName,
+        reg.lastName,
+        reg.email,
+        reg.phoneNumber || '',
+        new Date(reg.createdAt).toLocaleString(),
+        reg.paymentStatus,
+        reg.amountPaid || 0,
+        reg.registrationType,
+        additionalAdults,
+        children,
+        totalAttendees,
+        reg.promoCode || '',
+      ];
+    });
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
     ].join('\n');
 
     return Buffer.from(csvContent, 'utf-8');
@@ -374,7 +434,10 @@ export class AdminEventsService {
 
     // Add event info
     worksheet.addRow(['Event Name:', event.name]);
-    worksheet.addRow(['Event Date:', new Date(event.date).toLocaleDateString()]);
+    worksheet.addRow([
+      'Event Date:',
+      new Date(event.date).toLocaleDateString(),
+    ]);
     worksheet.addRow(['Total Registrations:', registrations.length]);
     worksheet.addRow([]); // Empty row
 
@@ -389,6 +452,9 @@ export class AdminEventsService {
       'Payment Status',
       'Amount Paid',
       'Registration Type',
+      'Additional Adults',
+      'Children',
+      'Total Attendees',
       'Promo Code',
     ];
 
@@ -401,7 +467,11 @@ export class AdminEventsService {
     };
 
     // Add data
-    registrations.forEach(reg => {
+    registrations.forEach((reg) => {
+      const additionalAdults = reg.additionalInfo?.additionalAttendees?.adults || 0;
+      const children = reg.additionalInfo?.additionalAttendees?.children || 0;
+      const totalAttendees = 1 + additionalAdults + children;
+      
       worksheet.addRow([
         reg._id.toString(),
         reg.firstName,
@@ -412,12 +482,15 @@ export class AdminEventsService {
         reg.paymentStatus,
         reg.amountPaid || 0,
         reg.registrationType,
+        additionalAdults,
+        children,
+        totalAttendees,
         reg.promoCode || '',
       ]);
     });
 
     // Auto-fit columns
-    worksheet.columns.forEach(column => {
+    worksheet.columns.forEach((column) => {
       column.width = 15;
     });
 
@@ -430,7 +503,7 @@ export class AdminEventsService {
       const doc = new PDFDocument();
       const chunks: Buffer[] = [];
 
-      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('data', (chunk) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
@@ -440,15 +513,24 @@ export class AdminEventsService {
 
       // Add event info
       doc.fontSize(14).text(`Event: ${event.name}`);
-      doc.fontSize(12).text(`Date: ${new Date(event.date).toLocaleDateString()}`);
+      doc
+        .fontSize(12)
+        .text(`Date: ${new Date(event.date).toLocaleDateString()}`);
       doc.text(`Location: ${event.location || 'TBD'}`);
       doc.text(`Total Registrations: ${registrations.length}`);
       doc.moveDown();
 
       // Add registration summary
-      const paidCount = registrations.filter(r => r.paymentStatus === 'paid').length;
-      const freeCount = registrations.filter(r => r.paymentStatus === 'free').length;
-      const totalRevenue = registrations.reduce((sum, r) => sum + (r.amountPaid || 0), 0);
+      const paidCount = registrations.filter(
+        (r) => r.paymentStatus === 'paid',
+      ).length;
+      const freeCount = registrations.filter(
+        (r) => r.paymentStatus === 'free',
+      ).length;
+      const totalRevenue = registrations.reduce(
+        (sum, r) => sum + (r.amountPaid || 0),
+        0,
+      );
 
       doc.text(`Paid Registrations: ${paidCount}`);
       doc.text(`Free Registrations: ${freeCount}`);
@@ -468,7 +550,9 @@ export class AdminEventsService {
         doc.text(`${index + 1}. ${reg.firstName} ${reg.lastName}`);
         doc.text(`   Email: ${reg.email}`);
         doc.text(`   Phone: ${reg.phoneNumber || 'N/A'}`);
-        doc.text(`   Status: ${reg.paymentStatus} | Amount: $${reg.amountPaid || 0}`);
+        doc.text(
+          `   Status: ${reg.paymentStatus} | Amount: $${reg.amountPaid || 0}`,
+        );
         doc.moveDown(0.5);
       });
 
@@ -478,7 +562,7 @@ export class AdminEventsService {
 
   async toggleStatus(id: string): Promise<any> {
     const event = await this.eventModel.findById(id);
-    
+
     if (!event) {
       throw new NotFoundException('Event not found');
     }
@@ -504,26 +588,36 @@ export class AdminEventsService {
 
     // Calculate statistics
     const totalRegistrations = registrations.length;
-    const vipRegistrations = registrations.filter((r: any) => r.isVip === true).length;
-    const generalRegistrations = registrations.filter((r: any) => r.isVip === false).length;
-    
+    const vipRegistrations = registrations.filter(
+      (r: any) => r.isVip === true,
+    ).length;
+    const generalRegistrations = registrations.filter(
+      (r: any) => r.isVip === false,
+    ).length;
+
     // Calculate revenue
-    const totalRevenue = registrations.reduce((sum, r: any) => sum + (r.amountPaid || 0), 0);
+    const totalRevenue = registrations.reduce(
+      (sum, r: any) => sum + (r.amountPaid || 0),
+      0,
+    );
     const vipRevenue = registrations
       .filter((r: any) => r.isVip === true)
       .reduce((sum, r: any) => sum + (r.amountPaid || 0), 0);
     const generalRevenue = registrations
       .filter((r: any) => r.isVip === false)
       .reduce((sum, r: any) => sum + (r.amountPaid || 0), 0);
-    
+
     // Calculate check-in rate (using a field that might exist)
     const checkedInCount = registrations.filter((r: any) => r.checkedIn).length;
-    const checkInRate = totalRegistrations > 0 ? (checkedInCount / totalRegistrations) * 100 : 0;
+    const checkInRate =
+      totalRegistrations > 0 ? (checkedInCount / totalRegistrations) * 100 : 0;
 
     // Payment status breakdown
     const paymentStatusBreakdown = {
-      pending: registrations.filter((r: any) => r.paymentStatus === 'pending').length,
-      completed: registrations.filter((r: any) => r.paymentStatus === 'paid').length,
+      pending: registrations.filter((r: any) => r.paymentStatus === 'pending')
+        .length,
+      completed: registrations.filter((r: any) => r.paymentStatus === 'paid')
+        .length,
       failed: 0, // Not in the schema
       refunded: 0, // Not in the schema
     };
@@ -531,10 +625,10 @@ export class AdminEventsService {
     // Calculate daily registrations (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
+
     const dailyRegistrations = [];
     const registrationsByDate = new Map();
-    
+
     // Group registrations by date
     registrations.forEach((reg: any) => {
       if (reg.createdAt) {
@@ -547,7 +641,7 @@ export class AdminEventsService {
         dayData.revenue += reg.amountPaid || 0;
       }
     });
-    
+
     // Convert to array format
     registrationsByDate.forEach((data, date) => {
       dailyRegistrations.push({
@@ -556,12 +650,13 @@ export class AdminEventsService {
         revenue: data.revenue,
       });
     });
-    
+
     // Sort by date
     dailyRegistrations.sort((a, b) => a.date.localeCompare(b.date));
 
     // Calculate capacity utilization
-    const capacityUtilization = event.capacity > 0 ? (totalRegistrations / event.capacity) * 100 : 0;
+    const capacityUtilization =
+      event.capacity > 0 ? (totalRegistrations / event.capacity) * 100 : 0;
 
     return {
       totalRegistrations,
@@ -575,5 +670,82 @@ export class AdminEventsService {
       checkInRate: Math.round(checkInRate * 100) / 100,
       capacityUtilization: Math.round(capacityUtilization * 100) / 100,
     };
+  }
+
+  async setFeaturedEventForType(eventId: string, type: string): Promise<EventDocument> {
+    // First, unset featuredInCRM for all events of the same type
+    await this.eventModel.updateMany(
+      { 
+        type, 
+        featuredInCRM: true 
+      },
+      { 
+        $set: { featuredInCRM: false } 
+      }
+    );
+
+    // Then set the specified event as featured
+    const updatedEvent = await this.eventModel.findByIdAndUpdate(
+      eventId,
+      { 
+        $set: { featuredInCRM: true } 
+      },
+      { 
+        new: true,
+        runValidators: true 
+      }
+    );
+
+    if (!updatedEvent) {
+      throw new NotFoundException('Event not found');
+    }
+
+    // Invalidate cache for community events
+    await this.invalidateEventCache();
+
+    return updatedEvent;
+  }
+
+  async toggleFeaturedStatus(eventId: string): Promise<EventDocument> {
+    const event = await this.eventModel.findById(eventId);
+    
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    const newFeaturedStatus = !event.featuredInCRM;
+
+    // If setting to true, unset other events of the same type
+    if (newFeaturedStatus) {
+      await this.eventModel.updateMany(
+        { 
+          type: event.type, 
+          featuredInCRM: true,
+          _id: { $ne: eventId }
+        },
+        { 
+          $set: { featuredInCRM: false } 
+        }
+      );
+    }
+
+    // Update the event
+    event.featuredInCRM = newFeaturedStatus;
+    await event.save();
+
+    // Invalidate cache for community events
+    await this.invalidateEventCache();
+
+    return event;
+  }
+
+  private async invalidateEventCache(): Promise<void> {
+    try {
+      // Invalidate all event-related caches
+      await this.cache.invalidatePattern(`${this.CACHE_PREFIX}:*`);
+    } catch (error) {
+      // Log error but don't fail the operation
+      console.error('Failed to invalidate cache:', error);
+    }
   }
 }

@@ -1,6 +1,9 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ModulePermission, ModulePermissionSchema } from './module-permission.schema';
+import {
+  ModulePermission,
+  ModulePermissionSchema,
+} from './module-permission.schema';
 import { ModulePermissionsService } from './module-permissions.service';
 import { ModulePermissionsController } from './module-permissions.controller';
 import { UsersModule } from '../users/users.module';

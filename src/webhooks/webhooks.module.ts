@@ -5,9 +5,7 @@ import { Meeting, MeetingSchema } from '../schemas/meeting.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([
-      { name: Meeting.name, schema: MeetingSchema },
-    ]),
+    MongooseModule.forFeature([{ name: Meeting.name, schema: MeetingSchema }]),
   ],
   controllers: [VideoSDKWebhookController],
 })

@@ -3,7 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Meeting, MeetingDocument } from '../schemas/meeting.schema';
-import { VideoSDKService } from '../videosdk/videosdk.service';
+import { ZoomApiService } from '../videosdk/zoom-api.service';
 import { ConfigService } from '@nestjs/config';
 import { User, UserDocument } from '../users/user.schema';
 
@@ -15,7 +15,7 @@ export class MeetingCronService {
   constructor(
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-    private videoSDKService: VideoSDKService,
+    private zoomApiService: ZoomApiService,
     private configService: ConfigService,
   ) {
     // Get default host ID from config or use a fallback
@@ -157,19 +157,31 @@ export class MeetingCronService {
         }
 
         try {
-          // Create VideoSDK room
-          const room = await this.videoSDKService.createMeeting({
-            title: 'Analysis de Trading en Vivo',
-            mode: 'CONFERENCE',
+          // Create Zoom meeting
+          const zoomMeeting = await this.zoomApiService.createMeeting({
+            topic: 'Analysis de Trading en Vivo',
+            scheduledAt,
+            duration: 60,
+            recordAutomatically: true,
+            enableChat: true,
+            waitingRoom: false,
+            autoAdmit: true, // Auto-admit participants
+            autoLockMinutes: 10, // Lock after 10 minutes
+            joinBeforeHost: false,
+            muteUponEntry: true,
           });
 
-          // Create meeting
+          // Create meeting in database with Zoom details
           const meetingData = {
             title: 'Analysis de Trading en Vivo',
             description:
               'Análisis diario en vivo de operaciones y sesión de preguntas y respuestas (Q&A)',
-            meetingId: room.roomId,
-            roomUrl: `https://app.videosdk.live/rooms/${room.roomId}`,
+            meetingId: zoomMeeting.zoomMeetingId,
+            roomUrl: zoomMeeting.joinUrl,
+            zoomMeetingId: zoomMeeting.zoomMeetingId,
+            zoomJoinUrl: zoomMeeting.joinUrl,
+            zoomStartUrl: zoomMeeting.startUrl,
+            zoomPassword: zoomMeeting.password,
             scheduledAt,
             duration: 60,
             host: hostId,
@@ -182,12 +194,14 @@ export class MeetingCronService {
             enableScreenShare: true,
             isPublic: false,
             participants: [], // Start with empty participants
+            restrictedToSubscriptions: true,
+            allowedSubscriptions: ['LiveWeeklyManual', 'LiveWeeklyRecurring', 'MasterClases'],
           };
 
           const meeting = await this.meetingModel.create(meetingData);
 
           this.logger.log(
-            `Created daily meeting for ${scheduledAt.toISOString()} with room ID: ${room.roomId}`,
+            `Created daily Zoom meeting for ${scheduledAt.toISOString()} with meeting ID: ${zoomMeeting.zoomMeetingId}`,
           );
 
           result.meetingCreated = true;

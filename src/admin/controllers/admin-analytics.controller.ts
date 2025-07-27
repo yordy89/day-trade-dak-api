@@ -1,11 +1,11 @@
+import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
 import {
-  Controller,
-  Get,
-  Query,
-  UseGuards,
-  Request,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../guards/jwt-auth-guard';
 import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/role.decorator';
@@ -138,7 +138,11 @@ export class AdminAnalyticsController {
 
   @Get('export')
   @ApiOperation({ summary: 'Export analytics report' })
-  @ApiQuery({ name: 'type', required: true, enum: ['revenue', 'transactions', 'subscriptions'] })
+  @ApiQuery({
+    name: 'type',
+    required: true,
+    enum: ['revenue', 'transactions', 'subscriptions'],
+  })
   @ApiQuery({ name: 'format', required: false, enum: ['csv', 'pdf'] })
   @ApiQuery({ name: 'startDate', required: true, type: Date })
   @ApiQuery({ name: 'endDate', required: true, type: Date })

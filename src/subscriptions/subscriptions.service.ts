@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { SubscriptionPlan, SubscriptionPlanDocument, PlanInterval, PlanType } from './subscription-plan.schema';
+import {
+  SubscriptionPlan,
+  SubscriptionPlanDocument,
+  PlanInterval,
+  PlanType,
+} from './subscription-plan.schema';
 import { User, UserDocument } from '../users/user.schema';
 
 @Injectable()
@@ -19,11 +24,8 @@ export class SubscriptionsService {
     if (type) {
       query.type = type;
     }
-    
-    return this.subscriptionPlanModel
-      .find(query)
-      .sort({ sortOrder: 1 })
-      .exec();
+
+    return this.subscriptionPlanModel.find(query).sort({ sortOrder: 1 }).exec();
   }
 
   // Get a single subscription plan by ID
@@ -60,7 +62,10 @@ export class SubscriptionsService {
   }
 
   // Check if user has any of the provided subscriptions
-  async userHasAnySubscription(userId: string, planIds: string[]): Promise<boolean> {
+  async userHasAnySubscription(
+    userId: string,
+    planIds: string[],
+  ): Promise<boolean> {
     for (const planId of planIds) {
       if (await this.userHasSubscription(userId, planId)) {
         return true;
@@ -77,17 +82,17 @@ export class SubscriptionsService {
     }
 
     const activeSubscriptions = [];
-    
+
     for (const sub of user.subscriptions) {
       let planId: string;
       let expiresAt: Date | null = null;
-      
+
       if (typeof sub === 'string') {
         planId = sub;
       } else if (sub && typeof sub === 'object' && 'plan' in sub) {
         planId = sub.plan;
         expiresAt = sub.expiresAt ? new Date(sub.expiresAt) : null;
-        
+
         // Skip expired subscriptions
         if (expiresAt && expiresAt < new Date()) {
           continue;
@@ -122,9 +127,9 @@ export class SubscriptionsService {
     hasLiveMeetingAccess: boolean;
   }> {
     const userSubscriptions = await this.getUserSubscriptions(userId);
-    
+
     // Default permissions (no subscription)
-    let permissions = {
+    const permissions = {
       canCreateMeetings: false,
       maxMeetingsPerMonth: 0,
       maxMeetingDuration: 0,
@@ -138,13 +143,28 @@ export class SubscriptionsService {
     for (const sub of userSubscriptions) {
       const planPermissions = sub.plan.meetingPermissions;
       if (planPermissions) {
-        permissions.canCreateMeetings = permissions.canCreateMeetings || planPermissions.canCreateMeetings;
-        permissions.maxMeetingsPerMonth = Math.max(permissions.maxMeetingsPerMonth, planPermissions.maxMeetingsPerMonth);
-        permissions.maxMeetingDuration = Math.max(permissions.maxMeetingDuration, planPermissions.maxMeetingDuration);
-        permissions.maxParticipantsPerMeeting = Math.max(permissions.maxParticipantsPerMeeting, planPermissions.maxParticipantsPerMeeting);
-        permissions.canRecordMeetings = permissions.canRecordMeetings || planPermissions.canRecordMeetings;
-        permissions.canScheduleMeetings = permissions.canScheduleMeetings || planPermissions.canScheduleMeetings;
-        permissions.hasLiveMeetingAccess = permissions.hasLiveMeetingAccess || planPermissions.hasLiveMeetingAccess;
+        permissions.canCreateMeetings =
+          permissions.canCreateMeetings || planPermissions.canCreateMeetings;
+        permissions.maxMeetingsPerMonth = Math.max(
+          permissions.maxMeetingsPerMonth,
+          planPermissions.maxMeetingsPerMonth,
+        );
+        permissions.maxMeetingDuration = Math.max(
+          permissions.maxMeetingDuration,
+          planPermissions.maxMeetingDuration,
+        );
+        permissions.maxParticipantsPerMeeting = Math.max(
+          permissions.maxParticipantsPerMeeting,
+          planPermissions.maxParticipantsPerMeeting,
+        );
+        permissions.canRecordMeetings =
+          permissions.canRecordMeetings || planPermissions.canRecordMeetings;
+        permissions.canScheduleMeetings =
+          permissions.canScheduleMeetings ||
+          planPermissions.canScheduleMeetings;
+        permissions.hasLiveMeetingAccess =
+          permissions.hasLiveMeetingAccess ||
+          planPermissions.hasLiveMeetingAccess;
       }
     }
 
@@ -152,7 +172,10 @@ export class SubscriptionsService {
   }
 
   // Check if user can access a meeting based on subscriptions
-  async canUserAccessMeeting(userId: string, allowedSubscriptions: string[]): Promise<boolean> {
+  async canUserAccessMeeting(
+    userId: string,
+    allowedSubscriptions: string[],
+  ): Promise<boolean> {
     // If no subscription restrictions, allow access
     if (!allowedSubscriptions || allowedSubscriptions.length === 0) {
       return true;
@@ -163,15 +186,19 @@ export class SubscriptionsService {
   }
 
   // Create or update a subscription plan
-  async createOrUpdatePlan(planData: Partial<SubscriptionPlan>): Promise<SubscriptionPlan> {
+  async createOrUpdatePlan(
+    planData: Partial<SubscriptionPlan>,
+  ): Promise<SubscriptionPlan> {
     const { planId } = planData;
-    
+
     if (!planId) {
       throw new Error('Plan ID is required');
     }
 
-    const existingPlan = await this.subscriptionPlanModel.findOne({ planId }).exec();
-    
+    const existingPlan = await this.subscriptionPlanModel
+      .findOne({ planId })
+      .exec();
+
     if (existingPlan) {
       // Update existing plan
       Object.assign(existingPlan, planData);
@@ -187,7 +214,9 @@ export class SubscriptionsService {
   async initializeDefaultPlans(): Promise<void> {
     // This method is deprecated in favor of the migration script
     // Use: npm run migrate:subscription-data
-    console.log('Please use the migration script instead: npm run migrate:subscription-data');
+    console.log(
+      'Please use the migration script instead: npm run migrate:subscription-data',
+    );
     return;
   }
 }

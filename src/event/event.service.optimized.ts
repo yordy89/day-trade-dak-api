@@ -428,16 +428,127 @@ export class EventsServiceOptimized {
     );
   }
 
+  async findActiveCommunityEvent(): Promise<EventDocument | null> {
+    const startTime = Date.now();
+
+    try {
+      const cacheKey = this.buildCacheKey('active-community', {});
+      
+      // Check cache
+      const cached = await this.cache.get<EventDocument>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      // First, try to find a featured event (excluding completed status)
+      let event = await this.eventModel
+        .findOne({
+          type: 'community_event',
+          isActive: true,
+          featuredInCRM: true,
+        })
+        .lean()
+        .exec();
+
+      // If no featured event found, fall back to the first active event by date
+      if (!event) {
+        event = await this.eventModel
+          .findOne({
+            type: 'community_event',
+            isActive: true,
+            date: { $gte: new Date() },
+            status: { $ne: 'completed' },
+          })
+          .sort({ date: 1 })
+          .lean()
+          .exec();
+      }
+
+      if (event) {
+        // Cache result
+        await this.cache.set(cacheKey, event, 10);
+      }
+
+      // Log metrics
+      const duration = Date.now() - startTime;
+      this.logger.logPerformanceMetric('event_findActiveCommunity', duration);
+
+      return event as EventDocument;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.logPerformanceMetric('event_findActiveCommunity_failed', duration);
+      this.logger.error('Failed to find active community event', error.stack);
+      throw new InternalServerErrorException('Failed to find active community event');
+    }
+  }
+
+  async findCommunityEventById(id: string): Promise<EventDocument> {
+    const startTime = Date.now();
+
+    try {
+      // Validate ObjectId
+      if (!Types.ObjectId.isValid(id)) {
+        throw new BadRequestException('Invalid event ID format');
+      }
+
+      const cacheKey = this.buildCacheKey('community-detail', { id });
+      
+      // Check cache
+      const cached = await this.cache.get<EventDocument>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      const event = await this.eventModel
+        .findOne({
+          _id: id,
+          type: 'community_event',
+        })
+        .lean()
+        .exec();
+
+      if (!event) {
+        throw new NotFoundException('Community event not found');
+      }
+
+      // Cache result
+      await this.cache.set(cacheKey, event, this.CACHE_TTL);
+
+      // Log metrics
+      const duration = Date.now() - startTime;
+      this.logger.logPerformanceMetric('event_findCommunityById', duration);
+
+      return event as EventDocument;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.logPerformanceMetric('event_findCommunityById_failed', duration);
+
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      this.logger.error(`Failed to find community event: ${id}`, error.stack);
+      throw new InternalServerErrorException('Failed to retrieve community event');
+    }
+  }
+
   private async invalidateCache(eventId?: string): Promise<void> {
     try {
       // Invalidate all list caches
       await this.cache.invalidatePattern(`${this.CACHE_PREFIX}:list:*`);
       await this.cache.invalidatePattern(`${this.CACHE_PREFIX}:upcoming:*`);
+      await this.cache.invalidatePattern(`${this.CACHE_PREFIX}:active-community:*`);
+      await this.cache.invalidatePattern(`${this.CACHE_PREFIX}:community-detail:*`);
 
       // Invalidate specific event cache if ID provided
       if (eventId) {
         const detailKey = this.buildCacheKey('detail', { id: eventId });
         await this.cache.del(detailKey);
+        const communityDetailKey = this.buildCacheKey('community-detail', { id: eventId });
+        await this.cache.del(communityDetailKey);
       }
 
       this.logger.debug('Event cache invalidated');

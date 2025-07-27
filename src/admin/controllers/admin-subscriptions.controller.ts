@@ -52,8 +52,9 @@ export class AdminSubscriptionsController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.adminSubscriptionsService.findAllWithFilters(filters);
-      
+      const result =
+        await this.adminSubscriptionsService.findAllWithFilters(filters);
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -69,7 +70,9 @@ export class AdminSubscriptionsController {
       return result;
     } catch (error) {
       console.error('Error fetching subscriptions:', error);
-      throw new BadRequestException(`Failed to fetch subscriptions: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to fetch subscriptions: ${error.message}`,
+      );
     }
   }
 
@@ -87,8 +90,9 @@ export class AdminSubscriptionsController {
   @Get('stats')
   async getSubscriptionStats(@Req() req: RequestWithUser) {
     try {
-      const stats = await this.adminSubscriptionsService.getSubscriptionStatistics();
-      
+      const stats =
+        await this.adminSubscriptionsService.getSubscriptionStatistics();
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -110,7 +114,7 @@ export class AdminSubscriptionsController {
   async getSubscriptionPlans(@Req() req: RequestWithUser) {
     try {
       const plans = await this.adminSubscriptionsService.getSubscriptionPlans();
-      
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -134,8 +138,9 @@ export class AdminSubscriptionsController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const subscriptions = await this.adminSubscriptionsService.getUserSubscriptions(userId);
-      
+      const subscriptions =
+        await this.adminSubscriptionsService.getUserSubscriptions(userId);
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -168,7 +173,7 @@ export class AdminSubscriptionsController {
         subscriptionId,
         updateDto,
       );
-      
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -200,8 +205,9 @@ export class AdminSubscriptionsController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.adminSubscriptionsService.cancelSubscription(subscriptionId);
-      
+      const result =
+        await this.adminSubscriptionsService.cancelSubscription(subscriptionId);
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -232,8 +238,11 @@ export class AdminSubscriptionsController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.adminSubscriptionsService.reactivateSubscription(subscriptionId);
-      
+      const result =
+        await this.adminSubscriptionsService.reactivateSubscription(
+          subscriptionId,
+        );
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -264,8 +273,9 @@ export class AdminSubscriptionsController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.adminSubscriptionsService.createSubscriptionPlan(planData);
-      
+      const result =
+        await this.adminSubscriptionsService.createSubscriptionPlan(planData);
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -283,7 +293,9 @@ export class AdminSubscriptionsController {
         plan: result,
       };
     } catch (error) {
-      throw new BadRequestException(`Failed to create subscription plan: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to create subscription plan: ${error.message}`,
+      );
     }
   }
 
@@ -294,8 +306,12 @@ export class AdminSubscriptionsController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.adminSubscriptionsService.updateSubscriptionPlan(planId, planData);
-      
+      const result =
+        await this.adminSubscriptionsService.updateSubscriptionPlan(
+          planId,
+          planData,
+        );
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -317,7 +333,9 @@ export class AdminSubscriptionsController {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      throw new BadRequestException(`Failed to update subscription plan: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to update subscription plan: ${error.message}`,
+      );
     }
   }
 
@@ -329,8 +347,12 @@ export class AdminSubscriptionsController {
     @Res() res: Response,
   ) {
     try {
-      const { buffer, filename, contentType } = await this.adminSubscriptionsService.exportSubscriptions(format, filters);
-      
+      const { buffer, filename, contentType } =
+        await this.adminSubscriptionsService.exportSubscriptions(
+          format,
+          filters,
+        );
+
       // Log admin action
       await this.adminService.logAdminAction({
         adminId: req.user._id.toString(),
@@ -351,7 +373,9 @@ export class AdminSubscriptionsController {
 
       res.send(buffer);
     } catch (error) {
-      throw new BadRequestException(`Failed to export subscriptions: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to export subscriptions: ${error.message}`,
+      );
     }
   }
 }

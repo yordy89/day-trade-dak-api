@@ -30,7 +30,11 @@ import { EmailModule } from 'src/email/email.module';
     forwardRef(() => EventModule),
     EmailModule,
   ],
-  controllers: [StripeController, PaymentReportsController, PublicPricingController],
+  controllers: [
+    StripeController,
+    PaymentReportsController,
+    PublicPricingController,
+  ],
   providers: [StripeService, PricingService, PaymentAnalyticsService],
   exports: [StripeService, PricingService, PaymentAnalyticsService],
 })

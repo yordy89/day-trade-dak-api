@@ -43,10 +43,11 @@ export class ModuleAccessGuard implements CanActivate {
     }
 
     // 2. Check module permissions
-    const hasModulePermission = await this.modulePermissionsService.hasModuleAccess(
-      user._id.toString(),
-      requiredModule,
-    );
+    const hasModulePermission =
+      await this.modulePermissionsService.hasModuleAccess(
+        user._id.toString(),
+        requiredModule,
+      );
 
     if (hasModulePermission) {
       return true;
@@ -93,7 +94,7 @@ export class ModuleAccessGuard implements CanActivate {
     }
 
     // Check if user has any of the required subscriptions
-    const activeSubscriptions = user.subscriptions.filter(sub => {
+    const activeSubscriptions = user.subscriptions.filter((sub) => {
       // Check if subscription is not expired
       if (sub.expiresAt && new Date(sub.expiresAt) < new Date()) {
         return false;
