@@ -212,6 +212,7 @@ export class PermissionsService {
       settings: false,
       auditLogs: false,
       permissions: false,
+      contactMessages: false,
     };
 
     switch (role) {

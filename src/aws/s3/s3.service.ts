@@ -79,7 +79,7 @@ export class S3Service {
     return `https://${cloudFrontDomain}/${fileKey}`;
   }
 
-  async listVideos(key: string): Promise<{ key: string; signedUrl: string }[]> {
+  async listVideos(key: string): Promise<{ key: string; signedUrl: string; isHLS?: boolean }[]> {
     const prefix = this.configService.get<string>(key);
     const command = new ListObjectsV2Command({
       Bucket: this.bucketName,
@@ -91,10 +91,18 @@ export class S3Service {
     if (!Contents) return [];
 
     let videos = await Promise.all(
-      Contents.filter((file) => file.Key && !file.Key.endsWith('/')).map(
+      Contents.filter((file) => {
+        if (!file.Key || file.Key.endsWith('/')) return false;
+        // Include both MP4 and HLS manifest files
+        return file.Key.endsWith('.mp4') || file.Key.endsWith('.m3u8');
+      }).map(
         async (file) => {
           const signedUrl = await this.getSignedUrl(file.Key);
-          return { key: file.Key, signedUrl };
+          return { 
+            key: file.Key, 
+            signedUrl,
+            isHLS: file.Key.endsWith('.m3u8')
+          };
         },
       ),
     );
@@ -104,12 +112,12 @@ export class S3Service {
         .map((video) => ({
           ...video,
           date: new Date(
-            video.key.split('/').pop()!.replace('.mp4', '').replace(/:/g, '-'),
+            video.key.split('/').pop()!.replace('.mp4', '').replace('.m3u8', '').replace(/:/g, '-'),
           ),
         }))
         .sort((a, b) => b.date.getTime() - a.date.getTime())
         .slice(0, 10)
-        .map(({ key, signedUrl }) => ({ key, signedUrl }));
+        .map(({ key, signedUrl, isHLS }) => ({ key, signedUrl, isHLS }));
     }
 
     return videos;
@@ -128,7 +136,16 @@ export class S3Service {
       );
 
       const fullUrl = `https://${cloudFrontDomain}/${key}`;
-      const expires = Math.floor(Date.now() / 1000) + 60 * 60 * 12;
+      
+      // For HLS content (.m3u8 and .ts files), use shorter expiry for manifest files
+      let expirySeconds = 60 * 60 * 12; // 12 hours default
+      if (key.endsWith('.m3u8')) {
+        expirySeconds = 60 * 5; // 5 minutes for manifest files
+      } else if (key.endsWith('.ts')) {
+        expirySeconds = 60 * 60 * 24; // 24 hours for video segments
+      }
+      
+      const expires = Math.floor(Date.now() / 1000) + expirySeconds;
 
       const signedUrl = getCloudFrontSignedUrl({
         url: fullUrl,
@@ -142,5 +159,39 @@ export class S3Service {
 
     const command = new GetObjectCommand({ Bucket: this.bucketName, Key: key });
     return getS3SignedUrl(this.s3, command, { expiresIn: 3600 });
+  }
+
+  // Get HLS manifest with signed URLs for segments
+  async getHLSManifest(key: string): Promise<string> {
+    // Get the manifest file content
+    const command = new GetObjectCommand({ 
+      Bucket: this.bucketName, 
+      Key: key 
+    });
+    
+    const response = await this.s3.send(command);
+    const manifestContent = await response.Body?.transformToString('utf-8');
+    
+    if (!manifestContent) {
+      throw new Error('Failed to retrieve HLS manifest');
+    }
+
+    // Replace relative segment URLs with signed URLs
+    const lines = manifestContent.split('\n');
+    const baseDir = key.substring(0, key.lastIndexOf('/'));
+    
+    const modifiedLines = await Promise.all(
+      lines.map(async (line) => {
+        // Check if this line is a .ts segment reference
+        if (line.endsWith('.ts')) {
+          const segmentKey = `${baseDir}/${line}`;
+          const signedUrl = await this.getSignedUrl(segmentKey);
+          return signedUrl;
+        }
+        return line;
+      })
+    );
+
+    return modifiedLines.join('\n');
   }
 }

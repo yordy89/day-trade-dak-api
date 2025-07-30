@@ -49,6 +49,9 @@ export class PermissionSet {
 
   @Prop({ default: false })
   permissions: boolean; // Only for super_admin
+
+  @Prop({ default: false })
+  contactMessages: boolean;
 }
 
 @Schema({ timestamps: true })
@@ -80,6 +83,7 @@ export const DEFAULT_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   analytics: true,
   reports: true,
   settings: true,
+  contactMessages: true,
 };
 
 export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
@@ -98,4 +102,5 @@ export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   settings: true,
   auditLogs: true,
   permissions: true,
+  contactMessages: true,
 };

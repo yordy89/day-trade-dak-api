@@ -2353,4 +2353,24 @@ export class StripeService {
 
     return bnplMethods;
   }
+
+  async createRefund(params: {
+    paymentIntentId: string;
+    amount: number;
+    reason?: 'duplicate' | 'fraudulent' | 'requested_by_customer';
+    metadata?: Record<string, string>;
+  }): Promise<Stripe.Refund> {
+    try {
+      const refund = await this.stripe.refunds.create({
+        payment_intent: params.paymentIntentId,
+        amount: params.amount,
+        reason: params.reason || 'requested_by_customer',
+        metadata: params.metadata || {},
+      });
+      return refund;
+    } catch (error) {
+      this.logger.error('Failed to create refund:', error);
+      throw error;
+    }
+  }
 }

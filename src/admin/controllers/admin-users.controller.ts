@@ -26,6 +26,7 @@ import { Role } from '../../schemas/role';
 import { RequestWithUser } from '../../types/request-with-user.interface';
 import { AdminUsersService } from '../services/admin-users.service';
 import { AdminService } from '../admin.service';
+import { CreateAdminUserDto } from '../dto/create-admin-user.dto';
 
 @ApiTags('admin/users')
 @Controller('admin/users')
@@ -128,7 +129,7 @@ export class AdminUsersController {
   @ApiOperation({ summary: 'Create a new user' })
   @Roles(Role.SUPER_ADMIN) // Only super admins can create users
   async createUser(
-    @Body() createUserDto: any,
+    @Body() createUserDto: CreateAdminUserDto,
     @Request() req: RequestWithUser,
   ) {
     const user = await this.adminUsersService.createUser(createUserDto);
@@ -267,6 +268,111 @@ export class AdminUsersController {
       status,
       subscription,
       role,
+    });
+  }
+
+  // Subscription management endpoints
+  @Post(':userId/subscriptions')
+  @ApiOperation({ summary: 'Add subscription to user' })
+  async addUserSubscription(
+    @Param('userId') userId: string,
+    @Body() subscriptionData: { plan: string; expiresAt?: string },
+    @Request() req: RequestWithUser,
+  ) {
+    const result = await this.adminUsersService.addUserSubscription(
+      userId,
+      subscriptionData,
+    );
+
+    // Log admin action
+    await this.adminService.logAdminAction({
+      adminId: req.user?.userId || req.user?._id || 'unknown',
+      adminEmail: req.user?.email || 'unknown',
+      action: 'add_subscription',
+      resource: 'user_subscription',
+      resourceId: userId,
+      newValue: subscriptionData,
+      ipAddress: req.ip || '0.0.0.0',
+      userAgent: req.headers['user-agent'],
+    });
+
+    return result;
+  }
+
+  @Patch(':userId/subscriptions/:subscriptionId')
+  @ApiOperation({ summary: 'Update user subscription' })
+  async updateUserSubscription(
+    @Param('userId') userId: string,
+    @Param('subscriptionId') subscriptionId: string,
+    @Body() updateData: { plan?: string; expiresAt?: string },
+    @Request() req: RequestWithUser,
+  ) {
+    const result = await this.adminUsersService.updateUserSubscription(
+      userId,
+      subscriptionId,
+      updateData,
+    );
+
+    // Log admin action
+    await this.adminService.logAdminAction({
+      adminId: req.user?.userId || req.user?._id || 'unknown',
+      adminEmail: req.user?.email || 'unknown',
+      action: 'update_subscription',
+      resource: 'user_subscription',
+      resourceId: subscriptionId,
+      newValue: updateData,
+      ipAddress: req.ip || '0.0.0.0',
+      userAgent: req.headers['user-agent'],
+    });
+
+    return result;
+  }
+
+  @Post(':userId/subscriptions/:subscriptionId/cancel')
+  @ApiOperation({ summary: 'Cancel user subscription' })
+  async cancelUserSubscription(
+    @Param('userId') userId: string,
+    @Param('subscriptionId') subscriptionId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    const result = await this.adminUsersService.cancelUserSubscription(
+      userId,
+      subscriptionId,
+    );
+
+    // Log admin action
+    await this.adminService.logAdminAction({
+      adminId: req.user?.userId || req.user?._id || 'unknown',
+      adminEmail: req.user?.email || 'unknown',
+      action: 'cancel_subscription',
+      resource: 'user_subscription',
+      resourceId: subscriptionId,
+      ipAddress: req.ip || '0.0.0.0',
+      userAgent: req.headers['user-agent'],
+    });
+
+    return result;
+  }
+
+  @Delete(':userId/subscriptions/:subscriptionId')
+  @ApiOperation({ summary: 'Delete user subscription' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteUserSubscription(
+    @Param('userId') userId: string,
+    @Param('subscriptionId') subscriptionId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    await this.adminUsersService.deleteUserSubscription(userId, subscriptionId);
+
+    // Log admin action
+    await this.adminService.logAdminAction({
+      adminId: req.user?.userId || req.user?._id || 'unknown',
+      adminEmail: req.user?.email || 'unknown',
+      action: 'delete_subscription',
+      resource: 'user_subscription',
+      resourceId: subscriptionId,
+      ipAddress: req.ip || '0.0.0.0',
+      userAgent: req.headers['user-agent'],
     });
   }
 }

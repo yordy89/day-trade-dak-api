@@ -76,4 +76,9 @@ export class UpdatePermissionDto {
   @IsOptional()
   @IsBoolean()
   permissions?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  contactMessages?: boolean;
 }

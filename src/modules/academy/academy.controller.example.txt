@@ -1,0 +1,79 @@
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { CDNService } from '../cdn/cdn.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+/**
+ * Example of how to update your academy controller to use CDN service
+ */
+@Controller('academy')
+@UseGuards(JwtAuthGuard) // Protect video access
+export class AcademyController {
+  constructor(
+    private readonly cdnService: CDNService,
+    // ... other services
+  ) {}
+
+  /**
+   * Get signed URL for video playback
+   * Works with any CDN provider (CloudFront, BunnyCDN, etc.)
+   */
+  @Get('video/:videoId/url')
+  async getVideoUrl(@Param('videoId') videoId: string) {
+    // Get video details from database
+    const video = await this.videoService.findOne(videoId);
+    
+    if (!video) {
+      throw new NotFoundException('Video not found');
+    }
+
+    // Generate signed URL using configured CDN
+    // This will use CloudFront, BunnyCDN, or S3 based on CDN_PROVIDER env var
+    const signedUrl = await this.cdnService.generateVideoUrl(
+      video.s3Key, // e.g., "clase_1/master.m3u8"
+      3600 // 1 hour expiry
+    );
+
+    // Log which CDN is being used
+    const providerInfo = this.cdnService.getProviderInfo();
+    console.log(`Generated video URL using ${providerInfo.name}`);
+
+    return {
+      url: signedUrl,
+      expiresIn: 3600,
+      provider: providerInfo.name,
+    };
+  }
+
+  /**
+   * Get video manifest with all quality levels
+   */
+  @Get('video/:videoId/manifest')
+  async getVideoManifest(@Param('videoId') videoId: string) {
+    const video = await this.videoService.findOne(videoId);
+    
+    if (!video) {
+      throw new NotFoundException('Video not found');
+    }
+
+    // Generate URLs for all quality levels
+    const qualities = ['1080p', '720p', '480p', '360p'];
+    const manifest = {};
+
+    for (const quality of qualities) {
+      const qualityKey = `${video.s3Key}/${quality}/playlist.m3u8`;
+      manifest[quality] = await this.cdnService.generateVideoUrl(qualityKey, 3600);
+    }
+
+    // Also get master playlist
+    const masterUrl = await this.cdnService.generateVideoUrl(
+      `${video.s3Key}/master.m3u8`,
+      3600
+    );
+
+    return {
+      master: masterUrl,
+      qualities: manifest,
+      provider: this.cdnService.getProviderInfo().name,
+    };
+  }
+}

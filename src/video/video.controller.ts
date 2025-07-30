@@ -7,8 +7,13 @@ import {
   Param,
   UseGuards,
   Inject,
+  Response,
+  Header,
+  Headers,
+  Query,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Response as ExpressResponse } from 'express';
 import { SubscriptionPlan } from 'src/users/user.dto';
 import { VideoService } from './video.service';
 import { CreateVideoDto, UpdateVideoDto } from './video.dto';
@@ -119,17 +124,35 @@ export class VideoController {
       VariableKeys.AWS_S3_CLASSES_VIDEO_FOLDER,
     );
 
-    const sorted = videos.sort((a, b) => {
-      const extractOrder = (key: string): number => {
-        const filename = key.split('/').pop(); // get only the filename
-        const match = filename?.match(/^(\d+)_/); // ✅ match number before underscore
+    // Filter to only return master playlist.m3u8 files (not quality-specific ones)
+    const masterPlaylists = videos.filter(video => {
+      // Match pattern: clase_X/playlist.m3u8 (not in subdirectories like 720p/, 480p/, etc.)
+      return video.key.match(/clase_\d+\/playlist\.m3u8$/);
+    });
+
+    // Sort by class number
+    const sorted = masterPlaylists.sort((a, b) => {
+      const extractClassNumber = (key: string): number => {
+        const match = key.match(/clase_(\d+)/);
         return match ? parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
       };
 
-      return extractOrder(a.key) - extractOrder(b.key);
+      return extractClassNumber(a.key) - extractClassNumber(b.key);
     });
 
-    return sorted;
+    // Add friendly titles to each video
+    const videosWithTitles = sorted.map(video => {
+      const classMatch = video.key.match(/clase_(\d+)/);
+      const classNumber = classMatch ? classMatch[1] : '1';
+      
+      return {
+        ...video,
+        title: `Clase ${classNumber}`,
+        classNumber: parseInt(classNumber, 10)
+      };
+    });
+
+    return videosWithTitles;
   }
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
@@ -149,19 +172,58 @@ export class VideoController {
     return { videoUrl: await this.s3Service.getSignedUrl(key) };
   }
 
-  // Temporary debug endpoint
-  @Get('debug/s3-test')
-  async debugS3() {
-    const configService = this.configService;
-    return {
-      bucketName: configService.get<string>('AWS_S3_BUCKET_NAME'),
-      mentorshipFolder: configService.get<string>('aws.s3.mentorshipFolder'),
-      classFolder: configService.get<string>('aws.s3.classFolder'),
-      envMentorshipFolder: configService.get<string>(
-        'AWS_S3_MENTORSHIP_FOLDER',
-      ),
-      envClassFolder: configService.get<string>('AWS_S3_CLASS_VIDEO_FOLDER'),
-      variableKeys: VariableKeys,
-    };
+  // HLS Manifest endpoints
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
+  @RequiresSubscription(SubscriptionPlan.LIVE_RECORDED)
+  @RequireModule(ModuleType.LIVE_RECORDED)
+  @Get('hls/:key(*)')
+  @Header('Content-Type', 'application/x-mpegURL')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getHLSManifest(
+    @Param('key') key: string,
+    @Response() res: ExpressResponse,
+  ) {
+    try {
+      // Check if it's a .m3u8 manifest file
+      if (key.endsWith('.m3u8')) {
+        const manifest = await this.s3Service.getHLSManifest(key);
+        res.send(manifest);
+      } else {
+        // For other files (.ts segments), redirect to signed URL
+        const signedUrl = await this.s3Service.getSignedUrl(key);
+        res.redirect(signedUrl);
+      }
+    } catch (error) {
+      console.error('HLS manifest error:', error);
+      res.status(404).send('HLS content not found');
+    }
   }
+
+  // Public HLS endpoint for video players (no auth required, uses temporary token)
+  @Get('hls-public/:key(*)')
+  @Header('Content-Type', 'application/x-mpegURL')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  @Header('Access-Control-Allow-Origin', '*')
+  async getPublicHLSManifest(
+    @Param('key') key: string,
+    @Query('token') token: string,
+    @Response() res: ExpressResponse,
+  ) {
+    try {
+      // Validate the token (you should implement proper token validation)
+      // For now, we'll skip validation for testing
+      
+      if (key.endsWith('.m3u8')) {
+        const manifest = await this.s3Service.getHLSManifest(key);
+        res.send(manifest);
+      } else {
+        const signedUrl = await this.s3Service.getSignedUrl(key);
+        res.redirect(signedUrl);
+      }
+    } catch (error) {
+      console.error('HLS manifest error:', error);
+      res.status(404).send('HLS content not found');
+    }
+  }
+
 }

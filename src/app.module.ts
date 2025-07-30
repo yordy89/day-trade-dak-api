@@ -38,6 +38,11 @@ import { GuardsModule } from './guards/guards.module';
 import { ModulePermissionsModule } from './module-permissions/module-permissions.module';
 import { ZoomWebhooksModule } from './zoom-webhooks/zoom-webhooks.module';
 import { LiveKitModule } from './livekit/livekit.module';
+import { SettingsModule } from './settings/settings.module';
+import { ContactModule } from './contact/contact.module';
+import { NotificationModule } from './notification/notification.module';
+import { NewsletterModule } from './newsletter/newsletter.module';
+import { CDNModule } from './modules/cdn/cdn.module';
 
 @Module({
   imports: [
@@ -91,6 +96,11 @@ import { LiveKitModule } from './livekit/livekit.module';
     WebhooksModule,
     ZoomWebhooksModule,
     LiveKitModule,
+    SettingsModule,
+    ContactModule,
+    NotificationModule,
+    NewsletterModule,
+    CDNModule,
   ],
   providers: [
     {

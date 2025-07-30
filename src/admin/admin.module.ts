@@ -5,12 +5,20 @@ import { AdminAnalyticsController } from './controllers/admin-analytics.controll
 import { AdminMeetingsController } from './controllers/admin-meetings.controller';
 import { AdminEventsController } from './controllers/admin-events.controller';
 import { AdminSubscriptionsController } from './controllers/admin-subscriptions.controller';
+import { AdminSettingsController } from './controllers/admin-settings.controller';
+import { AdminContactController } from './controllers/admin-contact.controller';
+import { AdminNotificationsController } from './controllers/admin-notifications.controller';
+import { AdminReportsController } from './controllers/admin-reports.controller';
+import { AdminTransactionsController } from './controllers/admin-transactions.controller';
 import { AdminService } from './admin.service';
 import { AdminUsersService } from './services/admin-users.service';
 import { AdminAnalyticsService } from './services/admin-analytics.service';
 import { AdminMeetingsService } from './services/admin-meetings.service';
 import { AdminEventsService } from './services/admin-events.service';
 import { AdminSubscriptionsService } from './services/admin-subscriptions.service';
+import { AdminSettingsService } from './services/admin-settings.service';
+import { AdminReportsService } from './services/admin-reports.service';
+import { AdminTransactionsService } from './services/admin-transactions.service';
 import { UsersModule } from '../users/users.module';
 import { AuthModule } from '../auth/auth.module';
 import { VideoSDKModule } from '../videosdk/videosdk.module';
@@ -39,6 +47,14 @@ import {
 } from '../subscriptions/subscription-plan.schema';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { LiveKitModule } from '../livekit/livekit.module';
+import { SettingsModule } from '../settings/settings.module';
+import { ContactModule } from '../contact/contact.module';
+import { NotificationModule } from '../notification/notification.module';
+import { StripeModule } from '../payments/stripe/stripe.module';
+import {
+  ContactMessage,
+  ContactMessageSchema,
+} from '../contact/contact-message.schema';
 
 @Module({
   imports: [
@@ -51,12 +67,17 @@ import { LiveKitModule } from '../livekit/livekit.module';
       { name: Transaction.name, schema: TransactionSchema },
       { name: SubscriptionHistory.name, schema: SubscriptionHistorySchema },
       { name: SubscriptionPlan.name, schema: SubscriptionPlanSchema },
+      { name: ContactMessage.name, schema: ContactMessageSchema },
     ]),
     UsersModule,
     AuthModule,
     VideoSDKModule,
     PermissionsModule,
     LiveKitModule,
+    SettingsModule,
+    ContactModule,
+    NotificationModule,
+    StripeModule,
   ],
   controllers: [
     AdminController,
@@ -65,6 +86,11 @@ import { LiveKitModule } from '../livekit/livekit.module';
     AdminMeetingsController,
     AdminEventsController,
     AdminSubscriptionsController,
+    AdminSettingsController,
+    AdminContactController,
+    AdminNotificationsController,
+    AdminReportsController,
+    AdminTransactionsController,
   ],
   providers: [
     AdminService,
@@ -73,6 +99,9 @@ import { LiveKitModule } from '../livekit/livekit.module';
     AdminMeetingsService,
     AdminEventsService,
     AdminSubscriptionsService,
+    AdminSettingsService,
+    AdminReportsService,
+    AdminTransactionsService,
     MeetingCronService,
     PaymentAnalyticsService,
   ],
@@ -83,6 +112,9 @@ import { LiveKitModule } from '../livekit/livekit.module';
     AdminMeetingsService,
     AdminEventsService,
     AdminSubscriptionsService,
+    AdminSettingsService,
+    AdminReportsService,
+    AdminTransactionsService,
   ],
 })
 export class AdminModule {}
