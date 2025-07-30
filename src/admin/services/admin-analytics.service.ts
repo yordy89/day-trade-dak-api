@@ -294,12 +294,28 @@ export class AdminAnalyticsService {
     const transformedTransactions = transactions.map((transaction) => {
       // Handle populated user data
       const user = transaction.userId as any;
-      const customerName =
-        user && user.firstName && user.lastName
-          ? `${user.firstName} ${user.lastName}`
-          : 'Unknown';
-      const customerEmail = user?.email || 'Unknown';
-      const customerId = user?._id?.toString() || '';
+      let customerName = 'Unknown';
+      let customerEmail = 'Unknown';
+      let customerId = '';
+
+      // First try to get data from populated user
+      if (user && user.firstName && user.lastName) {
+        customerName = `${user.firstName} ${user.lastName}`;
+        customerEmail = user.email || 'Unknown';
+        customerId = user._id?.toString() || '';
+      } 
+      // If no user data, check metadata for customer information
+      else if (transaction.metadata) {
+        const metadata = transaction.metadata as any;
+        if (metadata.firstName && metadata.lastName) {
+          customerName = `${metadata.firstName} ${metadata.lastName}`;
+        }
+        if (metadata.email) {
+          customerEmail = metadata.email;
+        }
+        // For transactions without userId, use transaction ID as customer reference
+        customerId = transaction.userId?.toString() || `guest-${transaction._id.toString().slice(-8)}`;
+      }
 
       return {
         _id: transaction._id.toString(),
@@ -319,6 +335,7 @@ export class AdminAnalyticsService {
         refundAmount: transaction.refundAmount,
         createdAt: transaction.createdAt,
         updatedAt: transaction.updatedAt,
+        stripePaymentIntentId: transaction.stripePaymentIntentId,
       };
     });
 

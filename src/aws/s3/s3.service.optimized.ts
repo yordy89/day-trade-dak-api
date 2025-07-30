@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { VariableKeys } from 'src/constants';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { getSignedUrl as getCloudFrontSignedUrl } from '@aws-sdk/cloudfront-signer';
 import { CustomLoggerService } from '../../logger/logger.service';
 
@@ -103,13 +104,21 @@ export class S3ServiceOptimized {
       this.useCloudFront = !!this.cloudFrontDomain;
       this.keyPairId = this.configService.get<string>('CLOUDFRONT_KEY_PAIR_ID');
       // Look for the PEM file in the project root
+      // Dynamically construct filename based on key pair ID
       this.privateKeyPath = path.resolve(
         process.cwd(),
-        'pk-APKAW5BDRBYFYKXAVZP5.pem',
+        `pk-${this.keyPairId}.pem`,
       );
 
       if (!this.bucketName) {
         throw new Error('S3 bucket name is not configured');
+      }
+
+      // Log CloudFront configuration
+      if (this.useCloudFront && this.keyPairId) {
+        this.logger.log(`CloudFront configured with domain: ${this.cloudFrontDomain}`);
+        this.logger.log(`CloudFront key pair ID: ${this.keyPairId}`);
+        this.logger.log(`CloudFront PEM file path: ${this.privateKeyPath}`);
       }
 
       this.logger.log('S3 service initialized successfully');
@@ -254,25 +263,54 @@ export class S3ServiceOptimized {
         'S3Service',
       );
 
-      const command = new ListObjectsV2Command({
-        Bucket: this.bucketName,
-        Prefix: `${prefix}/`,
-        MaxKeys: 1000, // Optimize by limiting results
-      });
+      // Implement pagination to get all objects
+      let continuationToken: string | undefined;
+      let allContents: any[] = [];
+      let pageCount = 0;
+
+      do {
+        const command = new ListObjectsV2Command({
+          Bucket: this.bucketName,
+          Prefix: `${prefix}/`,
+          MaxKeys: 1000, // Get 1000 objects per page
+          ContinuationToken: continuationToken,
+        });
+
+        this.customLogger.log(
+          `Executing S3 ListObjectsV2 - Page ${pageCount + 1}, Bucket: ${this.bucketName}, Prefix: ${prefix}/`,
+          'S3Service',
+        );
+
+        const response = await this.s3.send(command);
+        const { Contents, IsTruncated, NextContinuationToken } = response;
+        
+        if (Contents && Contents.length > 0) {
+          allContents = [...allContents, ...Contents];
+          this.customLogger.log(
+            `Page ${pageCount + 1}: Found ${Contents.length} objects, Total so far: ${allContents.length}`,
+            'S3Service',
+          );
+        }
+
+        continuationToken = IsTruncated ? NextContinuationToken : undefined;
+        pageCount++;
+
+        // Safety limit to prevent infinite loops
+        if (pageCount > 20) {
+          this.customLogger.warn(
+            'Reached maximum page limit (20) for S3 listing',
+            'S3Service',
+          );
+          break;
+        }
+      } while (continuationToken);
 
       this.customLogger.log(
-        `Executing S3 ListObjectsV2 - Bucket: ${this.bucketName}, Prefix: ${prefix}/`,
+        `S3 listing complete - Total objects found: ${allContents.length}`,
         'S3Service',
       );
 
-      const { Contents } = await this.s3.send(command);
-
-      this.customLogger.log(
-        `S3 response - Found ${Contents?.length || 0} objects`,
-        'S3Service',
-      );
-
-      if (!Contents || Contents.length === 0) {
+      if (allContents.length === 0) {
         this.customLogger.log(
           `No videos found for prefix: ${prefix}`,
           'S3Service',
@@ -281,11 +319,11 @@ export class S3ServiceOptimized {
       }
 
       // Filter and process videos in parallel with batching
-      const videoFiles = Contents.filter(
+      const videoFiles = allContents.filter(
         (file) =>
           file.Key &&
           !file.Key.endsWith('/') &&
-          (file.Key.endsWith('.mp4') || file.Key.endsWith('.mov')),
+          (file.Key.endsWith('.mp4') || file.Key.endsWith('.mov') || file.Key.endsWith('.m3u8')),
       );
 
       // Batch process to avoid overwhelming the system
@@ -347,7 +385,17 @@ export class S3ServiceOptimized {
   }
 
   async getSignedUrl(key: string): Promise<string> {
-    // Check cache first
+    // Log for debugging
+    this.logger.log(`getSignedUrl called for key: ${key}, useCloudFront: ${this.useCloudFront}, cloudFrontDomain: ${this.cloudFrontDomain}`);
+    
+    // For HLS content that doesn't require signing, return plain CloudFront URL
+    if (this.useCloudFront && key.includes('hsl-daytradedak-videos/class-videos/')) {
+      const plainUrl = `https://${this.cloudFrontDomain}/${key}`;
+      this.logger.log(`Returning plain CloudFront URL for HLS content: ${key} -> ${plainUrl}`);
+      return plainUrl;
+    }
+
+    // Check cache first for other content
     const cached = this.signedUrlCache.get(key);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.url;
@@ -357,6 +405,7 @@ export class S3ServiceOptimized {
       let signedUrl: string;
 
       if (this.useCloudFront) {
+        // Use standard signing for non-HLS files
         signedUrl = await this.getCloudFrontSignedUrl(key);
       } else {
         signedUrl = await this.getS3SignedUrl(key);
@@ -383,20 +432,37 @@ export class S3ServiceOptimized {
     try {
       // Load private key once and cache it
       if (!this.privateKeyCache) {
-        this.privateKeyCache = await fs.readFile(this.privateKeyPath, 'utf8');
+        try {
+          this.privateKeyCache = await fs.readFile(this.privateKeyPath, 'utf8');
+          this.logger.log('Successfully loaded CloudFront private key');
+        } catch (error) {
+          this.logger.error(`Failed to read PEM file at ${this.privateKeyPath}:`, error);
+          throw new Error(`CloudFront private key not found at ${this.privateKeyPath}`);
+        }
       }
 
       const fullUrl = `https://${this.cloudFrontDomain}/${key}`;
       const expires = Math.floor(Date.now() / 1000) + 12 * 60 * 60; // 12 hours
+      const expiryDate = new Date(expires * 1000);
 
-      return getCloudFrontSignedUrl({
+      this.logger.debug(`Generating CloudFront signed URL for: ${key}`);
+      this.logger.debug(`Full URL: ${fullUrl}`);
+      this.logger.debug(`Expires at: ${expiryDate.toISOString()}`);
+      this.logger.debug(`Key Pair ID: ${this.keyPairId}`);
+
+      const signedUrl = getCloudFrontSignedUrl({
         url: fullUrl,
         keyPairId: this.keyPairId,
         privateKey: this.privateKeyCache,
-        dateLessThan: new Date(expires * 1000).toISOString(),
+        dateLessThan: expiryDate.toISOString(),
       });
+
+      this.logger.debug(`Generated signed URL: ${signedUrl.substring(0, 100)}...`);
+
+      return signedUrl;
     } catch (error) {
       this.logger.error('Failed to generate CloudFront signed URL', error);
+      this.logger.error(`Key: ${key}, Domain: ${this.cloudFrontDomain}, KeyPairId: ${this.keyPairId}`);
       throw error;
     }
   }
@@ -558,4 +624,50 @@ export class S3ServiceOptimized {
       throw new InternalServerErrorException('Failed to update video metadata');
     }
   }
+
+  // Get HLS manifest with signed URLs for segments
+  async getHLSManifest(key: string): Promise<string> {
+    try {
+      // Get the manifest file content
+      const command = new GetObjectCommand({ 
+        Bucket: this.bucketName, 
+        Key: key 
+      });
+      
+      const response = await this.s3.send(command);
+      const manifestContent = await response.Body?.transformToString('utf-8');
+      
+      if (!manifestContent) {
+        throw new Error('Failed to retrieve HLS manifest');
+      }
+
+      // Replace relative segment URLs with signed URLs
+      const lines = manifestContent.split('\n');
+      const baseDir = key.substring(0, key.lastIndexOf('/'));
+      
+      const modifiedLines = await Promise.all(
+        lines.map(async (line) => {
+          // Check if this line is a .ts segment reference
+          if (line.endsWith('.ts')) {
+            const segmentKey = `${baseDir}/${line}`;
+            const signedUrl = await this.getSignedUrl(segmentKey);
+            return signedUrl;
+          }
+          // Check if this line references another m3u8 playlist (for multi-bitrate)
+          if (line.endsWith('.m3u8') && !line.startsWith('#')) {
+            const playlistKey = `${baseDir}/${line}`;
+            const signedUrl = await this.getSignedUrl(playlistKey);
+            return signedUrl;
+          }
+          return line;
+        })
+      );
+
+      return modifiedLines.join('\n');
+    } catch (error) {
+      this.logger.error(`Failed to get HLS manifest for ${key}:`, error);
+      throw new InternalServerErrorException('Failed to retrieve HLS manifest');
+    }
+  }
+
 }

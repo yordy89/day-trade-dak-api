@@ -18,7 +18,6 @@ import { Meeting, MeetingDocument } from '../schemas/meeting.schema';
   cors: {
     origin: '*', // Configure this properly for production
   },
-  namespace: '/meetings',
 })
 export class WebSocketGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect

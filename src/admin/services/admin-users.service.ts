@@ -1,17 +1,25 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from 'src/users/user.schema';
 import { PermissionsService } from '../../permissions/permissions.service';
 import * as bcrypt from 'bcrypt';
 import { Role } from '../../constants';
+import Stripe from 'stripe';
+import { SubscriptionPlan } from 'src/users/user.dto';
 
 @Injectable()
 export class AdminUsersService {
+  private stripe: Stripe;
+
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     private permissionsService: PermissionsService,
-  ) {}
+  ) {
+    this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+      apiVersion: '2025-01-27.acacia',
+    });
+  }
 
   async getAdminHosts() {
     const adminHosts = await this.userModel
@@ -124,16 +132,27 @@ export class AdminUsersService {
   async createUser(data: {
     email: string;
     password: string;
+    firstName?: string;
+    lastName?: string;
     fullName?: string;
+    phone?: string;
+    bio?: string;
+    city?: string;
+    country?: string;
     role?: string;
     status?: string;
+    allowLiveMeetingAccess?: boolean;
   }) {
     // Hash password
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
+    // Generate fullName if not provided
+    const fullName = data.fullName || `${data.firstName || ''} ${data.lastName || ''}`.trim();
+
     const user = new this.userModel({
       ...data,
       password: hashedPassword,
+      fullName,
       status: data.status || 'active',
       role: data.role || 'user',
     });
@@ -267,5 +286,122 @@ export class AdminUsersService {
       content: csvContent,
       contentType: 'text/csv',
     };
+  }
+
+  // Subscription management methods
+  async addUserSubscription(
+    userId: string,
+    subscriptionData: { plan: string; expiresAt?: string },
+  ) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Create new subscription
+    const subscription = {
+      plan: subscriptionData.plan as SubscriptionPlan,
+      status: 'active',
+      createdAt: new Date(),
+      expiresAt: subscriptionData.expiresAt
+        ? new Date(subscriptionData.expiresAt)
+        : null,
+    };
+
+    // Add subscription to user
+    if (!user.subscriptions) {
+      user.subscriptions = [];
+    }
+    user.subscriptions.push(subscription as any);
+
+    await user.save();
+
+    return { success: true, subscription };
+  }
+
+  async updateUserSubscription(
+    userId: string,
+    subscriptionId: string,
+    updateData: { plan?: string; expiresAt?: string },
+  ) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Since subscriptions don't have IDs, we'll use index
+    const subscriptionIndex = parseInt(subscriptionId);
+    
+    if (isNaN(subscriptionIndex) || !user.subscriptions || !user.subscriptions[subscriptionIndex]) {
+      throw new NotFoundException('Subscription not found');
+    }
+
+    // Update subscription
+    if (updateData.plan) {
+      user.subscriptions[subscriptionIndex].plan = updateData.plan as SubscriptionPlan;
+    }
+    if (updateData.expiresAt !== undefined) {
+      user.subscriptions[subscriptionIndex].expiresAt = updateData.expiresAt
+        ? new Date(updateData.expiresAt)
+        : null;
+    }
+
+    await user.save();
+
+    return { success: true, subscription: user.subscriptions[subscriptionIndex] };
+  }
+
+  async cancelUserSubscription(userId: string, subscriptionId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Since subscriptions don't have IDs, we'll use index
+    const subscriptionIndex = parseInt(subscriptionId);
+    
+    if (isNaN(subscriptionIndex) || !user.subscriptions || !user.subscriptions[subscriptionIndex]) {
+      throw new NotFoundException('Subscription not found');
+    }
+
+    const subscription = user.subscriptions[subscriptionIndex];
+
+    // If there's a Stripe subscription ID, cancel it in Stripe
+    if (subscription.stripeSubscriptionId) {
+      try {
+        await this.stripe.subscriptions.cancel(subscription.stripeSubscriptionId);
+      } catch (error) {
+        console.error('Error canceling Stripe subscription:', error);
+        // Continue with local cancellation even if Stripe fails
+      }
+    }
+
+    // Update subscription status
+    subscription.status = 'cancelled';
+
+    await user.save();
+
+    return { success: true, subscription };
+  }
+
+  async deleteUserSubscription(userId: string, subscriptionId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Since subscriptions don't have IDs, we'll use index
+    const subscriptionIndex = parseInt(subscriptionId);
+    
+    if (isNaN(subscriptionIndex) || !user.subscriptions || !user.subscriptions[subscriptionIndex]) {
+      throw new NotFoundException('Subscription not found');
+    }
+
+    // Remove subscription from array
+    user.subscriptions.splice(subscriptionIndex, 1);
+
+    await user.save();
+
+    return { success: true };
   }
 }

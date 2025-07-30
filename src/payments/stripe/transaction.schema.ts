@@ -81,6 +81,12 @@ export class Transaction extends Document {
   refundReason?: string;
 
   @Prop()
+  refundId?: string;
+
+  @Prop()
+  refundedAt?: Date;
+
+  @Prop()
   failureReason?: string;
 
   @Prop()
