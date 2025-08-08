@@ -71,6 +71,9 @@ export class User extends Document {
   @Prop({ default: false })
   allowLiveMeetingAccess?: boolean;
 
+  @Prop({ default: false })
+  allowLiveWeeklyAccess?: boolean;
+
   @Prop()
   createdAt?: Date;
 

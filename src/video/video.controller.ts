@@ -61,7 +61,61 @@ export class VideoController {
   @RequireModule(ModuleType.LIVE_RECORDED)
   @Get('classVideos')
   async getAllClassVideos() {
-    return this.s3Service.listVideos(VariableKeys.AWS_ClASS_FOLDER);
+    console.log(
+      'Fetching class videos from S3...',
+      VariableKeys.AWS_ClASS_FOLDER,
+    );
+    const videos = await this.s3Service.listVideos(VariableKeys.AWS_ClASS_FOLDER);
+    
+    console.log(`Total videos found: ${videos.length}`);
+    
+    // Group videos by date folder to handle cases where master.m3u8 might not exist
+    const videosByDate = new Map<string, any>();
+    
+    videos.forEach(video => {
+      // Extract date from key (format: class-daily/MM:DD:YYYY/...)
+      const dateMatch = video.key.match(/(\d{2}:\d{2}:\d{4})/);
+      if (dateMatch) {
+        const dateKey = dateMatch[1];
+        
+        // Prefer master.m3u8, but fall back to any playlist.m3u8
+        if (!videosByDate.has(dateKey)) {
+          videosByDate.set(dateKey, video);
+        } else if (video.key.includes('master.m3u8')) {
+          // Replace with master if found
+          videosByDate.set(dateKey, video);
+        } else if (!videosByDate.get(dateKey).key.includes('master.m3u8') && 
+                   video.key.endsWith('playlist.m3u8') && 
+                   !video.key.includes('/360p/') && 
+                   !video.key.includes('/480p/') && 
+                   !video.key.includes('/720p/') && 
+                   !video.key.includes('/1080p/')) {
+          // Use a non-quality-specific playlist if no master exists
+          videosByDate.set(dateKey, video);
+        }
+      }
+    });
+    
+    // Convert map to array and sort by date
+    const uniqueVideos = Array.from(videosByDate.values()).sort((a, b) => {
+      const dateA = a.key.match(/(\d{2}):(\d{2}):(\d{4})/);
+      const dateB = b.key.match(/(\d{2}):(\d{2}):(\d{4})/);
+      if (dateA && dateB) {
+        // Convert to sortable format YYYY-MM-DD
+        const sortA = `${dateA[3]}-${dateA[1]}-${dateA[2]}`;
+        const sortB = `${dateB[3]}-${dateB[1]}-${dateB[2]}`;
+        return sortB.localeCompare(sortA); // Newest first
+      }
+      return 0;
+    });
+    
+    console.log(`Found ${uniqueVideos.length} unique class sessions`);
+    console.log('Videos by date:', uniqueVideos.map(v => {
+      const dateMatch = v.key.match(/(\d{2}:\d{2}:\d{4})/);
+      return dateMatch ? `${dateMatch[1]} - ${v.key}` : v.key;
+    }));
+    
+    return uniqueVideos;
   }
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
@@ -73,7 +127,17 @@ export class VideoController {
       'Fetching mentorship videos from S3...',
       VariableKeys.AWS_MENTORSHIP_FOLDER,
     );
-    return this.s3Service.listVideos(VariableKeys.AWS_MENTORSHIP_FOLDER);
+    const videos = await this.s3Service.listVideos(VariableKeys.AWS_MENTORSHIP_FOLDER);
+    
+    // Filter to only return master.m3u8 files (one per mentorship)
+    // This avoids returning duplicate quality-specific playlist files
+    const masterVideos = videos.filter(video => {
+      return video.key.includes('master.m3u8');
+    });
+    
+    console.log(`Filtered ${videos.length} videos to ${masterVideos.length} master playlists`);
+    
+    return masterVideos;
   }
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard)

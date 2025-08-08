@@ -5,6 +5,7 @@ import {
   EventRegistration,
   EventRegistrationSchema,
 } from './schemas/eventRegistration.schema';
+import { User, UserSchema } from '../users/user.schema';
 import { EventsServiceOptimized } from './event.service.optimized';
 import { EventsService } from './event.service';
 import { EventsController } from './event.controller';
@@ -20,6 +21,7 @@ import { StripeModule } from 'src/payments/stripe/stripe.module';
     MongooseModule.forFeature([
       { name: Event.name, schema: EventSchema },
       { name: EventRegistration.name, schema: EventRegistrationSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     EmailModule,
     CacheModule,

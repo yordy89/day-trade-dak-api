@@ -56,6 +56,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   allowLiveMeetingAccess?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  allowLiveWeeklyAccess?: boolean;
 }
 
 export class UserEntity {

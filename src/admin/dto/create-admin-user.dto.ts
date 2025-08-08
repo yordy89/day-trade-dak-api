@@ -49,4 +49,8 @@ export class CreateAdminUserDto {
   @IsOptional()
   @IsBoolean()
   allowLiveMeetingAccess?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  allowLiveWeeklyAccess?: boolean;
 }

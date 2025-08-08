@@ -33,6 +33,12 @@ export class EventRegistrationsController {
     return this.eventRegistrationsService.findByEvent(eventId);
   }
 
+  // Get registrations by user ID
+  @Get('user/:userId')
+  async findByUserId(@Param('userId') userId: string) {
+    return this.eventRegistrationsService.findByUserId(userId);
+  }
+
   // Get registrations by email for managing existing registrations
   @Get('by-email')
   async findByEmail(@Query('email') email: string) {

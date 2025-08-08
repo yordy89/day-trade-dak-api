@@ -296,9 +296,9 @@ export class S3ServiceOptimized {
         pageCount++;
 
         // Safety limit to prevent infinite loops
-        if (pageCount > 20) {
+        if (pageCount > 100) {
           this.customLogger.warn(
-            'Reached maximum page limit (20) for S3 listing',
+            'Reached maximum page limit (100) for S3 listing',
             'S3Service',
           );
           break;
@@ -519,24 +519,9 @@ export class S3ServiceOptimized {
   }
 
   private processClassVideos(videos: VideoMetadata[]): VideoMetadata[] {
-    return videos
-      .map((video) => {
-        const filename = video.key.split('/').pop()!;
-        const dateString = filename.replace('.mp4', '').replace(/:/g, '-');
-
-        return {
-          ...video,
-          date: new Date(dateString),
-        };
-      })
-      .sort((a, b) => (b as any).date.getTime() - (a as any).date.getTime())
-      .slice(0, 10) // Get only the latest 10 videos
-      .map(({ key, signedUrl, size, lastModified }) => ({
-        key,
-        signedUrl,
-        size,
-        lastModified,
-      }));
+    // Don't process or limit - let the controller handle filtering
+    // This was causing issues by limiting to 10 videos and expecting .mp4 format
+    return videos;
   }
 
   private isRetryableError(error: any): boolean {
