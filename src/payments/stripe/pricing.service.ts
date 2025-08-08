@@ -246,6 +246,19 @@ export class PricingService implements OnModuleInit {
       return { eligible: false, reason: 'User not found' };
     }
 
+    // Check Live Weekly access permission
+    const isLiveWeeklyPlan = [
+      SubscriptionPlan.LIVE_WEEKLY_MANUAL,
+      SubscriptionPlan.LIVE_WEEKLY_RECURRING,
+    ].includes(targetPlan);
+
+    if (isLiveWeeklyPlan && !user.allowLiveWeeklyAccess) {
+      return {
+        eligible: false,
+        reason: 'You do not have permission to purchase Live Weekly subscriptions. Please contact support for access.',
+      };
+    }
+
     // Check if user already has this subscription
     const hasActiveSubscription = user.subscriptions.some(
       (sub) =>

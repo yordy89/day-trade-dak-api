@@ -13,6 +13,7 @@ import {
   EventRegistrationDocument,
 } from './schemas/eventRegistration.schema';
 import { Event, EventDocument } from './schemas/event.schema';
+import { User, UserDocument } from '../users/user.schema';
 import { CreateEventRegistrationDto } from './dto/create-event-registration.dto';
 import { EmailService } from 'src/email/email.service';
 import { StripeService } from '../payments/stripe/stripe.service';
@@ -24,6 +25,8 @@ export class EventRegistrationsService {
     private eventRegistrationModel: Model<EventRegistrationDocument>,
     @InjectModel(Event.name)
     private eventModel: Model<EventDocument>,
+    @InjectModel(User.name)
+    private userModel: Model<UserDocument>,
     private readonly emailService: EmailService,
     @Inject(forwardRef(() => StripeService))
     private readonly stripeService: StripeService,
@@ -82,6 +85,33 @@ export class EventRegistrationsService {
     return this.eventRegistrationModel
       .find({ email: email.toLowerCase() })
       .exec();
+  }
+
+  async findByUserId(userId: string): Promise<EventRegistrationDocument[]> {
+    try {
+      // First, get the user to find their email
+      const user = await this.userModel.findById(userId).exec();
+      
+      if (!user) {
+        return [];
+      }
+      
+      // Find registrations by either userId OR email (to catch older registrations)
+      const registrations = await this.eventRegistrationModel
+        .find({
+          $or: [
+            { userId: new Types.ObjectId(userId) },
+            { email: user.email.toLowerCase() }
+          ]
+        })
+        .populate('eventId')
+        .exec();
+      
+      return registrations || [];
+    } catch (error) {
+      console.error('Error finding registrations by userId:', error);
+      return [];
+    }
   }
 
   async createAdditionalAttendeesCheckout(
