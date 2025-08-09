@@ -24,6 +24,10 @@ export class AuthService {
   async validateUser(email: string, password: string): Promise<any> {
     const user = await this.userService.findByEmail(email);
     if (user && (await bcrypt.compare(password, user.password))) {
+      // Check if user is banned
+      if (user.status === 'banned' || user.status === 'suspended') {
+        throw new UnauthorizedException('Your account has been suspended. Please contact support for assistance.');
+      }
       const { password, ...result } = user.toObject();
       return result;
     }

@@ -27,11 +27,19 @@ export class AuthController {
   @Public()
   @Post('login')
   async login(@Body() data: { email: string; password: string }) {
-    const user = await this.authService.validateUser(data.email, data.password);
-    if (!user) {
+    try {
+      const user = await this.authService.validateUser(data.email, data.password);
+      if (!user) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      return this.authService.login(user);
+    } catch (error) {
+      // Re-throw the error to preserve specific ban messages
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('Invalid credentials');
     }
-    return this.authService.login(user);
   }
 
   @Public()

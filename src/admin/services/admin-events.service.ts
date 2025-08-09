@@ -140,14 +140,14 @@ export class AdminEventsService {
       this.registrationModel.countDocuments({ eventId: id }),
       this.registrationModel.countDocuments({
         eventId: id,
-        paymentStatus: 'paid',
+        paymentStatus: { $in: ['paid', 'completed'] },
       }),
       this.registrationModel.countDocuments({
         eventId: id,
         paymentStatus: 'free',
       }),
       this.registrationModel.aggregate([
-        { $match: { eventId: event._id, paymentStatus: 'paid' } },
+        { $match: { eventId: event._id, paymentStatus: { $in: ['paid', 'completed'] } } },
         { $group: { _id: null, total: { $sum: '$amountPaid' } } },
       ]),
     ]);
@@ -265,7 +265,7 @@ export class AdminEventsService {
       }),
       this.registrationModel.countDocuments(),
       this.registrationModel.aggregate([
-        { $match: { paymentStatus: 'paid' } },
+        { $match: { paymentStatus: { $in: ['paid', 'completed'] } } },
         { $group: { _id: null, total: { $sum: '$amountPaid' } } },
       ]),
       this.eventModel.aggregate([
@@ -522,7 +522,7 @@ export class AdminEventsService {
 
       // Add registration summary
       const paidCount = registrations.filter(
-        (r) => r.paymentStatus === 'paid',
+        (r) => r.paymentStatus === 'paid' || r.paymentStatus === 'completed',
       ).length;
       const freeCount = registrations.filter(
         (r) => r.paymentStatus === 'free',
@@ -616,11 +616,17 @@ export class AdminEventsService {
     const paymentStatusBreakdown = {
       pending: registrations.filter((r: any) => r.paymentStatus === 'pending')
         .length,
-      completed: registrations.filter((r: any) => r.paymentStatus === 'paid')
-        .length,
+      completed: registrations.filter((r: any) => 
+        r.paymentStatus === 'paid' || r.paymentStatus === 'completed'
+      ).length,
       failed: 0, // Not in the schema
       refunded: 0, // Not in the schema
     };
+    
+    // Count paid registrations (both 'paid' and 'completed' statuses)
+    const paidRegistrations = registrations.filter((r: any) => 
+      r.paymentStatus === 'paid' || r.paymentStatus === 'completed'
+    ).length;
 
     // Calculate daily registrations (last 30 days)
     const thirtyDaysAgo = new Date();
@@ -662,6 +668,7 @@ export class AdminEventsService {
       totalRegistrations,
       vipRegistrations,
       generalRegistrations,
+      paidRegistrations,
       totalRevenue,
       vipRevenue,
       generalRevenue,

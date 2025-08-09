@@ -161,7 +161,7 @@ export class MeetingCronService {
           const zoomMeeting = await this.zoomApiService.createMeeting({
             topic: 'Analysis de Trading en Vivo',
             scheduledAt,
-            duration: 60,
+            duration: 240,
             recordAutomatically: true,
             enableChat: true,
             waitingRoom: false,
@@ -183,7 +183,7 @@ export class MeetingCronService {
             zoomStartUrl: zoomMeeting.startUrl,
             zoomPassword: zoomMeeting.password,
             scheduledAt,
-            duration: 60,
+            duration: 240,
             host: hostId,
             status: 'scheduled',
             isRecurring: false, // Not recurring anymore
@@ -195,7 +195,7 @@ export class MeetingCronService {
             isPublic: false,
             participants: [], // Start with empty participants
             restrictedToSubscriptions: true,
-            allowedSubscriptions: ['LiveWeeklyManual', 'LiveWeeklyRecurring', 'MasterClases'],
+            allowedSubscriptions: ['LiveWeeklyManual', 'LiveWeeklyRecurring'],
           };
 
           const meeting = await this.meetingModel.create(meetingData);
