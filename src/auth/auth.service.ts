@@ -3,9 +3,11 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { plainToInstance } from 'class-transformer';
 import { CreateUserInput, UserEntity } from 'src/users/user.dto';
 import { UserService } from 'src/users/users.service';
@@ -106,6 +108,86 @@ export class AuthService {
     }
 
     user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+  }
+
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.userService.findByEmail(email);
+    
+    // Don't reveal if user exists or not for security
+    if (!user) {
+      return;
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+
+    // Save token and expiry to user
+    user.passwordResetToken = hashedToken;
+    user.passwordResetExpires = new Date(Date.now() + 3600000); // 1 hour
+    await user.save();
+
+    // Generate reset URL
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password/confirm?token=${resetToken}`;
+
+    // Send email
+    try {
+      await this.emailService.sendPasswordResetEmail({
+        name: user.fullName || user.email.split('@')[0],
+        email: user.email,
+        resetLink: resetUrl,
+        expiresIn: '1 hour',
+      });
+    } catch (error) {
+      // Clear reset token if email fails
+      user.passwordResetToken = undefined;
+      user.passwordResetExpires = undefined;
+      await user.save();
+      throw new BadRequestException('Failed to send reset email. Please try again.');
+    }
+  }
+
+  async verifyResetToken(token: string): Promise<boolean> {
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+
+    const user = await this.userService.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: new Date() },
+    });
+
+    return !!user;
+  }
+
+  async resetPasswordWithToken(token: string, newPassword: string): Promise<void> {
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+
+    const user = await this.userService.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    if (newPassword.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters long');
+    }
+
+    // Update password and clear reset token
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
     await user.save();
   }
 }

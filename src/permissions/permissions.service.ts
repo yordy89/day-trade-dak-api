@@ -46,13 +46,18 @@ export class PermissionsService {
       permissions.map((p) => [p.userId.toString(), p.permissions]),
     );
 
-    // Combine user data with permissions
-    return adminUsers.map((user) => ({
-      ...user,
-      permissions:
-        permissionsMap.get(user._id.toString()) ||
-        this.getDefaultPermissions(user.role),
-    }));
+    // Combine user data with permissions, ensuring all keys are present
+    return adminUsers.map((user) => {
+      const userPermissions = permissionsMap.get(user._id.toString());
+      const fullPermissions = userPermissions 
+        ? this.ensureAllPermissionKeys(userPermissions)
+        : this.getDefaultPermissions(user.role);
+      
+      return {
+        ...user,
+        permissions: fullPermissions,
+      };
+    });
   }
 
   async findUserPermissions(userId: string): Promise<PermissionSet> {
@@ -63,19 +68,25 @@ export class PermissionsService {
 
     // Super admin always has all permissions
     if (user.role === Role.SUPER_ADMIN) {
-      return DEFAULT_SUPER_ADMIN_PERMISSIONS as PermissionSet;
+      return this.ensureAllPermissionKeys(DEFAULT_SUPER_ADMIN_PERMISSIONS);
     }
 
-    // Regular users have no admin permissions
+    // Regular users have no admin permissions  
     if (user.role === Role.USER) {
-      return {} as PermissionSet;
+      return this.ensureAllPermissionKeys({});
     }
 
-    // Check for existing permissions
-    const permission = await this.permissionModel.findOne({ userId }).lean();
+    // Check for existing permissions - try both string and ObjectId
+    const userObjectId = new Types.ObjectId(userId);
+    const permission = await this.permissionModel.findOne({
+      $or: [
+        { userId: userId }, // Try as string
+        { userId: userObjectId } // Try as ObjectId
+      ]
+    }).lean();
 
-    if (permission) {
-      return permission.permissions;
+    if (permission && permission.permissions) {
+      return this.ensureAllPermissionKeys(permission.permissions);
     }
 
     // Return default permissions for admin role
@@ -104,22 +115,66 @@ export class PermissionsService {
       );
     }
 
-    let permission = await this.permissionModel.findOne({ userId });
+    // Ensure all permission keys are present
+    const fullPermissions = this.ensureAllPermissionKeys(updateDto);
+    
+    console.log('Full permissions to save:', JSON.stringify(fullPermissions, null, 2));
+    console.log('Looking for userId:', userId);
 
-    if (permission) {
-      // Update existing permissions
-      Object.assign(permission.permissions, updateDto);
-      permission.lastModifiedBy = new Types.ObjectId(modifiedBy);
-      await permission.save();
-    } else {
-      // Create new permission record
-      const defaultPerms = this.getDefaultPermissions(user.role);
-      permission = await this.permissionModel.create({
-        userId,
-        permissions: { ...defaultPerms, ...updateDto },
-        lastModifiedBy: new Types.ObjectId(modifiedBy),
-      });
+    // Try to find by both string and ObjectId since database might have mixed types
+    const userObjectId = new Types.ObjectId(userId);
+
+    // First, check if a permission document exists (try both string and ObjectId)
+    const existingPermission = await this.permissionModel.findOne({
+      $or: [
+        { userId: userId }, // Try as string
+        { userId: userObjectId } // Try as ObjectId
+      ]
+    });
+    console.log('Existing permission found:', existingPermission ? 'Yes' : 'No');
+    
+    if (existingPermission) {
+      console.log('Existing permissions:', JSON.stringify(existingPermission.permissions, null, 2));
+      console.log('UserId type in DB:', typeof existingPermission.userId, existingPermission.userId);
     }
+
+    // Use findOneAndUpdate with $set to ensure proper update
+    const permission = await this.permissionModel.findOneAndUpdate(
+      {
+        $or: [
+          { userId: userId }, // Try as string
+          { userId: userObjectId } // Try as ObjectId
+        ]
+      },
+      {
+        $set: {
+          permissions: fullPermissions,
+          lastModifiedBy: new Types.ObjectId(modifiedBy),
+          updatedAt: new Date(),
+        },
+      },
+      {
+        new: true, // Return the updated document
+        upsert: true, // Create if doesn't exist
+        runValidators: true, // Run schema validators
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    if (!permission) {
+      throw new Error('Failed to update permissions');
+    }
+
+    console.log('Saved permission document:', JSON.stringify(permission.permissions, null, 2));
+    
+    // Verify the save by fetching again (check both string and ObjectId)
+    const verifyPermission = await this.permissionModel.findOne({
+      $or: [
+        { userId: userId },
+        { userId: userObjectId }
+      ]
+    });
+    console.log('Verification - permissions after save:', JSON.stringify(verifyPermission?.permissions, null, 2));
 
     return permission;
   }
@@ -139,7 +194,15 @@ export class PermissionsService {
 
     const defaultPerms = this.getDefaultPermissions(user.role);
 
-    let permission = await this.permissionModel.findOne({ userId });
+    // Try both string and ObjectId for the query
+    const userObjectId = new Types.ObjectId(userId);
+
+    let permission = await this.permissionModel.findOne({
+      $or: [
+        { userId: userId },
+        { userId: userObjectId }
+      ]
+    });
 
     if (permission) {
       permission.permissions = defaultPerms as PermissionSet;
@@ -147,7 +210,7 @@ export class PermissionsService {
       await permission.save();
     } else {
       permission = await this.permissionModel.create({
-        userId,
+        userId: userObjectId,
         permissions: defaultPerms,
         lastModifiedBy: new Types.ObjectId(modifiedBy),
       });
@@ -162,11 +225,17 @@ export class PermissionsService {
       return;
     }
 
-    const existing = await this.permissionModel.findOne({ userId });
+    const userObjectId = new Types.ObjectId(userId);
+    const existing = await this.permissionModel.findOne({
+      $or: [
+        { userId: userId },
+        { userId: userObjectId }
+      ]
+    });
     if (!existing) {
       const defaultPerms = this.getDefaultPermissions(role);
       await this.permissionModel.create({
-        userId,
+        userId: userObjectId,
         permissions: defaultPerms,
       });
     }
@@ -213,6 +282,7 @@ export class PermissionsService {
       auditLogs: false,
       permissions: false,
       contactMessages: false,
+      modulePermissions: false,
     };
 
     switch (role) {
@@ -223,5 +293,39 @@ export class PermissionsService {
       default:
         return basePermissions;
     }
+  }
+  
+  // Helper method to ensure all permission keys are present
+  private ensureAllPermissionKeys(permissions: any): PermissionSet {
+    const fullPermissions: PermissionSet = {
+      dashboard: false,
+      users: false,
+      subscriptions: false,
+      payments: false,
+      meetings: false,
+      events: false,
+      content: false,
+      courses: false,
+      announcements: false,
+      analytics: false,
+      transactions: false,
+      reports: false,
+      settings: false,
+      auditLogs: false,
+      permissions: false,
+      contactMessages: false,
+      modulePermissions: false,
+    };
+    
+    // Merge provided permissions
+    if (permissions) {
+      Object.keys(fullPermissions).forEach(key => {
+        if (permissions[key] !== undefined) {
+          fullPermissions[key as keyof PermissionSet] = permissions[key];
+        }
+      });
+    }
+    
+    return fullPermissions;
   }
 }

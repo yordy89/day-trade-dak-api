@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { ConfigService } from '@nestjs/config';
 import {
   SubscriptionPlan,
   SubscriptionPlanDocument,
@@ -11,30 +12,62 @@ import { User, UserDocument } from '../users/user.schema';
 
 @Injectable()
 export class SubscriptionsService {
+  private readonly environment: 'development' | 'production';
+
   constructor(
     @InjectModel(SubscriptionPlan.name)
     private subscriptionPlanModel: Model<SubscriptionPlanDocument>,
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
-  ) {}
+    private configService: ConfigService,
+  ) {
+    // Determine environment based on NODE_ENV or default to development
+    this.environment = this.configService.get<string>('NODE_ENV') === 'production' 
+      ? 'production' 
+      : 'development';
+    console.log(`SubscriptionsService initialized with environment: ${this.environment}`);
+  }
 
   // Get all active subscription plans
-  async findAllPlans(type?: string): Promise<SubscriptionPlan[]> {
+  async findAllPlans(type?: string): Promise<any[]> {
     const query: any = { isActive: true };
     if (type) {
       query.type = type;
     }
 
-    return this.subscriptionPlanModel.find(query).sort({ sortOrder: 1 }).exec();
+    const plans = await this.subscriptionPlanModel.find(query).sort({ sortOrder: 1 }).exec();
+    
+    // Transform plans to use environment-specific Stripe IDs
+    return plans.map(plan => this.transformPlanForEnvironment(plan));
   }
 
   // Get a single subscription plan by ID
-  async findPlanById(planId: string): Promise<SubscriptionPlan> {
+  async findPlanById(planId: string): Promise<any> {
     const plan = await this.subscriptionPlanModel.findOne({ planId }).exec();
     if (!plan) {
       throw new NotFoundException(`Subscription plan ${planId} not found`);
     }
-    return plan;
+    
+    // Transform plan to use environment-specific Stripe IDs
+    return this.transformPlanForEnvironment(plan);
+  }
+
+  // Transform plan to use correct Stripe IDs based on environment
+  private transformPlanForEnvironment(plan: SubscriptionPlanDocument): any {
+    const planObj = plan.toObject();
+    
+    // Get the environment-specific Stripe IDs
+    const environmentStripeIds = planObj.stripeIds?.[this.environment];
+    
+    if (environmentStripeIds) {
+      // Add the environment-specific IDs as top-level fields for backward compatibility
+      planObj.stripeProductId = environmentStripeIds.productId;
+      planObj.stripePriceId = environmentStripeIds.priceId;
+    }
+    
+    // Also include the full stripeIds object for reference
+    // but could be removed in frontend if not needed
+    return planObj;
   }
 
   // Check if a user has a specific subscription
@@ -104,9 +137,11 @@ export class SubscriptionsService {
       // Get plan details
       const plan = await this.subscriptionPlanModel.findOne({ planId }).exec();
       if (plan) {
+        // Transform plan for environment
+        const transformedPlan = this.transformPlanForEnvironment(plan);
         activeSubscriptions.push({
           planId,
-          plan,
+          plan: transformedPlan,
           expiresAt,
           isActive: !expiresAt || expiresAt > new Date(),
         });

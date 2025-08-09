@@ -71,11 +71,17 @@ export class PermissionsController {
     @Body() updateDto: UpdatePermissionDto,
     @Req() req: RequestWithUser,
   ) {
+    // Debug logging
+    console.log('Updating permissions for user:', userId);
+    console.log('Received permissions data:', JSON.stringify(updateDto, null, 2));
+    
     const result = await this.permissionsService.updateUserPermissions(
       userId,
       updateDto,
       req.user._id.toString(),
     );
+
+    console.log('Updated permissions result:', JSON.stringify(result.permissions, null, 2));
 
     return {
       message: 'Permissions updated successfully',

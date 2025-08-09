@@ -21,6 +21,10 @@ import {
   additionalAttendeesTemplate,
   AdditionalAttendeesData,
 } from './templates/additional-attendees.template';
+import {
+  passwordResetTemplate,
+  PasswordResetData,
+} from './templates/password-reset.template';
 
 @Injectable()
 export class EmailService {
@@ -155,6 +159,22 @@ export class EmailService {
         `Failed to send event registration email to ${to}`,
         error,
       );
+      throw error;
+    }
+  }
+
+  async sendPasswordResetEmail(data: PasswordResetData) {
+    try {
+      const html = passwordResetTemplate(data);
+      const result = await this.send(
+        data.email,
+        'Password Reset Request - DayTradeDak',
+        html,
+      );
+      this.logger.log(`Password reset email sent to ${data.email}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Failed to send password reset email to ${data.email}`, error);
       throw error;
     }
   }

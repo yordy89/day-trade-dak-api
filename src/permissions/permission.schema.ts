@@ -3,63 +3,54 @@ import { Document, Types } from 'mongoose';
 
 export type PermissionDocument = Permission & Document;
 
-@Schema()
-export class PermissionSet {
-  @Prop({ default: true })
+// Define PermissionSet as a simple interface
+export interface PermissionSet {
   dashboard: boolean;
-
-  @Prop({ default: false })
   users: boolean;
-
-  @Prop({ default: false })
   subscriptions: boolean;
-
-  @Prop({ default: false })
   payments: boolean;
-
-  @Prop({ default: false })
   meetings: boolean;
-
-  @Prop({ default: false })
   events: boolean;
-
-  @Prop({ default: false })
   content: boolean;
-
-  @Prop({ default: false })
   courses: boolean;
-
-  @Prop({ default: false })
   announcements: boolean;
-
-  @Prop({ default: false })
   analytics: boolean;
-
-  @Prop({ default: false })
   transactions: boolean;
-
-  @Prop({ default: false })
   reports: boolean;
-
-  @Prop({ default: false })
   settings: boolean;
-
-  @Prop({ default: false })
   auditLogs: boolean;
-
-  @Prop({ default: false })
-  permissions: boolean; // Only for super_admin
-
-  @Prop({ default: false })
+  permissions: boolean;
   contactMessages: boolean;
+  modulePermissions: boolean; // New: Permisos de Módulos
 }
+
+// Define the schema for the permissions object
+const PermissionSetSchema = {
+  dashboard: { type: Boolean, default: false },
+  users: { type: Boolean, default: false },
+  subscriptions: { type: Boolean, default: false },
+  payments: { type: Boolean, default: false },
+  meetings: { type: Boolean, default: false },
+  events: { type: Boolean, default: false },
+  content: { type: Boolean, default: false },
+  courses: { type: Boolean, default: false },
+  announcements: { type: Boolean, default: false },
+  analytics: { type: Boolean, default: false },
+  transactions: { type: Boolean, default: false },
+  reports: { type: Boolean, default: false },
+  settings: { type: Boolean, default: false },
+  auditLogs: { type: Boolean, default: false },
+  permissions: { type: Boolean, default: false },
+  contactMessages: { type: Boolean, default: false },
+  modulePermissions: { type: Boolean, default: false }, // New: Permisos de Módulos
+};
 
 @Schema({ timestamps: true })
 export class Permission extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true })
-  userId: Types.ObjectId;
+  @Prop({ type: String, ref: 'User', required: true, unique: true })
+  userId: string | Types.ObjectId;
 
-  @Prop({ type: PermissionSet, default: () => ({}) })
+  @Prop({ type: PermissionSetSchema, default: () => ({}) })
   permissions: PermissionSet;
 
   @Prop()
@@ -84,6 +75,7 @@ export const DEFAULT_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   reports: true,
   settings: true,
   contactMessages: true,
+  modulePermissions: false, // Admins don't get module permissions by default
 };
 
 export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
@@ -101,6 +93,7 @@ export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   reports: true,
   settings: true,
   auditLogs: true,
-  permissions: true,
+  permissions: true, // Only super admins can manage permissions
   contactMessages: true,
+  modulePermissions: true, // Super admins have module permissions
 };

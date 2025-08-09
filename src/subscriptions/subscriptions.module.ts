@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ConfigModule } from '@nestjs/config';
 import {
   SubscriptionPlan,
   SubscriptionPlanSchema,
@@ -17,6 +18,7 @@ import { StripeModule } from '../payments/stripe/stripe.module';
       { name: SubscriptionPlan.name, schema: SubscriptionPlanSchema },
       { name: User.name, schema: UserSchema },
     ]),
+    ConfigModule,
     AuthModule,
     UsersModule,
     forwardRef(() => StripeModule), // Use forwardRef to avoid circular dependency
