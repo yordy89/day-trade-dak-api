@@ -35,10 +35,26 @@ export class AuthController {
   }
 
   @Public()
-  @Post('password-recovery')
-  async passwordRecovery(@Body('email') email: string) {
-    const token = this.authService.generateRecoveryToken(email);
-    return { message: 'Recovery email sent', token };
+  @Post('reset-password')
+  async requestPasswordReset(@Body('email') email: string) {
+    await this.authService.requestPasswordReset(email);
+    return { message: 'If an account exists with this email, you will receive password reset instructions.' };
+  }
+
+  @Public()
+  @Post('reset-password/verify')
+  async verifyResetToken(@Body('token') token: string) {
+    const isValid = await this.authService.verifyResetToken(token);
+    return { valid: isValid };
+  }
+
+  @Public()
+  @Post('reset-password/update')
+  async resetPasswordWithToken(
+    @Body() body: { token: string; newPassword: string }
+  ) {
+    await this.authService.resetPasswordWithToken(body.token, body.newPassword);
+    return { message: 'Password has been reset successfully.' };
   }
 
   @Public()

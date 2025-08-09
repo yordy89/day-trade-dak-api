@@ -32,6 +32,10 @@ export class UserService {
     return this.userModel.findOne({ email }).exec();
   }
 
+  async findOne(query: any): Promise<User | null> {
+    return this.userModel.findOne(query).exec();
+  }
+
   async createUser(data: CreateUserInput): Promise<User> {
     const user = new this.userModel(data);
     return user.save();
