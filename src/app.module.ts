@@ -43,6 +43,7 @@ import { ContactModule } from './contact/contact.module';
 import { NotificationModule } from './notification/notification.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
 import { CDNModule } from './modules/cdn/cdn.module';
+import { MarketModule } from './services/market/market.module';
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { CDNModule } from './modules/cdn/cdn.module';
     NotificationModule,
     NewsletterModule,
     CDNModule,
+    MarketModule,
   ],
   providers: [
     {
