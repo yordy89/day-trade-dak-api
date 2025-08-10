@@ -65,10 +65,10 @@ export class UserService {
   }
 
   async uploadProfileImage(userId: string, file: Express.Multer.File) {
-    const imageUrl = await this.s3Service.uploadProfileImage(file, userId);
+    const uploadResult = await this.s3Service.uploadProfileImage(file, userId);
     return this.userModel.findByIdAndUpdate(
       userId,
-      { profileImage: imageUrl },
+      { profileImage: uploadResult.url },
       { new: true },
     );
   }

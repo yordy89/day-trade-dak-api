@@ -113,8 +113,35 @@ export class SettingsService {
   }
 
   async updateValue(key: string, updateValueDto: UpdateSettingValueDto): Promise<Setting> {
-    const setting = await this.settingModel.findOne({ key });
+    let setting = await this.settingModel.findOne({ key });
+    
+    // If setting doesn't exist, create it with the provided value
     if (!setting) {
+      // Check if it's the featured_stocks setting, create with appropriate defaults
+      if (key === 'featured_stocks') {
+        const newSetting = new this.settingModel({
+          key: 'featured_stocks',
+          value: updateValueDto.value,
+          type: 'json',
+          category: 'trading',
+          metadata: {
+            label: 'Featured Stocks',
+            description: 'List of featured stock symbols displayed on the platform',
+            visible: true,
+            editable: true,
+            order: 1,
+          },
+          isActive: true,
+          lastModifiedBy: updateValueDto.lastModifiedBy,
+          lastModifiedAt: new Date(),
+        });
+        
+        const savedSetting = await newSetting.save();
+        await this.invalidateCache(key);
+        return savedSetting;
+      }
+      
+      // For other settings, still throw error if not found
       throw new NotFoundException(`Setting with key "${key}" not found`);
     }
 
@@ -352,6 +379,20 @@ export class SettingsService {
           visible: true,
           editable: true,
           order: 2,
+        },
+      },
+      // Trading Settings
+      {
+        key: 'featured_stocks',
+        value: JSON.stringify(['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA']),
+        type: SettingType.JSON,
+        category: SettingCategory.TRADING,
+        metadata: {
+          label: 'Featured Stocks',
+          description: 'List of featured stock symbols displayed on the platform',
+          visible: true,
+          editable: true,
+          order: 1,
         },
       },
       // Branding
