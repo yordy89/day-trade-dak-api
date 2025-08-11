@@ -78,10 +78,6 @@ export class AdminUsersController {
     @Query('sortOrder') sortOrder?: 'asc' | 'desc',
     @Request() req?: RequestWithUser,
   ) {
-    // Debug log
-    console.log('Request user:', req.user);
-    console.log('User ID:', req.user?.userId || req.user?._id);
-
     // Log admin action
     await this.adminService.logAdminAction({
       adminId: req.user?.userId || req.user?._id || 'unknown',
