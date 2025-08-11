@@ -34,7 +34,6 @@ export class AdminUsersService {
       .sort({ role: -1, fullName: 1 }) // Super-admins first, then alphabetical
       .lean();
 
-    console.log('Admin hosts query result:', adminHosts); // Debug log
     return adminHosts;
   }
 
@@ -59,15 +58,27 @@ export class AdminUsersService {
       sortOrder = 'desc',
     } = options;
 
+    // Ensure page and limit are valid numbers
+    const validPage = Math.max(1, Number(page) || 1);
+    const validLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+
     const query: any = {};
 
     // Search filter
     if (search) {
-      query.$or = [
+      const searchConditions: any[] = [
         { email: new RegExp(search, 'i') },
+        { firstName: new RegExp(search, 'i') },
+        { lastName: new RegExp(search, 'i') },
         { fullName: new RegExp(search, 'i') },
-        { _id: search.match(/^[0-9a-fA-F]{24}$/) ? search : undefined },
-      ].filter((condition) => condition._id !== undefined);
+      ];
+      
+      // Add ID search if search string is a valid MongoDB ObjectId
+      if (search.match(/^[0-9a-fA-F]{24}$/)) {
+        searchConditions.push({ _id: search });
+      }
+      
+      query.$or = searchConditions;
     }
 
     // Status filter
@@ -93,7 +104,7 @@ export class AdminUsersService {
       }
     }
 
-    const skip = (page - 1) * limit;
+    const skip = (validPage - 1) * validLimit;
     const sort: any = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
 
     const [users, total] = await Promise.all([
@@ -102,7 +113,7 @@ export class AdminUsersService {
         .select('-password -recoveryToken')
         .sort(sort)
         .skip(skip)
-        .limit(limit)
+        .limit(validLimit)
         .lean(),
       this.userModel.countDocuments(query),
     ]);
@@ -110,9 +121,9 @@ export class AdminUsersService {
     return {
       users,
       total,
-      page,
-      limit,
-      pages: Math.ceil(total / limit),
+      page: validPage,
+      limit: validLimit,
+      pages: Math.ceil(total / validLimit),
     };
   }
 
