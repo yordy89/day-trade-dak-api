@@ -36,7 +36,7 @@ export class ModulePermissionsController {
   ) {}
 
   @Post()
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Grant module permission to a user' })
   @ApiResponse({ status: 201, description: 'Permission granted successfully' })
   @ApiResponse({ status: 409, description: 'Permission already exists' })
@@ -97,7 +97,7 @@ export class ModulePermissionsController {
   }
 
   @Put(':userId/:moduleType')
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Update module permission' })
   @ApiResponse({ status: 200, description: 'Permission updated successfully' })
   async update(
@@ -109,7 +109,7 @@ export class ModulePermissionsController {
   }
 
   @Delete(':userId/:moduleType')
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Revoke module permission' })
   @ApiResponse({ status: 200, description: 'Permission revoked successfully' })
   async revoke(
@@ -126,7 +126,7 @@ export class ModulePermissionsController {
   }
 
   @Post('bulk-grant')
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Grant module access to multiple users' })
   @ApiResponse({ status: 200, description: 'Bulk grant completed' })
   async bulkGrant(
@@ -151,7 +151,7 @@ export class ModulePermissionsController {
   }
 
   @Post('expire')
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Manually trigger permission expiration check' })
   @ApiResponse({ status: 200, description: 'Expiration check completed' })
   async expirePermissions() {

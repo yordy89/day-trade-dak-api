@@ -29,6 +29,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Your account has been suspended. Please contact support for assistance.');
     }
     
-    return { userId: payload.sub, username: payload.username, _id: payload.sub };
+    return { 
+      userId: payload.sub, 
+      username: payload.username, 
+      _id: payload.sub, 
+      email: user.email,
+      role: user.role 
+    };
   }
 }
