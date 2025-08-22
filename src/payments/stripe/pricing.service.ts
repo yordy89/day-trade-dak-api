@@ -407,6 +407,14 @@ export class PricingService implements OnModuleInit {
         },
       ],
       [
+        SubscriptionPlan.STOCKS,
+        {
+          plan: SubscriptionPlan.STOCKS,
+          basePrice: 99.99,
+          currency: 'usd',
+        },
+      ],
+      [
         SubscriptionPlan.COMMUNITY_EVENT,
         {
           plan: SubscriptionPlan.COMMUNITY_EVENT,

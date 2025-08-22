@@ -22,6 +22,7 @@ export interface PermissionSet {
   permissions: boolean;
   contactMessages: boolean;
   modulePermissions: boolean; // New: Permisos de Módulos
+  affiliates: boolean; // New: Afiliados
 }
 
 // Define the schema for the permissions object
@@ -43,6 +44,7 @@ const PermissionSetSchema = {
   permissions: { type: Boolean, default: false },
   contactMessages: { type: Boolean, default: false },
   modulePermissions: { type: Boolean, default: false }, // New: Permisos de Módulos
+  affiliates: { type: Boolean, default: false }, // New: Afiliados
 };
 
 @Schema({ timestamps: true })
@@ -76,6 +78,7 @@ export const DEFAULT_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   settings: true,
   contactMessages: true,
   modulePermissions: false, // Admins don't get module permissions by default
+  affiliates: false, // Admins don't get affiliates permission by default
 };
 
 export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
@@ -96,4 +99,5 @@ export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   permissions: true, // Only super admins can manage permissions
   contactMessages: true,
   modulePermissions: true, // Super admins have module permissions
+  affiliates: true, // Super admins have affiliates permission
 };

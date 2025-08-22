@@ -10,6 +10,8 @@ import { AdminContactController } from './controllers/admin-contact.controller';
 import { AdminNotificationsController } from './controllers/admin-notifications.controller';
 import { AdminReportsController } from './controllers/admin-reports.controller';
 import { AdminTransactionsController } from './controllers/admin-transactions.controller';
+import { AdminContentTestController } from './controllers/admin-content-test.controller';
+import { AdminContentWorkflowController } from './controllers/admin-content-workflow.controller';
 import { AdminService } from './admin.service';
 import { AdminUsersService } from './services/admin-users.service';
 import { AdminAnalyticsService } from './services/admin-analytics.service';
@@ -19,6 +21,13 @@ import { AdminSubscriptionsService } from './services/admin-subscriptions.servic
 import { AdminSettingsService } from './services/admin-settings.service';
 import { AdminReportsService } from './services/admin-reports.service';
 import { AdminTransactionsService } from './services/admin-transactions.service';
+import { AdminContentSimpleService } from './services/admin-content-simple.service';
+import { AdminContentWorkflowService } from './services/admin-content-workflow.service';
+import { VideoUploadService } from '../content/services/video-upload.service';
+import { VideoNotificationService } from '../content/services/video-notification.service';
+import { WebSocketGateway } from '../websockets/websockets.gateway';
+import { EmailModule } from '../email/email.module';
+import { WebSocketsModule } from '../websockets/websockets.module';
 import { UsersModule } from '../users/users.module';
 import { AuthModule } from '../auth/auth.module';
 import { VideoSDKModule } from '../videosdk/videosdk.module';
@@ -55,6 +64,12 @@ import {
   ContactMessage,
   ContactMessageSchema,
 } from '../contact/contact-message.schema';
+import { ContentModule } from '../content/content.module';
+import {
+  ContentVideo,
+  ContentVideoSchema,
+} from '../content/schemas/content-video.schema';
+import { BullModule } from '@nestjs/bull';
 
 @Module({
   imports: [
@@ -68,7 +83,11 @@ import {
       { name: SubscriptionHistory.name, schema: SubscriptionHistorySchema },
       { name: SubscriptionPlan.name, schema: SubscriptionPlanSchema },
       { name: ContactMessage.name, schema: ContactMessageSchema },
+      { name: ContentVideo.name, schema: ContentVideoSchema },
     ]),
+    BullModule.registerQueue({
+      name: 'video-processing',
+    }),
     UsersModule,
     AuthModule,
     VideoSDKModule,
@@ -78,6 +97,8 @@ import {
     ContactModule,
     NotificationModule,
     StripeModule,
+    EmailModule,
+    WebSocketsModule,
   ],
   controllers: [
     AdminController,
@@ -91,6 +112,8 @@ import {
     AdminNotificationsController,
     AdminReportsController,
     AdminTransactionsController,
+    AdminContentTestController,
+    AdminContentWorkflowController,
   ],
   providers: [
     AdminService,
@@ -102,6 +125,10 @@ import {
     AdminSettingsService,
     AdminReportsService,
     AdminTransactionsService,
+    AdminContentSimpleService,
+    AdminContentWorkflowService,
+    VideoUploadService,
+    VideoNotificationService,
     MeetingCronService,
     PaymentAnalyticsService,
   ],
@@ -115,6 +142,7 @@ import {
     AdminSettingsService,
     AdminReportsService,
     AdminTransactionsService,
+    AdminContentSimpleService,
   ],
 })
 export class AdminModule {}

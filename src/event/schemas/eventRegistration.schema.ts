@@ -52,6 +52,25 @@ export class EventRegistration {
 
   @Prop()
   klarnaFee?: number;
+
+  // Affiliate/Referral tracking fields
+  @Prop()
+  affiliateCode?: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Affiliate' })
+  affiliateId?: Types.ObjectId;
+
+  @Prop()
+  originalPrice?: number;
+
+  @Prop()
+  discountAmount?: number;
+
+  @Prop()
+  finalPrice?: number;
+
+  @Prop()
+  commissionAmount?: number;
 }
 
 export const EventRegistrationSchema =

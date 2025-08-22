@@ -13,6 +13,7 @@ export enum ModuleType {
   COMMUNITY_EVENTS = 'communityEvents',
   VIP_EVENTS = 'vipEvents',
   MASTER_COURSE = 'masterCourse',
+  STOCKS = 'stocks',
 }
 
 @Schema({ timestamps: true })

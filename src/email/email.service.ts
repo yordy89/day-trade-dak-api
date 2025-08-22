@@ -18,6 +18,10 @@ import {
   EventRegistrationData,
 } from './templates/event-registration.template';
 import {
+  masterCourseRegistrationTemplate,
+  MasterCourseRegistrationData,
+} from './templates/master-course-registration.template';
+import {
   additionalAttendeesTemplate,
   AdditionalAttendeesData,
 } from './templates/additional-attendees.template';
@@ -146,13 +150,34 @@ export class EmailService {
 
   async sendEventRegistrationEmail(to: string, data: EventRegistrationData) {
     try {
-      const html = eventRegistrationTemplate(data);
-      const result = await this.send(
-        to,
-        `Confirmación de registro - ${data.eventName}`,
-        html,
-      );
-      this.logger.log(`Event registration email sent to ${to}`);
+      let html: string;
+      let subject: string;
+
+      // Use specific template for master course
+      if (data.eventType === 'master_course') {
+        const masterCourseData: MasterCourseRegistrationData = {
+          firstName: data.firstName,
+          email: to,
+          phoneNumber: data.additionalInfo?.phoneNumber,
+          isPaid: data.isPaid,
+          amount: data.amount,
+          currency: data.currency,
+          paymentMethod: data.additionalInfo?.paymentMethod,
+          additionalInfo: {
+            tradingExperience: data.additionalInfo?.tradingExperience,
+            expectations: data.additionalInfo?.expectations,
+          },
+        };
+        html = masterCourseRegistrationTemplate(masterCourseData);
+        subject = '🎓 ¡Bienvenido al Master Trading Course 2025!';
+      } else {
+        // Use standard event registration template for community events and others
+        html = eventRegistrationTemplate(data);
+        subject = `Confirmación de registro - ${data.eventName}`;
+      }
+
+      const result = await this.send(to, subject, html);
+      this.logger.log(`Event registration email sent to ${to} (Type: ${data.eventType})`);
       return result;
     } catch (error) {
       this.logger.error(

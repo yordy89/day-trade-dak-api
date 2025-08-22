@@ -23,6 +23,13 @@ export interface EventRegistrationData {
   additionalChildren?: number;
   hotelName?: string;
   hotelAddress?: string;
+  additionalInfo?: {
+    phoneNumber?: string;
+    paymentMethod?: string;
+    tradingExperience?: string;
+    expectations?: string;
+    [key: string]: any;
+  };
 }
 
 const formatDate = (date: Date): string => {

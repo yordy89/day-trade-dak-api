@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { BullModule } from '@nestjs/bull';
 import { DatabaseModule } from './database/database.module';
 import { TradeModule } from './trade/trade.module';
 import { MissionModule } from './mission/mission.module';
@@ -44,8 +45,12 @@ import { NotificationModule } from './notification/notification.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
 import { CDNModule } from './modules/cdn/cdn.module';
 import { MarketModule } from './services/market/market.module';
+import { ContentModule } from './content/content.module';
+import { TestUploadController } from './test-upload.controller';
+import { AffiliateModule } from './affiliate/affiliate.module';
 
 @Module({
+  controllers: [TestUploadController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
@@ -67,6 +72,17 @@ import { MarketModule } from './services/market/market.module';
       ],
     }),
     ScheduleModule.forRoot(),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        redis: {
+          host: config.get('redis.host', 'localhost'),
+          port: config.get('redis.port', 6379),
+          password: config.get('redis.password'),
+        },
+      }),
+    }),
     GuardsModule,
     LoggerModule,
     CacheModule,
@@ -103,6 +119,8 @@ import { MarketModule } from './services/market/market.module';
     NewsletterModule,
     CDNModule,
     MarketModule,
+    ContentModule,
+    AffiliateModule,
   ],
   providers: [
     {

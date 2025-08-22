@@ -15,6 +15,7 @@ import { UsersModule } from 'src/users/users.module';
 import { AuthModule } from 'src/auth/auth.module';
 import { EventModule } from 'src/event/event.module';
 import { EmailModule } from 'src/email/email.module';
+import { AffiliateModule } from 'src/affiliate/affiliate.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { EmailModule } from 'src/email/email.module';
     UsersModule,
     AuthModule,
     forwardRef(() => EventModule),
+    forwardRef(() => AffiliateModule),
     EmailModule,
   ],
   controllers: [

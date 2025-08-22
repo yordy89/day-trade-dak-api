@@ -770,6 +770,14 @@ export class MeetingsService {
     // Check if user has special live meeting access flag
     const hasLiveMeetingAccess = user.allowLiveMeetingAccess;
 
+    // Check if user has module access for LIVE_WEEKLY
+    const hasModuleAccess = await this.modulePermissionsService.hasModuleAccess(
+      userId,
+      ModuleType.LIVE_WEEKLY,
+    );
+    
+    this.logger.log(`User ${userId} - Module Access Check: ${hasModuleAccess}, Live Subscription: ${hasLiveSubscription}, Special Access: ${hasLiveMeetingAccess}`);
+
     // Check if meeting has subscription restrictions
     let hasSubscriptionAccess = true;
     if (
@@ -786,6 +794,11 @@ export class MeetingsService {
     }
 
     // Determine if user has access
+    // User has access if they are:
+    // - The host
+    // - A super admin
+    // - Have the required subscription (if meeting is restricted)
+    // - A participant OR have live subscription OR have module access OR have special access OR meeting is public
     const hasAccess =
       isHost ||
       isAdmin ||
@@ -793,6 +806,7 @@ export class MeetingsService {
         ? hasSubscriptionAccess
         : isParticipant ||
           hasLiveSubscription ||
+          hasModuleAccess ||
           hasLiveMeetingAccess ||
           meeting.isPublic);
 
@@ -805,8 +819,8 @@ export class MeetingsService {
         meeting.allowedSubscriptions.length > 0
       ) {
         reason = `You need one of the following subscriptions to access this meeting: ${meeting.allowedSubscriptions.join(', ')}`;
-      } else if (!hasLiveSubscription && !hasLiveMeetingAccess) {
-        reason = 'You need a live subscription to access this meeting.';
+      } else if (!hasLiveSubscription && !hasModuleAccess && !hasLiveMeetingAccess) {
+        reason = 'You need one of the following subscriptions to access this meeting: LiveWeeklyManual, LiveWeeklyRecurring';
       }
 
       return {
