@@ -88,6 +88,7 @@ export class ModulePermissionsService {
     // Check if user is super_admin
     const user = await this.userModel.findById(userId);
     if (user?.role === 'super_admin') {
+      this.logger.log(`User ${userId} is super_admin, granting access to ${moduleType}`);
       return true;
     }
 
@@ -100,6 +101,32 @@ export class ModulePermissionsService {
       [ModuleType.MASTER_CLASSES]: 'MasterClases',
       [ModuleType.PSICOTRADING]: 'Psicotrading',
     };
+
+    // Special case: Live Recorded is automatically accessible with Live Weekly subscriptions
+    if (moduleType === ModuleType.LIVE_RECORDED && user?.subscriptions) {
+      const hasLiveWeekly = user.subscriptions.some((sub: any) => {
+        const planName = typeof sub === 'string' ? sub : sub.plan;
+        const isLiveWeekly = ['LiveWeeklyManual', 'LiveWeeklyRecurring'].includes(planName);
+        
+        if (typeof sub === 'string') {
+          return isLiveWeekly;
+        }
+        
+        // Check if Live Weekly subscription is active and not expired
+        return isLiveWeekly && 
+               (!sub.status || sub.status === 'active') &&
+               (!sub.expiresAt || new Date(sub.expiresAt) > new Date()) &&
+               (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > new Date());
+      });
+      
+      if (hasLiveWeekly) {
+        this.logger.log(
+          `User ${userId} has automatic access to Live Recorded via Live Weekly subscription`,
+          'ModulePermissionsService',
+        );
+        return true;
+      }
+    }
 
     const requiredSubscription = moduleToSubscriptionMap[moduleType];
     if (requiredSubscription && user?.subscriptions) {
@@ -120,16 +147,42 @@ export class ModulePermissionsService {
     }
 
     // Check for active permission
+    // Convert userId to string to handle both string and ObjectId storage
+    const userIdStr = userId.toString();
     const permission = await this.modulePermissionModel.findOne({
-      userId,
-      moduleType,
-      isActive: true,
-      hasAccess: true,
-      $or: [
-        { expiresAt: { $exists: false } },
-        { expiresAt: { $gt: new Date() } },
+      $and: [
+        {
+          $or: [
+            { userId: userIdStr },
+            { userId: userId },
+          ],
+        },
+        { moduleType },
+        { isActive: true },
+        { hasAccess: true },
+        {
+          $or: [
+            { expiresAt: { $exists: false } },
+            { expiresAt: { $gt: new Date() } },
+          ],
+        },
       ],
     });
+
+    // Debug: Check all permissions for this user
+    const allUserPerms = await this.modulePermissionModel.find({ 
+      $or: [
+        { userId: userIdStr },
+        { userId: userId },
+      ],
+      isActive: true,
+      hasAccess: true 
+    });
+    
+    this.logger.log(
+      `Module permission check for user ${userId}, module ${moduleType}: ${!!permission}. User has ${allUserPerms.length} active permissions: ${allUserPerms.map(p => p.moduleType).join(', ')}`,
+      'ModulePermissionsService',
+    );
 
     return !!permission;
   }

@@ -25,6 +25,7 @@ import { VariableKeys } from 'src/constants';
 import { ModuleAccessGuard } from 'src/guards/module-access.guard';
 import { RequireModule } from 'src/decorators/require-module.decorator';
 import { ModuleType } from 'src/module-permissions/module-permission.schema';
+import { VideoNameMapper } from 'src/utils/video-name-mapper';
 
 @Controller('videos')
 export class VideoController {
@@ -140,11 +141,38 @@ export class VideoController {
     return masterVideos;
   }
 
-  @UseGuards(JwtAuthGuard, SubscriptionGuard)
-  // @RequiresSubscription(SubscriptionPlan.STOCK) // STOCK plan removed
+  @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
+  @RequiresSubscription(SubscriptionPlan.STOCKS)
+  @RequireModule(ModuleType.STOCKS)
   @Get('stockVideos')
   async getAllStocksVideos() {
-    return this.s3Service.listVideos(VariableKeys.AWS_S3_STOCK_VIDEO_FOLDER);
+    console.log(
+      'Fetching stock videos from S3...',
+      VariableKeys.AWS_S3_STOCK_VIDEO_FOLDER,
+    );
+    const videos = await this.s3Service.listVideos(VariableKeys.AWS_S3_STOCK_VIDEO_FOLDER);
+    
+    console.log(`Total stock videos found: ${videos.length}`);
+    
+    // Extract unique videos from HLS variants
+    const uniqueVideos = new Map<string, any>();
+    
+    videos.forEach(video => {
+      // Extract the base video name without quality suffix
+      const keyParts = video.key.split('/');
+      const baseKey = keyParts.slice(0, -1).join('/');
+      
+      // Prefer master.m3u8 files
+      if (video.key.includes('master.m3u8')) {
+        uniqueVideos.set(baseKey, video);
+      } else if (!uniqueVideos.has(baseKey) && video.key.endsWith('playlist.m3u8')) {
+        uniqueVideos.set(baseKey, video);
+      }
+    });
+    
+    return Array.from(uniqueVideos.values()).sort((a, b) => 
+      a.key.localeCompare(b.key)
+    );
   }
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
@@ -166,17 +194,17 @@ export class VideoController {
       VariableKeys.AWS_S3_CURSO_1_FOLDER,
     );
 
-    const sorted = videos.sort((a, b) => {
-      const extractOrder = (key: string): number => {
-        const filename = key.split('/').pop(); // get only the filename
-        const match = filename?.match(/^(\d+)_/); // ✅ match number before underscore
-        return match ? parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
-      };
+    // Apply name mapping and proper sorting
+    const processedVideos = VideoNameMapper.processCurso1Videos(videos);
 
-      return extractOrder(a.key) - extractOrder(b.key);
+    console.log(`Processed ${processedVideos.length} videos with clean names`);
+    
+    // Log first few for debugging
+    processedVideos.slice(0, 5).forEach(video => {
+      console.log(`Order ${video.lessonOrder}: ${video.displayName} (${video.folderName})`);
     });
 
-    return sorted;
+    return processedVideos;
   }
 
   @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)

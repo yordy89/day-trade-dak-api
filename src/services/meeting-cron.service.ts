@@ -91,18 +91,6 @@ export class MeetingCronService {
         `Deleted ${endedMeetingsResult.deletedCount} ended meetings based on time`,
       );
 
-      // 3. Delete any existing daily_live meetings (they should be recreated fresh daily)
-      const dailyDeleteResult = await this.meetingModel.deleteMany({
-        meetingType: 'daily_live',
-      });
-      result.deletedDailyLive = dailyDeleteResult.deletedCount;
-      this.logger.log(
-        `Deleted ${dailyDeleteResult.deletedCount} daily live meetings`,
-      );
-
-      result.totalDeleted =
-        result.deletedByStatus + result.deletedByTime + result.deletedDailyLive;
-
       // 3. Check if today is a weekday (Mon-Fri)
       const today = new Date();
       const dayOfWeek = today.getDay();
@@ -110,30 +98,10 @@ export class MeetingCronService {
       if (dayOfWeek >= 1 && dayOfWeek <= 5) {
         // Monday = 1, Friday = 5
         this.logger.log(
-          `Today is a weekday (${this.getDayName(dayOfWeek)}), creating daily meeting...`,
+          `Today is a weekday (${this.getDayName(dayOfWeek)}), checking for existing daily meeting...`,
         );
 
-        // 4. Create new daily meeting for today at 8:45 AM
-        const scheduledAt = new Date(today);
-        scheduledAt.setHours(8, 45, 0, 0);
-
-        // Get the host - try to find an admin user if no default host is configured
-        let hostId = this.defaultHostId;
-        if (!hostId) {
-          const adminUser = await this.userModel.findOne({
-            role: { $in: ['admin', 'super_admin'] },
-          });
-          if (adminUser) {
-            hostId = adminUser._id.toString();
-          } else {
-            this.logger.error(
-              'No admin user found and no default host configured',
-            );
-            return;
-          }
-        }
-
-        // Check if a daily meeting already exists for today
+        // Check if a daily meeting already exists for today BEFORE deleting
         const startOfToday = new Date(today);
         startOfToday.setHours(0, 0, 0, 0);
         const endOfToday = new Date(today);
@@ -153,7 +121,54 @@ export class MeetingCronService {
             `Daily meeting already exists for today: ${existingMeeting._id}`,
           );
           result.message = 'Daily meeting already exists for today';
+          
+          // Clean up old daily_live meetings from previous days
+          const oldDailyDeleteResult = await this.meetingModel.deleteMany({
+            meetingType: 'daily_live',
+            scheduledAt: { $lt: startOfToday },
+          });
+          result.deletedDailyLive = oldDailyDeleteResult.deletedCount;
+          this.logger.log(
+            `Deleted ${oldDailyDeleteResult.deletedCount} old daily live meetings from previous days`,
+          );
+          
+          result.totalDeleted =
+            result.deletedByStatus + result.deletedByTime + result.deletedDailyLive;
+          
           return result;
+        }
+
+        // Delete any orphaned daily_live meetings (should not exist but just in case)
+        const dailyDeleteResult = await this.meetingModel.deleteMany({
+          meetingType: 'daily_live',
+          scheduledAt: { $lt: startOfToday }, // Only delete old ones, not today's
+        });
+        result.deletedDailyLive = dailyDeleteResult.deletedCount;
+        this.logger.log(
+          `Deleted ${dailyDeleteResult.deletedCount} old daily live meetings`,
+        );
+
+        result.totalDeleted =
+          result.deletedByStatus + result.deletedByTime + result.deletedDailyLive;
+
+        // 4. Create new daily meeting for today at 8:45 AM
+        const scheduledAt = new Date(today);
+        scheduledAt.setHours(8, 45, 0, 0);
+
+        // Get the host - try to find an admin user if no default host is configured
+        let hostId = this.defaultHostId;
+        if (!hostId) {
+          const adminUser = await this.userModel.findOne({
+            role: { $in: ['admin', 'super_admin'] },
+          });
+          if (adminUser) {
+            hostId = adminUser._id.toString();
+          } else {
+            this.logger.error(
+              'No admin user found and no default host configured',
+            );
+            return;
+          }
         }
 
         try {
@@ -215,6 +230,21 @@ export class MeetingCronService {
         this.logger.log(
           `Today is ${this.getDayName(dayOfWeek)} (weekend), skipping daily meeting creation`,
         );
+        
+        // Clean up old daily_live meetings on weekends
+        const dailyDeleteResult = await this.meetingModel.deleteMany({
+          meetingType: 'daily_live',
+          scheduledAt: { $lt: new Date() },
+        });
+        result.deletedDailyLive = dailyDeleteResult.deletedCount;
+        if (dailyDeleteResult.deletedCount > 0) {
+          this.logger.log(
+            `Deleted ${dailyDeleteResult.deletedCount} old daily live meetings`,
+          );
+        }
+        
+        result.totalDeleted =
+          result.deletedByStatus + result.deletedByTime + result.deletedDailyLive;
       }
 
       this.logger.log('Daily meeting cleanup and creation completed');

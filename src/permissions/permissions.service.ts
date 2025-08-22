@@ -283,6 +283,7 @@ export class PermissionsService {
       permissions: false,
       contactMessages: false,
       modulePermissions: false,
+      affiliates: false,
     };
 
     switch (role) {
@@ -315,6 +316,7 @@ export class PermissionsService {
       permissions: false,
       contactMessages: false,
       modulePermissions: false,
+      affiliates: false,
     };
     
     // Merge provided permissions

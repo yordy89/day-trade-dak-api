@@ -86,4 +86,9 @@ export class UpdatePermissionDto {
   @IsOptional()
   @IsBoolean()
   modulePermissions?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  affiliates?: boolean;
 }

@@ -34,6 +34,7 @@ import { EventRegistrationsService } from 'src/event/event-registration.service'
 import { Event } from 'src/event/schemas/event.schema';
 import { PricingService } from './pricing.service';
 import { EmailService } from 'src/email/email.service';
+import { AffiliateService } from 'src/affiliate/affiliate.service';
 
 @Injectable()
 export class StripeService {
@@ -45,6 +46,8 @@ export class StripeService {
     private userService: UserService,
     @Inject(forwardRef(() => EventRegistrationsService))
     private eventRegistrationsService: EventRegistrationsService,
+    @Inject(forwardRef(() => AffiliateService))
+    private affiliateService: AffiliateService,
     private pricingService: PricingService,
     private emailService: EmailService,
     @InjectModel(Transaction.name) private transactionModel: Model<Transaction>,
@@ -106,7 +109,7 @@ export class StripeService {
       mode: isRecurring ? 'subscription' : 'payment',
       customer: customerId,
       success_url: `${this.configService.get<string>('FRONTEND_URL')}/payment/success?session_id={CHECKOUT_SESSION_ID}&plan=${subscriptionPlan}`,
-      cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/pricing`,
+      cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/academy/subscription/plans`,
       line_items: [{ price: priceId, quantity: 1 }],
       // BNPL requires shipping address collection
       shipping_address_collection:
@@ -271,6 +274,13 @@ export class StripeService {
     };
     userId?: string;
     paymentMethod?: 'card' | 'klarna';
+    // Affiliate/referral fields
+    affiliateCode?: string;
+    affiliateId?: string;
+    discountAmount?: number;
+    commissionType?: 'percentage' | 'fixed';
+    commissionRate?: number;
+    commissionFixedAmount?: number;
   }) {
     const {
       eventId,
@@ -281,6 +291,12 @@ export class StripeService {
       additionalInfo,
       userId,
       paymentMethod = 'card',
+      affiliateCode,
+      affiliateId,
+      discountAmount,
+      commissionType,
+      commissionRate,
+      commissionFixedAmount,
     } = body;
 
     // Get event details
@@ -381,8 +397,22 @@ export class StripeService {
       );
     }
 
+    // Store the original price before any modifications
+    const basePrice = totalPrice;
+
+    // Apply affiliate discount if provided
+    if (affiliateCode && discountAmount && discountAmount > 0) {
+      totalPrice = totalPrice - discountAmount;
+      this.logger.log(
+        `Affiliate discount applied: Code ${affiliateCode}, Discount $${discountAmount}`,
+      );
+      this.logger.log(
+        `Price after discount: $${basePrice} - $${discountAmount} = $${totalPrice}`,
+      );
+    }
+
     // Apply Klarna fee if payment method is Klarna
-    const originalPrice = totalPrice;
+    const priceBeforeKlarnaFee = totalPrice;
     if (paymentMethod === 'klarna') {
       const klarnaFeePercentage = parseFloat(
         this.configService.get<string>('KLARNA_FEE_PERCENTAGE') || '0.0644',
@@ -392,7 +422,7 @@ export class StripeService {
         `Klarna fee applied: ${(klarnaFeePercentage * 100).toFixed(2)}%`,
       );
       this.logger.log(
-        `Price with Klarna fee: $${originalPrice} → $${totalPrice.toFixed(2)}`,
+        `Price with Klarna fee: $${priceBeforeKlarnaFee} → $${totalPrice.toFixed(2)}`,
       );
     }
 
@@ -497,11 +527,19 @@ export class StripeService {
           additionalInfo?.additionalAttendees?.details || [],
         ),
         paymentMethod: paymentMethod,
-        originalPrice: originalPrice.toString(),
+        originalPrice: basePrice.toString(),
         klarnaFee:
           paymentMethod === 'klarna'
-            ? (totalPrice - originalPrice).toFixed(2)
+            ? (totalPrice - priceBeforeKlarnaFee).toFixed(2)
             : '0',
+        // Affiliate tracking metadata
+        affiliateCode: affiliateCode || '',
+        affiliateId: affiliateId || '',
+        discountAmount: discountAmount ? discountAmount.toString() : '0',
+        commissionType: commissionType || 'percentage',
+        commissionRate: commissionRate ? commissionRate.toString() : '0',
+        commissionFixedAmount: commissionFixedAmount ? commissionFixedAmount.toString() : '0',
+        finalPrice: totalPrice.toString(),
       },
     });
 
@@ -645,34 +683,51 @@ export class StripeService {
       });
     } else {
       // Paid subscription
-      const priceId = await this.pricingService.getPriceIdForPlan(plan);
-
-      if (priceId.startsWith('price_')) {
-        // Use existing price ID
-        lineItems.push({
-          price: priceId,
-          quantity: 1,
-        });
-      } else {
-        // Create price data on the fly (for new plans without price IDs yet)
+      // For manual weekly plan, always create price data on the fly as one-time payment
+      if (plan === SubscriptionPlan.LIVE_WEEKLY_MANUAL) {
         lineItems.push({
           price_data: {
             currency: calculatedPrice.currency,
             product_data: {
-              name: `${plan} Subscription`,
-              ...(calculatedPrice.discountReason && {
-                description: calculatedPrice.discountReason,
-              }),
+              name: 'Live Semanal - Pago Manual',
+              description: 'Acceso semanal al trading en vivo con renovación manual',
             },
             unit_amount: Math.round(calculatedPrice.finalPrice * 100),
-            ...(isRecurring && {
-              recurring: {
-                interval: isWeekly ? 'week' : 'month',
-              },
-            }),
+            // No recurring properties for manual payment
           },
           quantity: 1,
         });
+      } else {
+        // For other plans, use existing price ID or create recurring price
+        const priceId = await this.pricingService.getPriceIdForPlan(plan);
+
+        if (priceId.startsWith('price_')) {
+          // Use existing price ID
+          lineItems.push({
+            price: priceId,
+            quantity: 1,
+          });
+        } else {
+          // Create price data on the fly (for new plans without price IDs yet)
+          lineItems.push({
+            price_data: {
+              currency: calculatedPrice.currency,
+              product_data: {
+                name: `${plan} Subscription`,
+                ...(calculatedPrice.discountReason && {
+                  description: calculatedPrice.discountReason,
+                }),
+              },
+              unit_amount: Math.round(calculatedPrice.finalPrice * 100),
+              ...(isRecurring && {
+                recurring: {
+                  interval: isWeekly ? 'week' : 'month',
+                },
+              }),
+            },
+            quantity: 1,
+          });
+        }
       }
     }
 
@@ -690,7 +745,7 @@ export class StripeService {
         `${this.configService.get<string>('FRONTEND_URL')}/payment/success?session_id={CHECKOUT_SESSION_ID}&plan=${plan}`,
       cancel_url:
         options?.cancelUrl ||
-        `${this.configService.get<string>('FRONTEND_URL')}/pricing`,
+        `${this.configService.get<string>('FRONTEND_URL')}/academy/subscription/plans`,
       // BNPL requires shipping address collection
       shipping_address_collection:
         bnplMethods.length > 0
@@ -1142,6 +1197,47 @@ export class StripeService {
         `✅ Event registration completed for ${email} - Event: ${actualEventId}, Transaction: ${transaction._id}`,
       );
 
+      // Create commission record if affiliate code is present
+      if (session.metadata?.affiliateCode && session.metadata?.affiliateId) {
+        try {
+          const affiliateCode = session.metadata.affiliateCode;
+          const affiliateId = session.metadata.affiliateId;
+          const discountAmount = parseFloat(session.metadata.discountAmount || '0');
+          const commissionType = (session.metadata.commissionType || 'percentage') as 'percentage' | 'fixed';
+          const commissionRate = parseFloat(session.metadata.commissionRate || '0');
+          const commissionFixedAmount = parseFloat(session.metadata.commissionFixedAmount || '0');
+          const finalPrice = parseFloat(session.metadata.finalPrice || amount.toString());
+
+          await this.affiliateService.createCommission({
+            affiliateId,
+            affiliateCode,
+            registrationId: registration?._id?.toString() || session.id,
+            customerEmail: email,
+            customerName: `${firstName} ${lastName}`,
+            originalPrice: parseFloat(session.metadata.originalPrice || amount.toString()),
+            discountAmount,
+            finalPrice,
+            commissionType,
+            commissionRate,
+            commissionFixedAmount,
+            stripeSessionId: session.id,
+            paymentMethod: session.payment_method_types?.[0] || 'card',
+            metadata: {
+              eventName: event?.name || 'Master Trading Course',
+              eventType,
+              eventDate: event?.date,
+            },
+          });
+
+          this.logger.log(
+            `✅ Commission record created for affiliate ${affiliateCode}`,
+          );
+        } catch (error) {
+          this.logger.error('Failed to create commission record:', error);
+          // Don't throw - we don't want to fail the registration if commission creation fails
+        }
+      }
+
       // Grant Classes access for Master Course registrations
       if (eventType === 'master_course' && userId) {
         try {
@@ -1174,32 +1270,49 @@ export class StripeService {
       }
 
       // Send email notification
-      if (this.emailService && event) {
+      if (this.emailService) {
         try {
-          await this.emailService.sendEventRegistrationEmail(email, {
-            firstName,
-            eventName: event.title || event.name,
-            eventType: (event.type || eventType) as
-              | 'master_course'
-              | 'community_event'
-              | 'vip_event',
-            eventDate: event.date ? new Date(event.date) : undefined,
-            eventStartDate: event.startDate ? new Date(event.startDate) : undefined,
-            eventEndDate: event.endDate ? new Date(event.endDate) : undefined,
-            eventTime: (event as any).time,
-            eventLocation: event.location,
-            hotelName: event.metadata?.hotel,
-            hotelAddress: event.metadata?.hotelAddress,
-            eventDescription: event.description,
-            ticketNumber: registration?._id?.toString() || session.id,
-            isPaid: registrationType === 'paid',
-            amount: session.amount_total
-              ? session.amount_total / 100
-              : undefined,
-            currency: session.currency,
-            additionalAdults: parsedAdditionalInfo?.additionalAttendees?.adults || 0,
-            additionalChildren: parsedAdditionalInfo?.additionalAttendees?.children || 0,
-          });
+          // For master course, send specific data without event dates
+          if (eventType === 'master_course') {
+            await this.emailService.sendEventRegistrationEmail(email, {
+              firstName,
+              eventName: 'Master Trading Course 2025',
+              eventType: 'master_course',
+              eventLocation: 'Tampa, Florida',
+              ticketNumber: registration?._id?.toString() || session.id,
+              isPaid: registrationType === 'paid',
+              amount: session.amount_total
+                ? session.amount_total / 100
+                : undefined,
+              currency: session.currency,
+              additionalInfo: parsedAdditionalInfo,
+            });
+          } else if (event) {
+            // For regular events, send full event data
+            await this.emailService.sendEventRegistrationEmail(email, {
+              firstName,
+              eventName: event.title || event.name,
+              eventType: (event.type || eventType) as
+                | 'community_event'
+                | 'vip_event',
+              eventDate: event.date ? new Date(event.date) : undefined,
+              eventStartDate: event.startDate ? new Date(event.startDate) : undefined,
+              eventEndDate: event.endDate ? new Date(event.endDate) : undefined,
+              eventTime: (event as any).time,
+              eventLocation: event.location,
+              hotelName: event.metadata?.hotel,
+              hotelAddress: event.metadata?.hotelAddress,
+              eventDescription: event.description,
+              ticketNumber: registration?._id?.toString() || session.id,
+              isPaid: registrationType === 'paid',
+              amount: session.amount_total
+                ? session.amount_total / 100
+                : undefined,
+              currency: session.currency,
+              additionalAdults: parsedAdditionalInfo?.additionalAttendees?.adults || 0,
+              additionalChildren: parsedAdditionalInfo?.additionalAttendees?.children || 0,
+            });
+          }
 
           // Add to Brevo marketing list
           if (event) {
@@ -1547,6 +1660,7 @@ export class StripeService {
           [SubscriptionPlan.CLASSES]: 'Clases',
           [SubscriptionPlan.PEACE_WITH_MONEY]: 'Paz con el Dinero',
           [SubscriptionPlan.MASTER_COURSE]: 'Master Course',
+          [SubscriptionPlan.STOCKS]: 'Acciones',
           [SubscriptionPlan.COMMUNITY_EVENT]: 'Community Event',
           [SubscriptionPlan.VIP_EVENT]: 'VIP Event',
         };
@@ -1556,6 +1670,7 @@ export class StripeService {
           SubscriptionPlan.MASTER_CLASES,
           SubscriptionPlan.LIVE_RECORDED,
           SubscriptionPlan.PSICOTRADING,
+          SubscriptionPlan.STOCKS,
         ].includes(plan);
 
         await this.emailService.sendPaymentConfirmationEmail(user.email, {
@@ -1792,6 +1907,7 @@ export class StripeService {
       price_1Rk7OOJ1acFkbhNI1JAr62Lw: SubscriptionPlan.MASTER_CLASES,
       price_1Rk7PoJ1acFkbhNInNuVejrp: SubscriptionPlan.LIVE_RECORDED,
       price_1RNIS6J1acFkbhNIyPeQVOAS: SubscriptionPlan.PSICOTRADING,
+      price_TODO_STOCKS: SubscriptionPlan.STOCKS, // TODO: Replace with actual Stripe price ID
 
       // One-Time Purchases
       price_1Rk6VVJ1acFkbhNIGFGK4mzA: SubscriptionPlan.CLASSES,

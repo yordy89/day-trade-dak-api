@@ -316,7 +316,8 @@ export class AdminEventsService {
     const [registrations, total] = await Promise.all([
       this.registrationModel
         .find(query)
-        .populate('userId', 'firstName lastName email phoneNumber')
+        // Don't populate userId - use the registration's own data
+        // .populate('userId', 'firstName lastName email phoneNumber')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -327,14 +328,8 @@ export class AdminEventsService {
     // Map registrations to ensure the frontend gets the expected format
     const mappedRegistrations = registrations.map((reg: any) => ({
       _id: reg._id,
-      userId: reg.userId || {
-        _id: reg._id,
-        firstName: reg.firstName,
-        lastName: reg.lastName,
-        email: reg.email,
-        phone: reg.phoneNumber,
-        phoneNumber: reg.phoneNumber,
-      },
+      // Don't use userId - use the registration's actual data
+      userId: reg.userId, // Keep the userId reference but don't populate it
       eventId: reg.eventId,
       ticketType: reg.isVip ? 'vip' : 'general',
       paymentStatus:
