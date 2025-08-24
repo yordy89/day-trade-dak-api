@@ -7,7 +7,7 @@ We've integrated Klarna, Affirm, and Afterpay/Clearpay into the payment system. 
 For the Master Course at $2,999.99:
 - ✅ **Klarna** - Available ($1 - $10,000 range)
 - ✅ **Affirm** - Available ($50 - $30,000 range)  
-- ❌ **Afterpay** - NOT available (exceeds $2,000 limit)
+- ✅ **Afterpay/Clearpay** - Available ($1 - $4,000 range based on account limits)
 
 ## Setup Steps
 

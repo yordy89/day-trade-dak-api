@@ -70,7 +70,7 @@ export class StripeController {
       phoneNumber?: string;
       additionalInfo?: object;
       userId?: string;
-      paymentMethod?: 'card' | 'klarna';
+      paymentMethod?: 'card' | 'klarna' | 'afterpay';
     },
   ) {
     // Validate user is not already registered
@@ -87,7 +87,7 @@ export class StripeController {
   @Post('classes-checkout')
   async createClassesCheckoutSession(
     @Req() req: RequestWithUser,
-    @Body() body: { userId?: string; paymentMethod?: 'card' | 'klarna' },
+    @Body() body: { userId?: string; paymentMethod?: 'card' | 'klarna' | 'afterpay' },
   ) {
     const userId = body.userId || req.user._id.toString();
     const paymentMethod = body.paymentMethod || 'card';
