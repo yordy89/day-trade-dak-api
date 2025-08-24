@@ -420,19 +420,23 @@ export class MeetingsService {
     // Check if user has super admin role
     const isAdmin = user.role === Role.SUPER_ADMIN;
 
-    // Check if user has live subscription
+    // Check if user has live subscription (only weekly subscriptions grant access)
     const hasLiveSubscription = user.subscriptions?.some((sub) => {
       const plan = typeof sub === 'string' ? sub : sub.plan;
       return [
         SubscriptionPlan.LIVE_WEEKLY_MANUAL,
         SubscriptionPlan.LIVE_WEEKLY_RECURRING,
-        SubscriptionPlan.MASTER_CLASES,
-        SubscriptionPlan.LIVE_RECORDED,
       ].includes(plan as SubscriptionPlan);
     });
 
     // Check if user has special live meeting access flag
     const hasLiveMeetingAccess = user.allowLiveMeetingAccess;
+
+    // Check if user has module access for LIVE_WEEKLY
+    const hasModuleAccess = await this.modulePermissionsService.hasModuleAccess(
+      userId,
+      ModuleType.LIVE_WEEKLY,
+    );
 
     // Check if meeting has subscription restrictions
     let hasSubscriptionAccess = true;
@@ -453,12 +457,13 @@ export class MeetingsService {
     }
 
     this.logger.log(
-      `Meeting access check - User: ${userId}, Host: ${hostId}, IsHost: ${isHost}, IsAdmin: ${isAdmin}, HasLiveSubscription: ${hasLiveSubscription}, HasLiveMeetingAccess: ${hasLiveMeetingAccess}, HasSubscriptionAccess: ${hasSubscriptionAccess}`,
+      `Meeting access check - User: ${userId}, Host: ${hostId}, IsHost: ${isHost}, IsAdmin: ${isAdmin}, HasLiveSubscription: ${hasLiveSubscription}, HasModuleAccess: ${hasModuleAccess}, HasLiveMeetingAccess: ${hasLiveMeetingAccess}, HasSubscriptionAccess: ${hasSubscriptionAccess}`,
     );
 
     // Determine if user has access
     // Super admins and hosts always have access
     // For restricted meetings, user must have required subscription
+    // For non-restricted meetings, user needs subscription OR module access OR special flag
     const hasAccess =
       isHost ||
       isAdmin ||
@@ -466,6 +471,7 @@ export class MeetingsService {
         ? hasSubscriptionAccess
         : isParticipant ||
           hasLiveSubscription ||
+          hasModuleAccess ||
           hasLiveMeetingAccess ||
           meeting.isPublic);
 
@@ -480,7 +486,7 @@ export class MeetingsService {
         );
       } else {
         throw new ForbiddenException(
-          'You do not have access to this meeting. You need a live subscription or special access.',
+          'You do not have access to this meeting. You need a Live Weekly subscription, Live Weekly module permission, or special access.',
         );
       }
     }
@@ -756,14 +762,12 @@ export class MeetingsService {
     // Check if user has super admin role
     const isAdmin = user.role === Role.SUPER_ADMIN;
 
-    // Check if user has live subscription
+    // Check if user has live subscription (only weekly subscriptions grant access)
     const hasLiveSubscription = user.subscriptions?.some((sub) => {
       const plan = typeof sub === 'string' ? sub : sub.plan;
       return [
         SubscriptionPlan.LIVE_WEEKLY_MANUAL,
         SubscriptionPlan.LIVE_WEEKLY_RECURRING,
-        SubscriptionPlan.MASTER_CLASES,
-        SubscriptionPlan.LIVE_RECORDED,
       ].includes(plan as SubscriptionPlan);
     });
 
