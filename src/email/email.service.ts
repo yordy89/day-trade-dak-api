@@ -488,7 +488,7 @@ export class EmailService {
       totalAmount: number;
       confirmationNumber?: string;
       eventDate?: Date;
-      paymentMethod?: 'card' | 'klarna';
+      paymentMethod?: 'card' | 'klarna' | 'afterpay';
       adultPrice?: number;
       childPrice?: number;
     },

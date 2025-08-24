@@ -273,7 +273,7 @@ export class StripeService {
       [key: string]: any;
     };
     userId?: string;
-    paymentMethod?: 'card' | 'klarna';
+    paymentMethod?: 'card' | 'klarna' | 'afterpay';
     // Affiliate/referral fields
     affiliateCode?: string;
     affiliateId?: string;
@@ -411,8 +411,8 @@ export class StripeService {
       );
     }
 
-    // Apply Klarna fee if payment method is Klarna
-    const priceBeforeKlarnaFee = totalPrice;
+    // Apply payment method fees
+    const priceBeforeFees = totalPrice;
     if (paymentMethod === 'klarna') {
       const klarnaFeePercentage = parseFloat(
         this.configService.get<string>('KLARNA_FEE_PERCENTAGE') || '0.0644',
@@ -422,7 +422,17 @@ export class StripeService {
         `Klarna fee applied: ${(klarnaFeePercentage * 100).toFixed(2)}%`,
       );
       this.logger.log(
-        `Price with Klarna fee: $${priceBeforeKlarnaFee} → $${totalPrice.toFixed(2)}`,
+        `Price with Klarna fee: $${priceBeforeFees} → $${totalPrice.toFixed(2)}`,
+      );
+    } else if (paymentMethod === 'afterpay') {
+      // Apply Afterpay fee silently (6% but not shown to customer)
+      const afterpayFeePercentage = 0.06;
+      totalPrice = totalPrice * (1 + afterpayFeePercentage);
+      this.logger.log(
+        `Afterpay fee applied (hidden): ${(afterpayFeePercentage * 100).toFixed(2)}%`,
+      );
+      this.logger.log(
+        `Price with Afterpay fee: $${priceBeforeFees} → $${totalPrice.toFixed(2)}`,
       );
     }
 
@@ -459,6 +469,8 @@ export class StripeService {
 
     if (paymentMethod === 'klarna') {
       paymentMethods = ['klarna'];
+    } else if (paymentMethod === 'afterpay') {
+      paymentMethods = ['afterpay_clearpay'];
     } else {
       paymentMethods = ['card'];
     }
@@ -530,7 +542,11 @@ export class StripeService {
         originalPrice: basePrice.toString(),
         klarnaFee:
           paymentMethod === 'klarna'
-            ? (totalPrice - priceBeforeKlarnaFee).toFixed(2)
+            ? (totalPrice - priceBeforeFees).toFixed(2)
+            : '0',
+        afterpayFee:
+          paymentMethod === 'afterpay'
+            ? (totalPrice - priceBeforeFees).toFixed(2)
             : '0',
         // Affiliate tracking metadata
         affiliateCode: affiliateCode || '',
@@ -551,7 +567,7 @@ export class StripeService {
     amount: number;
     metadata: Record<string, string>;
     email: string;
-    paymentMethod: 'card' | 'klarna';
+    paymentMethod: 'card' | 'klarna' | 'afterpay';
   }) {
     const { amount, metadata, email, paymentMethod } = params;
 
@@ -561,6 +577,10 @@ export class StripeService {
     if (paymentMethod === 'klarna') {
       paymentMethodTypes.push(
         'klarna' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
+      );
+    } else if (paymentMethod === 'afterpay') {
+      paymentMethodTypes.push(
+        'afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
       );
     }
 
@@ -841,7 +861,7 @@ export class StripeService {
   // ✅ **Create Classes Checkout Session**
   async createClassesCheckoutSession(
     userId: string,
-    paymentMethod: 'card' | 'klarna' = 'card',
+    paymentMethod: 'card' | 'klarna' | 'afterpay' = 'card',
   ) {
     // Get user details
     const user = await this.userService.findById(userId);
@@ -879,7 +899,7 @@ export class StripeService {
     const basePrice = 500; // $500 USD
     let finalPrice = basePrice;
 
-    // Apply Klarna fee if payment method is Klarna
+    // Apply payment method fees
     if (paymentMethod === 'klarna') {
       const klarnaFeePercentage = parseFloat(
         this.configService.get<string>('KLARNA_FEE_PERCENTAGE') || '0.0644',
@@ -890,6 +910,16 @@ export class StripeService {
       );
       this.logger.log(
         `Price with Klarna fee: $${basePrice} → $${finalPrice.toFixed(2)}`,
+      );
+    } else if (paymentMethod === 'afterpay') {
+      // Apply Afterpay fee silently (6% but not shown to customer)
+      const afterpayFeePercentage = 0.06;
+      finalPrice = basePrice * (1 + afterpayFeePercentage);
+      this.logger.log(
+        `Afterpay fee applied (hidden): ${(afterpayFeePercentage * 100).toFixed(2)}%`,
+      );
+      this.logger.log(
+        `Price with Afterpay fee: $${basePrice} → $${finalPrice.toFixed(2)}`,
       );
     }
 
@@ -923,6 +953,8 @@ export class StripeService {
 
     if (paymentMethod === 'klarna') {
       paymentMethodTypes = ['klarna'];
+    } else if (paymentMethod === 'afterpay') {
+      paymentMethodTypes = ['afterpay_clearpay'];
     } else {
       paymentMethodTypes = ['card'];
     }
@@ -2434,10 +2466,10 @@ export class StripeService {
     }
 
     // Afterpay/Clearpay availability
-    // Minimum: $1 USD, Maximum: $2,000 USD (varies by region)
+    // Minimum: $1 USD, Maximum: $4,000 USD (updated based on account limits)
     // Available in: USD, CAD, GBP, AUD, NZD, EUR
     if (['usd', 'cad', 'gbp', 'aud', 'nzd', 'eur'].includes(lowerCurrency)) {
-      if (lowerCurrency === 'usd' && amount >= 1 && amount <= 2000) {
+      if (lowerCurrency === 'usd' && amount >= 1 && amount <= 4000) {
         bnplMethods.push(
           'afterpay_clearpay' as Stripe.Checkout.SessionCreateParams.PaymentMethodType,
         );

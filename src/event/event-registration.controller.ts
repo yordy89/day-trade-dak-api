@@ -102,7 +102,7 @@ export class EventRegistrationsController {
     body: {
       additionalAdults: number;
       additionalChildren: number;
-      paymentMethod: 'card' | 'klarna';
+      paymentMethod: 'card' | 'klarna' | 'afterpay';
     },
   ) {
     // Validate input

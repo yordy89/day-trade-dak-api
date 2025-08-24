@@ -11,7 +11,7 @@ export interface AdditionalAttendeesData {
   childrenSubtotal: number;
   klarnaFee?: number;
   totalAmount: number;
-  paymentMethod: 'card' | 'klarna';
+  paymentMethod: 'card' | 'klarna' | 'afterpay';
   manageRegistrationUrl: string;
 }
 
