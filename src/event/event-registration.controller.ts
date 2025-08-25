@@ -102,7 +102,8 @@ export class EventRegistrationsController {
     body: {
       additionalAdults: number;
       additionalChildren: number;
-      paymentMethod: 'card' | 'klarna' | 'afterpay';
+      paymentMethod: 'card' | 'klarna' | 'afterpay' | 'local_financing';
+      financingPlanId?: string; // Required if paymentMethod is 'local_financing'
     },
   ) {
     // Validate input

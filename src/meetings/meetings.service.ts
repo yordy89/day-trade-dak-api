@@ -801,17 +801,18 @@ export class MeetingsService {
     // User has access if they are:
     // - The host
     // - A super admin
+    // - Have module access (takes precedence over subscription restrictions)
     // - Have the required subscription (if meeting is restricted)
-    // - A participant OR have live subscription OR have module access OR have special access OR meeting is public
+    // - A participant OR have live subscription OR have special access OR meeting is public
     const hasAccess =
       isHost ||
       isAdmin ||
+      hasModuleAccess ||
+      hasLiveMeetingAccess ||
       (meeting.restrictedToSubscriptions
         ? hasSubscriptionAccess
         : isParticipant ||
           hasLiveSubscription ||
-          hasModuleAccess ||
-          hasLiveMeetingAccess ||
           meeting.isPublic);
 
     if (!hasAccess) {

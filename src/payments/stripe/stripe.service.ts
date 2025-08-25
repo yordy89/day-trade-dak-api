@@ -273,7 +273,8 @@ export class StripeService {
       [key: string]: any;
     };
     userId?: string;
-    paymentMethod?: 'card' | 'klarna' | 'afterpay';
+    paymentMethod?: 'card' | 'klarna' | 'afterpay' | 'local_financing';
+    financingPlanId?: string; // For local financing
     // Affiliate/referral fields
     affiliateCode?: string;
     affiliateId?: string;
@@ -567,7 +568,7 @@ export class StripeService {
     amount: number;
     metadata: Record<string, string>;
     email: string;
-    paymentMethod: 'card' | 'klarna' | 'afterpay';
+    paymentMethod: 'card' | 'klarna' | 'afterpay' | 'local_financing';
   }) {
     const { amount, metadata, email, paymentMethod } = params;
 
@@ -1738,6 +1739,16 @@ export class StripeService {
   private async handleRecurringPayment(invoice: Stripe.Invoice) {
     console.log('Invoice:', invoice);
     const customerId = invoice.customer as string;
+    
+    // Check if this is an installment plan payment
+    if (invoice.subscription_details?.metadata?.isInstallmentPlan === 'true') {
+      // Import and use local financing service for installment payments
+      // This will be injected properly in production
+      this.logger.log('Processing installment plan payment');
+      // TODO: Inject LocalFinancingService and call handlePaymentSucceeded
+      return;
+    }
+    
     const user = await this.userService.findByStripeCustomerId(customerId);
 
     if (!user) {

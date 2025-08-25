@@ -118,7 +118,7 @@ export class EventRegistrationsService {
     registrationId: string,
     additionalAdults: number,
     additionalChildren: number,
-    paymentMethod: 'card' | 'klarna' | 'afterpay',
+    paymentMethod: 'card' | 'klarna' | 'afterpay' | 'local_financing',
     baseAmount: number,
   ) {
     // Get the registration
