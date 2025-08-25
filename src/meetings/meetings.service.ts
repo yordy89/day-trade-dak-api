@@ -462,17 +462,18 @@ export class MeetingsService {
 
     // Determine if user has access
     // Super admins and hosts always have access
-    // For restricted meetings, user must have required subscription
+    // Module access should grant access regardless of subscription restrictions
+    // For restricted meetings, user must have required subscription OR module access
     // For non-restricted meetings, user needs subscription OR module access OR special flag
     const hasAccess =
       isHost ||
       isAdmin ||
+      hasModuleAccess ||
+      hasLiveMeetingAccess ||
       (meeting.restrictedToSubscriptions
         ? hasSubscriptionAccess
         : isParticipant ||
           hasLiveSubscription ||
-          hasModuleAccess ||
-          hasLiveMeetingAccess ||
           meeting.isPublic);
 
     if (!hasAccess) {
