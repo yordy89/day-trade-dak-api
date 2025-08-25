@@ -74,6 +74,24 @@ export class User extends Document {
   @Prop({ default: false })
   allowLiveWeeklyAccess?: boolean;
 
+  @Prop({ default: false })
+  approvedForLocalFinancing?: boolean;
+
+  @Prop({
+    type: {
+      approvedBy: { type: String },
+      approvedAt: { type: Date },
+      maxAmount: { type: Number },
+      notes: { type: String },
+    },
+  })
+  localFinancingDetails?: {
+    approvedBy: string;
+    approvedAt: Date;
+    maxAmount: number;
+    notes: string;
+  };
+
   @Prop()
   passwordResetToken?: string;
 

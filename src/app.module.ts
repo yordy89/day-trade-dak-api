@@ -48,6 +48,7 @@ import { MarketModule } from './services/market/market.module';
 import { ContentModule } from './content/content.module';
 import { TestUploadController } from './test-upload.controller';
 import { AffiliateModule } from './affiliate/affiliate.module';
+import { LocalFinancingModule } from './payments/local-financing/local-financing.module';
 
 @Module({
   controllers: [TestUploadController],
@@ -121,6 +122,7 @@ import { AffiliateModule } from './affiliate/affiliate.module';
     MarketModule,
     ContentModule,
     AffiliateModule,
+    LocalFinancingModule,
   ],
   providers: [
     {
