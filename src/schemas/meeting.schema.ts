@@ -39,6 +39,9 @@ export class Meeting {
   @Prop({ default: false })
   isRecurring: boolean;
 
+  @Prop({ default: false })
+  isRecording: boolean;
+
   @Prop({ enum: ['daily', 'weekly', 'monthly'] })
   recurringType?: string;
 
