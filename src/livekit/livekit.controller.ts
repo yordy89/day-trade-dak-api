@@ -62,6 +62,33 @@ export class LiveKitController {
       dto.name = `${user.firstName} ${user.lastName}`;
     }
 
+    // Check if user is the meeting host
+    const meeting = await this.livekitService.getMeetingById(meetingId);
+    const isHost = meeting.host._id?.toString() === user._id.toString() || 
+                   meeting.host.toString() === user._id.toString();
+    
+    // Determine user permissions based on role and subscriptions
+    // Hosts, super admins and users with proper subscriptions can publish
+    const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    const hasLiveSubscription = user.subscriptions?.some((sub: any) => {
+      const plan = typeof sub === 'string' ? sub : sub.plan;
+      return plan?.includes('LIVE_WEEKLY');
+    });
+    
+    // Set permissions in dto if not already set
+    if (dto.canPublish === undefined) {
+      // Host, super admin, or users with live subscription can publish
+      dto.canPublish = isHost || isSuperAdmin || hasLiveSubscription;
+    }
+    if (dto.canSubscribe === undefined) {
+      dto.canSubscribe = true; // Everyone can watch/listen
+    }
+    if (dto.canPublishData === undefined) {
+      dto.canPublishData = true; // Everyone can chat
+    }
+    
+    this.logger.log(`Token permissions for ${user.email}: isHost=${isHost}, canPublish=${dto.canPublish}, isSuperAdmin=${isSuperAdmin}, hasLiveSubscription=${hasLiveSubscription}`);
+
     const token = await this.livekitService.generateToken(meetingId, dto);
     
     return {
@@ -143,5 +170,31 @@ export class LiveKitController {
   @ApiResponse({ status: 200, description: 'Connection info' })
   getConnectionInfo() {
     return this.livekitService.getConnectionInfo();
+  }
+
+  @Post('rooms/:meetingId/recording/start')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Start recording a LiveKit room' })
+  @ApiResponse({ status: 200, description: 'Recording started' })
+  @ApiResponse({ status: 403, description: 'Only host can start recording' })
+  async startRecording(
+    @Param('meetingId') meetingId: string,
+    @CurrentUser() user: any,
+  ) {
+    return await this.livekitService.startRecording(meetingId, user._id);
+  }
+
+  @Post('rooms/:meetingId/recording/stop')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Stop recording a LiveKit room' })
+  @ApiResponse({ status: 200, description: 'Recording stopped' })
+  @ApiResponse({ status: 403, description: 'Only host can stop recording' })
+  async stopRecording(
+    @Param('meetingId') meetingId: string,
+    @CurrentUser() user: any,
+  ) {
+    return await this.livekitService.stopRecording(meetingId, user._id);
   }
 }

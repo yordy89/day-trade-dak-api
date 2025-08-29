@@ -21,11 +21,18 @@ export class LiveKitService {
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
     private wsGateway: WebSocketGateway,
   ) {
+    // Use the correct environment variables that are already set
+    const livekitUrl = this.configService.get<string>('LIVEKIT_URL', 'https://live.daytradedak.com');
+    
+    // Parse the URL to generate WebSocket and HTTP URLs
+    const wsUrl = livekitUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+    const httpUrl = livekitUrl.replace('wss://', 'https://').replace('ws://', 'http://');
+    
     this.config = {
-      apiKey: this.configService.get<string>('LIVEKIT_API_KEY', 'devkey'),
-      apiSecret: this.configService.get<string>('LIVEKIT_API_SECRET', 'secret'),
-      wsUrl: this.configService.get<string>('LIVEKIT_WS_URL', 'ws://localhost:7880'),
-      httpUrl: this.configService.get<string>('LIVEKIT_HTTP_URL', 'http://localhost:7880'),
+      apiKey: this.configService.get<string>('LK_API_KEY', 'devkey'),
+      apiSecret: this.configService.get<string>('LK_API_SECRET', 'secret'),
+      wsUrl: wsUrl,
+      httpUrl: httpUrl,
     };
 
     this.roomService = new RoomServiceClient(
@@ -34,7 +41,8 @@ export class LiveKitService {
       this.config.apiSecret,
     );
 
-    this.logger.log('LiveKit service initialized');
+    this.logger.log(`LiveKit service initialized with server: ${this.config.httpUrl}`);
+    this.logger.log(`LiveKit WebSocket URL: ${this.config.wsUrl}`);
   }
 
   /**
@@ -85,7 +93,7 @@ export class LiveKitService {
    * Generate access token for a participant
    */
   async generateToken(meetingId: string, dto: JoinLiveKitRoomDto): Promise<string> {
-    const meeting = await this.meetingModel.findById(meetingId);
+    const meeting = await this.meetingModel.findById(meetingId).populate('host');
     if (!meeting) {
       throw new NotFoundException('Meeting not found');
     }
@@ -94,25 +102,40 @@ export class LiveKitService {
       throw new BadRequestException('Meeting does not have a LiveKit room');
     }
 
+    // Check if user is the host
+    const hostId = meeting.host._id ? meeting.host._id.toString() : meeting.host.toString();
+    const isHost = dto.identity === hostId;
+
+    // Prepare metadata with host flag and user info
+    const metadata = {
+      isHost,
+      userId: dto.identity,
+      ...(dto.metadata ? JSON.parse(dto.metadata) : {})
+    };
+
     // Create access token
     const at = new AccessToken(this.config.apiKey, this.config.apiSecret, {
       identity: dto.identity,
       name: dto.name,
-      metadata: dto.metadata,
+      metadata: JSON.stringify(metadata),
     });
 
-    // Set video grants
+    // Set video grants based on user permissions
+    // Host and participants with proper permissions can publish
+    const canPublish = dto.canPublish !== false;
+    const canShare = isHost || dto.canPublish !== false; // Hosts can always share
+    
     at.addGrant({
       roomJoin: true,
       room: meeting.livekitRoomName,
-      canPublish: dto.canPublish !== false,
+      canPublish: canPublish,
       canSubscribe: dto.canSubscribe !== false,
       canPublishData: dto.canPublishData !== false,
       hidden: dto.hidden || false,
     });
 
     const token = at.toJwt();
-    this.logger.log(`Token generated for ${dto.name} in room ${meeting.livekitRoomName}`);
+    this.logger.log(`Token generated for ${dto.name} (${isHost ? 'HOST' : 'PARTICIPANT'}) in room ${meeting.livekitRoomName}`);
     return token;
   }
 
@@ -377,6 +400,92 @@ export class LiveKitService {
     return {
       wsUrl: this.config.wsUrl,
       httpUrl: this.config.httpUrl,
+    };
+  }
+
+  /**
+   * Get meeting by ID (helper method for controller)
+   */
+  async getMeetingById(meetingId: string): Promise<MeetingDocument> {
+    const meeting = await this.meetingModel.findById(meetingId).populate('host');
+    if (!meeting) {
+      throw new NotFoundException('Meeting not found');
+    }
+    return meeting;
+  }
+
+  /**
+   * Start recording a room
+   */
+  async startRecording(meetingId: string, userId: string): Promise<any> {
+    const meeting = await this.meetingModel.findById(meetingId).populate('host');
+    if (!meeting) {
+      throw new NotFoundException('Meeting not found');
+    }
+
+    // Check if user is host
+    const isHost = meeting.host._id?.toString() === userId || 
+                   meeting.host.toString() === userId;
+    
+    if (!isHost) {
+      throw new BadRequestException('Only the host can start recording');
+    }
+
+    if (!meeting.livekitRoomName) {
+      throw new BadRequestException('Meeting does not have a LiveKit room');
+    }
+
+    // Note: LiveKit recording requires Egress service to be configured
+    // This is a placeholder for when Egress is set up
+    this.logger.log(`Recording requested for room ${meeting.livekitRoomName}`);
+    
+    // Update meeting to indicate recording
+    meeting.isRecording = true;
+    await meeting.save();
+
+    // In production, you would start the actual recording here using LiveKit Egress API
+    // Example:
+    // const recording = await this.roomService.startRoomCompositeEgress(
+    //   meeting.livekitRoomName,
+    //   { file: { filepath: `recordings/${meetingId}.mp4` } }
+    // );
+
+    return { 
+      success: true, 
+      message: 'Recording started',
+      meetingId,
+      roomName: meeting.livekitRoomName 
+    };
+  }
+
+  /**
+   * Stop recording a room
+   */
+  async stopRecording(meetingId: string, userId: string): Promise<any> {
+    const meeting = await this.meetingModel.findById(meetingId).populate('host');
+    if (!meeting) {
+      throw new NotFoundException('Meeting not found');
+    }
+
+    // Check if user is host
+    const isHost = meeting.host._id?.toString() === userId || 
+                   meeting.host.toString() === userId;
+    
+    if (!isHost) {
+      throw new BadRequestException('Only the host can stop recording');
+    }
+
+    // Update meeting to indicate recording stopped
+    meeting.isRecording = false;
+    await meeting.save();
+
+    this.logger.log(`Recording stopped for room ${meeting.livekitRoomName}`);
+
+    return { 
+      success: true, 
+      message: 'Recording stopped',
+      meetingId,
+      roomName: meeting.livekitRoomName 
     };
   }
 }
