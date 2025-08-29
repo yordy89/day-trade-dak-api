@@ -143,18 +143,31 @@ export class PricingService implements OnModuleInit {
       .filter((sub) => !sub.expiresAt || sub.expiresAt > new Date())
       .map((sub) => sub.plan);
 
+    // Check if user has live access through subscriptions OR admin permissions
+    const hasLiveAccess = 
+      // Has live subscription
+      activeSubscriptions.includes(SubscriptionPlan.LIVE_WEEKLY_MANUAL) ||
+      activeSubscriptions.includes(SubscriptionPlan.LIVE_WEEKLY_RECURRING) ||
+      // Has admin-granted live meeting access (for accessing live content)
+      user.allowLiveMeetingAccess === true;
+      // Note: We do NOT check allowLiveWeeklyAccess because that's for 
+      // purchasing Live subscriptions, not for having access to Live content
+
     // Apply conditional pricing
     if (pricingRule.conditions) {
       // Check if this plan is free with another plan
       if (pricingRule.conditions.freeWithPlan) {
-        const hasFreeQualifyingPlan = pricingRule.conditions.freeWithPlan.some(
-          (plan) => activeSubscriptions.includes(plan),
-        );
+        const hasFreeQualifyingPlan = 
+          hasLiveAccess && 
+          pricingRule.conditions.freeWithPlan.some((plan) =>
+            plan === SubscriptionPlan.LIVE_WEEKLY_MANUAL ||
+            plan === SubscriptionPlan.LIVE_WEEKLY_RECURRING
+          );
 
         if (hasFreeQualifyingPlan) {
           finalPrice = 0;
           discount = pricingRule.basePrice;
-          discountReason = 'Free with Live subscription';
+          discountReason = 'Free with Live access';
           isFree = true;
         }
       }
@@ -162,22 +175,24 @@ export class PricingService implements OnModuleInit {
       // Apply discounts if not free
       if (!isFree && pricingRule.conditions.requiredPlan) {
         const hasDiscountQualifyingPlan =
+          hasLiveAccess &&
           pricingRule.conditions.requiredPlan.some((plan) =>
-            activeSubscriptions.includes(plan),
+            plan === SubscriptionPlan.LIVE_WEEKLY_MANUAL ||
+            plan === SubscriptionPlan.LIVE_WEEKLY_RECURRING
           );
 
         if (hasDiscountQualifyingPlan) {
           if (pricingRule.conditions.discountAmount) {
             discount = pricingRule.conditions.discountAmount;
             finalPrice = pricingRule.basePrice - discount;
-            discountReason = `$${discount} off with Live subscription`;
+            discountReason = `$${discount} off with Live access`;
           } else if (pricingRule.conditions.discountPercentage) {
             discount =
               (pricingRule.basePrice *
                 pricingRule.conditions.discountPercentage) /
               100;
             finalPrice = pricingRule.basePrice - discount;
-            discountReason = `${pricingRule.conditions.discountPercentage}% off with Live subscription`;
+            discountReason = `${pricingRule.conditions.discountPercentage}% off with Live access`;
           }
         }
       }
@@ -257,6 +272,28 @@ export class PricingService implements OnModuleInit {
         eligible: false,
         reason: 'You do not have permission to purchase Live Weekly subscriptions. Please contact support for access.',
       };
+    }
+
+    // Check Master Classes - requires Live subscription OR Live meeting access permission
+    if (targetPlan === SubscriptionPlan.MASTER_CLASES) {
+      // Check 1: Has active Live subscription
+      const hasLiveSubscription = user.subscriptions.some(
+        (sub) =>
+          (sub.plan === SubscriptionPlan.LIVE_WEEKLY_MANUAL ||
+           sub.plan === SubscriptionPlan.LIVE_WEEKLY_RECURRING) &&
+          (!sub.expiresAt || sub.expiresAt > new Date()),
+      );
+
+      // Check 2: Has Live meeting access permission (admin flag)
+      const hasLiveMeetingAccess = user.allowLiveMeetingAccess === true;
+
+      // User needs at least one of these to purchase Master Classes
+      if (!hasLiveSubscription && !hasLiveMeetingAccess) {
+        return {
+          eligible: false,
+          reason: 'Master Classes requires an active Live subscription or Live access permission. Please subscribe to Live Weekly first or contact support for access.',
+        };
+      }
     }
 
     // Check if user already has this subscription
