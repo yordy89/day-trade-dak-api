@@ -8,6 +8,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  HttpException,
   Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
@@ -67,18 +68,41 @@ export class LiveKitController {
     const isHost = meeting.host._id?.toString() === user._id.toString() || 
                    meeting.host.toString() === user._id.toString();
     
-    // Determine user permissions based on role and subscriptions
-    // Hosts, super admins and users with proper subscriptions can publish
-    const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    // Check if user has access to live meetings
     const hasLiveSubscription = user.subscriptions?.some((sub: any) => {
       const plan = typeof sub === 'string' ? sub : sub.plan;
-      return plan?.includes('LIVE_WEEKLY');
+      return (plan === 'LIVE_WEEKLY_MANUAL' || 
+              plan === 'LIVE_WEEKLY_RECURRING' || 
+              plan === 'LiveWeeklyManual' || 
+              plan === 'LiveWeeklyRecurring') &&
+             (!sub.expiresAt || new Date(sub.expiresAt) > new Date());
     });
+    
+    const hasLivePermission = user.allowLiveMeetingAccess === true;
+    
+    const hasModulePermission = user.modulePermissions?.some((perm: any) => 
+      perm.module === 'LIVE_WEEKLY' && 
+      perm.hasAccess === true &&
+      (!perm.expiresAt || new Date(perm.expiresAt) > new Date())
+    );
+    
+    const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    
+    // Check if user has any form of live access
+    const hasLiveAccess = hasLiveSubscription || hasLivePermission || hasModulePermission || isSuperAdmin;
+    
+    // If not host and no live access, deny token generation
+    if (!isHost && !hasLiveAccess) {
+      throw new HttpException(
+        'You do not have access to live meetings. Please purchase a Live subscription or contact support.',
+        HttpStatus.FORBIDDEN
+      );
+    }
     
     // Set permissions in dto if not already set
     if (dto.canPublish === undefined) {
-      // Host, super admin, or users with live subscription can publish
-      dto.canPublish = isHost || isSuperAdmin || hasLiveSubscription;
+      // Host, super admin, or users with live access can publish
+      dto.canPublish = isHost || isSuperAdmin || hasLiveAccess;
     }
     if (dto.canSubscribe === undefined) {
       dto.canSubscribe = true; // Everyone can watch/listen
@@ -87,7 +111,7 @@ export class LiveKitController {
       dto.canPublishData = true; // Everyone can chat
     }
     
-    this.logger.log(`Token permissions for ${user.email}: isHost=${isHost}, canPublish=${dto.canPublish}, isSuperAdmin=${isSuperAdmin}, hasLiveSubscription=${hasLiveSubscription}`);
+    this.logger.log(`Token permissions for ${user.email}: isHost=${isHost}, canPublish=${dto.canPublish}, hasLiveAccess=${hasLiveAccess}`);
 
     const token = await this.livekitService.generateToken(meetingId, dto);
     
@@ -137,6 +161,20 @@ export class LiveKitController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteRoom(@Param('meetingId') meetingId: string) {
     await this.livekitService.deleteRoom(meetingId);
+  }
+
+  @Post('rooms/:meetingId/start')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Start meeting by host' })
+  @ApiResponse({ status: 200, description: 'Meeting started successfully' })
+  @ApiResponse({ status: 403, description: 'Only host can start meeting' })
+  async startMeeting(
+    @Param('meetingId') meetingId: string,
+    @CurrentUser() user: any,
+  ) {
+    await this.livekitService.startMeetingByHost(meetingId, user._id);
+    return { success: true, message: 'Meeting started' };
   }
 
   @Post('rooms/:meetingId/end')
