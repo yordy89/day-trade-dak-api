@@ -249,18 +249,16 @@ export class LiveKitService {
     });
 
     if (meeting) {
-      meeting.status = 'live';
-      meeting.startedAt = new Date(webhook.room.creationTime * 1000);
-      await meeting.save();
-      this.logger.log(`Meeting ${meeting._id} started`);
+      // Don't automatically set to 'live' - wait for host to explicitly start
+      // Just log that the room was created
+      this.logger.log(`LiveKit room created for meeting ${meeting._id}, waiting for host to start`);
       
-      // Emit WebSocket event
-      await this.wsGateway.emitMeetingStatusUpdate(meeting._id.toString(), 'live');
-      await this.wsGateway.emitLiveKitRoomCreated({
-        meetingId: meeting._id.toString(),
-        roomName: webhook.room.name,
-        provider: 'livekit',
-      });
+      // We could emit a room-ready event if needed, but don't change status
+      // await this.wsGateway.emitLiveKitRoomCreated({
+      //   meetingId: meeting._id.toString(),
+      //   roomName: webhook.room.name,
+      //   provider: 'livekit',
+      // });
     }
   }
 
@@ -355,6 +353,46 @@ export class LiveKitService {
   }
 
   /**
+   * Start meeting by host - updates status to 'live'
+   */
+  async startMeetingByHost(meetingId: string, userId: string): Promise<void> {
+    const meeting = await this.meetingModel.findById(meetingId).populate('host');
+    if (!meeting) {
+      throw new NotFoundException('Meeting not found');
+    }
+
+    // Check if user is the host - handle both populated and non-populated cases
+    let isHost = false;
+    if (meeting.host && typeof meeting.host === 'object' && meeting.host._id) {
+      // Host is populated
+      isHost = meeting.host._id.toString() === userId.toString();
+    } else if (meeting.host) {
+      // Host is just an ID
+      isHost = meeting.host.toString() === userId.toString();
+    }
+    
+    if (!isHost) {
+      this.logger.error(`User ${userId} is not the host of meeting ${meetingId}. Host is: ${meeting.host._id || meeting.host}`);
+      throw new BadRequestException('Only the host can start the meeting');
+    }
+
+    // Update meeting status to 'live'
+    meeting.status = 'live';
+    meeting.startedAt = meeting.startedAt || new Date();
+    await meeting.save();
+
+    // Emit WebSocket event to notify all clients
+    await this.wsGateway.emitMeetingStatusUpdate(meeting._id.toString(), 'live');
+    await this.wsGateway.emitLiveKitRoomCreated({
+      meetingId: meeting._id.toString(),
+      roomName: meeting.livekitRoomName || meeting.title,
+      provider: 'livekit',
+    });
+
+    this.logger.log(`Meeting ${meeting._id} started by host ${userId}`);
+  }
+
+  /**
    * End meeting by host
    */
   async endMeetingByHost(meetingId: string, userId: string): Promise<void> {
@@ -363,11 +401,18 @@ export class LiveKitService {
       throw new NotFoundException('Meeting not found');
     }
 
-    // Check if user is the host
-    const isHost = meeting.host._id?.toString() === userId || 
-                   meeting.host.toString() === userId;
+    // Check if user is the host - handle both populated and non-populated cases
+    let isHost = false;
+    if (meeting.host && typeof meeting.host === 'object' && meeting.host._id) {
+      // Host is populated
+      isHost = meeting.host._id.toString() === userId.toString();
+    } else if (meeting.host) {
+      // Host is just an ID
+      isHost = meeting.host.toString() === userId.toString();
+    }
     
     if (!isHost) {
+      this.logger.error(`User ${userId} is not the host of meeting ${meetingId}. Host is: ${meeting.host._id || meeting.host}`);
       throw new BadRequestException('Only the host can end the meeting');
     }
 
