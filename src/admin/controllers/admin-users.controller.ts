@@ -11,7 +11,10 @@ import {
   Request,
   HttpStatus,
   HttpCode,
+  Res,
+  Header,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -101,25 +104,6 @@ export class AdminUsersController {
     });
   }
 
-  @Get(':userId')
-  @ApiOperation({ summary: 'Get user by ID' })
-  async getUserById(
-    @Param('userId') userId: string,
-    @Request() req: RequestWithUser,
-  ) {
-    // Log admin action
-    await this.adminService.logAdminAction({
-      adminId: req.user?.userId || req.user?._id || 'unknown',
-      adminEmail: req.user?.email || 'unknown',
-      action: 'view',
-      resource: 'user',
-      resourceId: userId,
-      ipAddress: req.ip || '0.0.0.0',
-      userAgent: req.headers['user-agent'],
-    });
-
-    return this.adminUsersService.getUserById(userId);
-  }
 
   @Post()
   @ApiOperation({ summary: 'Create a new user' })
@@ -228,24 +212,25 @@ export class AdminUsersController {
   }
 
   @Get('export')
-  @ApiOperation({ summary: 'Export users to CSV' })
+  @ApiOperation({ summary: 'Export users to CSV, JSON, or PDF' })
   @ApiQuery({
     name: 'format',
     required: false,
     type: String,
-    enum: ['csv', 'json'],
+    enum: ['csv', 'json', 'pdf'],
   })
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'status', required: false, type: String })
   @ApiQuery({ name: 'subscription', required: false, type: String })
   @ApiQuery({ name: 'role', required: false, type: String })
   async exportUsers(
-    @Query('format') format: 'csv' | 'json' = 'csv',
+    @Query('format') format: 'csv' | 'json' | 'pdf' = 'csv',
     @Query('search') search?: string,
     @Query('status') status?: string,
     @Query('subscription') subscription?: string,
     @Query('role') role?: string,
     @Request() req?: RequestWithUser,
+    @Res() res?: Response,
   ) {
     // Log admin action
     await this.adminService.logAdminAction({
@@ -258,13 +243,59 @@ export class AdminUsersController {
       userAgent: req.headers['user-agent'],
     });
 
-    return this.adminUsersService.exportUsers({
+    const result = await this.adminUsersService.exportUsers({
       format,
       search,
       status,
       subscription,
       role,
     });
+
+    // Handle different format responses
+    if (format === 'json') {
+      return res.json(result);
+    }
+
+    // For CSV and PDF, result has filename and content properties
+    const fileResult = result as { filename: string; content: string | Buffer; contentType: string };
+
+    // For CSV and PDF, set appropriate headers for file download
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileResult.filename}"`);
+      return res.send(fileResult.content);
+    }
+
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileResult.filename}"`);
+      return res.send(fileResult.content);
+    }
+
+    // Default to CSV
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileResult.filename}"`);
+    return res.send(fileResult.content);
+  }
+
+  @Get(':userId')
+  @ApiOperation({ summary: 'Get user by ID' })
+  async getUserById(
+    @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    // Log admin action
+    await this.adminService.logAdminAction({
+      adminId: req.user?.userId || req.user?._id || 'unknown',
+      adminEmail: req.user?.email || 'unknown',
+      action: 'view',
+      resource: 'user',
+      resourceId: userId,
+      ipAddress: req.ip || '0.0.0.0',
+      userAgent: req.headers['user-agent'],
+    });
+
+    return this.adminUsersService.getUserById(userId);
   }
 
   // Subscription management endpoints

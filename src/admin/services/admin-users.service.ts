@@ -7,6 +7,7 @@ import * as bcrypt from 'bcrypt';
 import { Role } from '../../constants';
 import Stripe from 'stripe';
 import { SubscriptionPlan } from 'src/users/user.dto';
+import { PdfGenerator } from '../utils/pdf.utils';
 
 @Injectable()
 export class AdminUsersService {
@@ -93,7 +94,8 @@ export class AdminUsersService {
 
     // Subscription filter
     if (subscription && subscription !== 'all') {
-      if (subscription === 'free') {
+      if (subscription === 'none' || subscription === 'free') {
+        // Users without any active subscriptions
         query.$or = [
           { 'subscriptions.0': { $exists: false } },
           { 'subscriptions.status': { $ne: 'active' } },
@@ -238,7 +240,7 @@ export class AdminUsersService {
   }
 
   async exportUsers(options: {
-    format: 'csv' | 'json';
+    format: 'csv' | 'json' | 'pdf';
     search?: string;
     status?: string;
     subscription?: string;
@@ -257,7 +259,7 @@ export class AdminUsersService {
       return users;
     }
 
-    // Convert to CSV
+    // Prepare data for CSV/PDF
     const headers = [
       'ID',
       'Email',
@@ -276,7 +278,7 @@ export class AdminUsersService {
       (user as any).fullName || '',
       user.role,
       (user as any).status || 'active',
-      user.subscriptions?.[0]?.plan || 'free',
+      user.subscriptions?.[0]?.plan || 'none',
       user.subscriptions?.[0]?.status || 'none',
       (user as any).lastLogin
         ? new Date((user as any).lastLogin).toISOString()
@@ -286,7 +288,35 @@ export class AdminUsersService {
         : '',
     ]);
 
-    // Create CSV content
+    if (format === 'csv') {
+      // Create CSV content
+      const csvContent = [
+        headers.join(','),
+        ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
+      ].join('\n');
+
+      return {
+        filename: `users-export-${new Date().toISOString().split('T')[0]}.csv`,
+        content: csvContent,
+        contentType: 'text/csv',
+      };
+    }
+
+    if (format === 'pdf') {
+      // Generate HTML content
+      const htmlContent = PdfGenerator.generateHtmlForUsersExport(headers, rows, users.length);
+      
+      // Convert HTML to PDF
+      const pdfBuffer = await PdfGenerator.generatePdfFromHtml(htmlContent);
+
+      return {
+        filename: `users-export-${new Date().toISOString().split('T')[0]}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      };
+    }
+
+    // Default to CSV if format is not recognized
     const csvContent = [
       headers.join(','),
       ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
