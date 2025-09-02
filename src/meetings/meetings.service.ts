@@ -350,9 +350,18 @@ export class MeetingsService {
     }
 
     // Check if user is host or participant
-    const isHost = meeting.host._id.toString() === userId;
+    const hostId = typeof meeting.host === 'object' && meeting.host?._id 
+      ? meeting.host._id.toString()
+      : meeting.host?.toString ? meeting.host.toString() : meeting.host;
+    const isHost = hostId === userId;
     const isParticipant = meeting.participants.some(
-      (p: any) => p._id.toString() === userId,
+      (p: any) => {
+        if (!p) return false;
+        const participantId = typeof p === 'object' && p._id 
+          ? p._id.toString()
+          : p?.toString ? p.toString() : p;
+        return participantId === userId;
+      }
     );
 
     // Check if user has access through other means
@@ -434,9 +443,9 @@ export class MeetingsService {
     }
 
     // Check access
-    const hostId = meeting.host._id
+    const hostId = typeof meeting.host === 'object' && meeting.host?._id
       ? meeting.host._id.toString()
-      : meeting.host.toString();
+      : meeting.host?.toString ? meeting.host.toString() : meeting.host;
     const isHost = hostId === userId;
     const isParticipant = meeting.participants.some(
       (p: any) => p.toString() === userId || p._id?.toString() === userId,
@@ -620,9 +629,9 @@ export class MeetingsService {
     }
 
     // Check if user is the host
-    const hostId = meeting.host._id
+    const hostId = typeof meeting.host === 'object' && meeting.host?._id
       ? meeting.host._id.toString()
-      : meeting.host.toString();
+      : meeting.host?.toString ? meeting.host.toString() : meeting.host;
     const isHost = hostId === userId;
 
     this.logger.log(
@@ -702,9 +711,18 @@ export class MeetingsService {
     
     // Check if user has access to the meeting
     const user = await this.userModel.findById(userId);
-    const isHost = meeting.host.toString() === userId;
+    const hostId = typeof meeting.host === 'object' && meeting.host?._id
+      ? meeting.host._id.toString()
+      : meeting.host?.toString ? meeting.host.toString() : meeting.host;
+    const isHost = hostId === userId;
     const isParticipant = meeting.participants.some(
-      (p: any) => p.toString() === userId,
+      (p: any) => {
+        if (!p) return false;
+        const participantId = typeof p === 'object' && p._id
+          ? p._id.toString()
+          : p?.toString ? p.toString() : p;
+        return participantId === userId;
+      },
     );
     
     if (!isHost && !isParticipant && user.role !== Role.SUPER_ADMIN) {
@@ -732,7 +750,10 @@ export class MeetingsService {
     }
     
     // Only host can lock meeting
-    const isHost = meeting.host.toString() === userId;
+    const hostId = typeof meeting.host === 'object' && meeting.host?._id
+      ? meeting.host._id.toString()
+      : meeting.host?.toString ? meeting.host.toString() : meeting.host;
+    const isHost = hostId === userId;
     const user = await this.userModel.findById(userId);
     
     if (!isHost && user.role !== Role.SUPER_ADMIN) {
@@ -766,7 +787,10 @@ export class MeetingsService {
 
     // Check if user is authorized (host or admin)
     const user = await this.userModel.findById(userId);
-    if (!user || (user.role !== Role.SUPER_ADMIN && meeting.host.toString() !== userId)) {
+    const hostId = typeof meeting.host === 'object' && meeting.host?._id
+      ? meeting.host._id.toString()
+      : meeting.host?.toString ? meeting.host.toString() : meeting.host;
+    if (!user || (user.role !== Role.SUPER_ADMIN && hostId !== userId)) {
       throw new ForbiddenException('Not authorized to end this meeting');
     }
 
@@ -814,9 +838,9 @@ export class MeetingsService {
     }
 
     // Check access
-    const hostId = meeting.host._id
+    const hostId = typeof meeting.host === 'object' && meeting.host?._id
       ? meeting.host._id.toString()
-      : meeting.host.toString();
+      : meeting.host?.toString ? meeting.host.toString() : meeting.host;
     const isHost = hostId === userId;
     const isParticipant = meeting.participants.some(
       (p: any) => p.toString() === userId || p._id?.toString() === userId,
