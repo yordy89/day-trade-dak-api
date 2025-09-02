@@ -47,7 +47,7 @@ export class EventRegistration {
   @Prop()
   stripeSessionId?: string;
 
-  @Prop({ enum: ['card', 'klarna', 'other'], default: 'card' })
+  @Prop({ enum: ['card', 'klarna', 'afterpay', 'other'], default: 'card' })
   paymentMethod?: string;
 
   @Prop()
