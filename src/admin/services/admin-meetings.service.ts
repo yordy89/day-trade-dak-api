@@ -251,10 +251,21 @@ export class AdminMeetingsService {
         recordAutomatically: meetingData.enableRecording ?? false,
       });
 
+      // Construct the complete Zoom URL with password
+      let completeZoomUrl = zoomMeeting.joinUrl;
+      if (zoomMeeting.password) {
+        // Add password to the URL if not already present
+        const url = new URL(zoomMeeting.joinUrl);
+        if (!url.searchParams.has('pwd')) {
+          url.searchParams.set('pwd', zoomMeeting.password);
+        }
+        completeZoomUrl = url.toString();
+      }
+
       meetingConfig = {
         ...meetingConfig,
         meetingId: `zoom-${zoomMeeting.zoomMeetingId}`,
-        roomUrl: zoomMeeting.joinUrl,
+        roomUrl: completeZoomUrl, // Use the URL with password included
         zoomMeetingId: zoomMeeting.zoomMeetingId,
         zoomJoinUrl: zoomMeeting.joinUrl,
         zoomStartUrl: zoomMeeting.startUrl,
@@ -345,10 +356,21 @@ export class AdminMeetingsService {
           recordAutomatically: settings.enableRecording ?? false,
         });
 
+        // Construct the complete Zoom URL with password
+        let completeZoomUrl = zoomMeeting.joinUrl;
+        if (zoomMeeting.password) {
+          // Add password to the URL if not already present
+          const url = new URL(zoomMeeting.joinUrl);
+          if (!url.searchParams.has('pwd')) {
+            url.searchParams.set('pwd', zoomMeeting.password);
+          }
+          completeZoomUrl = url.toString();
+        }
+        
         meetingConfig = {
           ...meetingConfig,
           meetingId: `zoom-${zoomMeeting.zoomMeetingId}`,
-          roomUrl: zoomMeeting.joinUrl,
+          roomUrl: completeZoomUrl, // Use the URL with password included
           zoomMeetingId: zoomMeeting.zoomMeetingId,
           zoomJoinUrl: zoomMeeting.joinUrl,
           zoomStartUrl: zoomMeeting.startUrl,
