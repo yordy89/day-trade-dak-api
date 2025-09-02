@@ -49,6 +49,7 @@ import { ContentModule } from './content/content.module';
 import { TestUploadController } from './test-upload.controller';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { LocalFinancingModule } from './payments/local-financing/local-financing.module';
+import { EmailMarketingModule } from './email-marketing/email-marketing.module';
 
 @Module({
   controllers: [TestUploadController],
@@ -123,6 +124,7 @@ import { LocalFinancingModule } from './payments/local-financing/local-financing
     ContentModule,
     AffiliateModule,
     LocalFinancingModule,
+    EmailMarketingModule,
   ],
   providers: [
     {

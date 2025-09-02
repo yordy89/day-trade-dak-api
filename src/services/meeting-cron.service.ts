@@ -186,13 +186,24 @@ export class MeetingCronService {
             muteUponEntry: true,
           });
 
+          // Construct the complete Zoom URL with password
+          let completeZoomUrl = zoomMeeting.joinUrl;
+          if (zoomMeeting.password) {
+            // Add password to the URL if not already present
+            const joinUrl = new URL(zoomMeeting.joinUrl);
+            if (!joinUrl.searchParams.has('pwd')) {
+              joinUrl.searchParams.set('pwd', zoomMeeting.password);
+            }
+            completeZoomUrl = joinUrl.toString();
+          }
+
           // Create meeting in database with Zoom details
           const meetingData = {
             title: 'Analysis de Trading en Vivo',
             description:
               'Análisis diario en vivo de operaciones y sesión de preguntas y respuestas (Q&A)',
             meetingId: zoomMeeting.zoomMeetingId,
-            roomUrl: zoomMeeting.joinUrl,
+            roomUrl: completeZoomUrl, // Use the URL with password included
             zoomMeetingId: zoomMeeting.zoomMeetingId,
             zoomJoinUrl: zoomMeeting.joinUrl,
             zoomStartUrl: zoomMeeting.startUrl,
