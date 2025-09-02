@@ -57,7 +57,7 @@ export class CreateEventRegistrationDto {
   stripeSessionId?: string;
 
   @IsOptional()
-  @IsEnum(['card', 'klarna', 'other'])
+  @IsEnum(['card', 'klarna', 'afterpay', 'other'])
   paymentMethod?: string;
 
   @IsOptional()
