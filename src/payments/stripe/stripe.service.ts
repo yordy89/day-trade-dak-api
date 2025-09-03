@@ -1016,21 +1016,67 @@ export class StripeService {
 
   // ✅ **Handle Webhook Events**
   async handleWebhookEvent(signature: string, rawBody: Buffer) {
-    this.logger.log('📥 Webhook received');
+    this.logger.log('📥 Webhook received in handleWebhookEvent');
+    console.log('🔍 Debug - Signature:', signature ? 'Present' : 'Missing');
+    console.log('🔍 Debug - RawBody type:', typeof rawBody);
+    console.log('🔍 Debug - RawBody is Buffer:', Buffer.isBuffer(rawBody));
+    
+    // Log the raw payload to see what we're receiving
+    try {
+      const rawString = rawBody.toString('utf8');
+      const parsedBody = JSON.parse(rawString);
+      console.log('📦 RAW WEBHOOK PAYLOAD:');
+      console.log('  Event ID:', parsedBody.id);
+      console.log('  Event Type:', parsedBody.type);
+      console.log('  API Version:', parsedBody.api_version);
+      if (parsedBody.data?.object) {
+        console.log('  Object Type:', parsedBody.data.object.object);
+        console.log('  Object ID:', parsedBody.data.object.id);
+        if (parsedBody.type === 'invoice.payment_succeeded') {
+          console.log('  Customer:', parsedBody.data.object.customer);
+          console.log('  Subscription:', parsedBody.data.object.subscription);
+          console.log('  Amount Paid:', parsedBody.data.object.amount_paid);
+        }
+      }
+    } catch (parseErr) {
+      console.error('Could not parse raw body for logging:', parseErr.message);
+    }
+    
     const webhookSecret = this.configService.get<string>(
       'STRIPE_WEBHOOK_SECRET',
     );
+    console.log('🔍 Debug - Webhook secret configured:', !!webhookSecret);
+    console.log('🔍 Debug - Webhook secret starts with:', webhookSecret?.substring(0, 10));
+    
     let event: Stripe.Event;
 
     try {
+      console.log('🔍 Debug - Attempting to construct event...');
       event = this.stripe.webhooks.constructEvent(
         rawBody,
         signature,
         webhookSecret,
       );
       this.logger.log(`✅ Webhook verified: ${event.type}`);
+      console.log('✅ Event type:', event.type);
+      console.log('✅ Event ID:', event.id);
+      
+      // Log more details for invoice.payment_succeeded
+      if (event.type === 'invoice.payment_succeeded') {
+        const invoice = event.data.object as any;
+        console.log('📋 Invoice ID:', invoice.id);
+        console.log('📋 Customer ID:', invoice.customer);
+        console.log('📋 Subscription ID:', invoice.subscription);
+        console.log('📋 Has lines data:', !!invoice.lines?.data);
+        if (invoice.lines?.data?.[0]) {
+          console.log('📋 Line metadata:', invoice.lines.data[0].metadata);
+          console.log('📋 Period end:', invoice.lines.data[0].period?.end);
+        }
+      }
     } catch (err) {
       this.logger.error('⚠️ Webhook verification failed.', err.message);
+      console.error('❌ Webhook verification error:', err.message);
+      console.error('❌ Error type:', err.type);
       throw new Error('Invalid webhook signature');
     }
 
@@ -1041,8 +1087,13 @@ export class StripeService {
 
     if (existingEvent) {
       this.logger.warn(`⚠️ Event ${event.id} already processed`);
+      console.log('⚠️ DUPLICATE EVENT - Already processed:', event.id);
+      console.log('  Original processing date:', existingEvent.createdAt);
+      console.log('  Original status:', existingEvent.status);
       return;
     }
+    
+    console.log('✅ Event is new, proceeding with processing...');
 
     // Log the webhook event
     const webhookEvent = await this.webhookEventModel.create({
@@ -1057,16 +1108,23 @@ export class StripeService {
       webhookEvent.status = WebhookEventStatus.PROCESSING;
       await webhookEvent.save();
 
+      console.log('📋 Processing event type:', event.type);
+      console.log('📋 About to enter switch statement...');
+
       switch (event.type) {
         case 'checkout.session.completed':
+          console.log('➡️ Handling checkout.session.completed');
           await this.handleCheckoutCompleted(
             event.data.object as Stripe.Checkout.Session,
           );
           break;
         case 'invoice.payment_succeeded':
+          console.log('➡️ Handling invoice.payment_succeeded');
+          console.log('  Invoice object:', event.data.object);
           await this.handleRecurringPayment(
             event.data.object as Stripe.Invoice,
           );
+          console.log('✅ Finished handling invoice.payment_succeeded');
           break;
         case 'customer.subscription.deleted':
           await this.handleSubscriptionCanceled(
@@ -1886,10 +1944,14 @@ export class StripeService {
       expiresAt: s.expiresAt
     })))}`);
 
+    // Track if we found an existing subscription to update
+    let subscriptionFound = false;
+    
     // More robust subscription matching and update
     const userSubscriptions = user.subscriptions.map((sub) => {
       // Match by stripeSubscriptionId first (most reliable)
       if (sub.stripeSubscriptionId === subscriptionId) {
+        subscriptionFound = true;
         this.logger.log(
           `✅ Updating subscription ${subscriptionId} for plan ${sub.plan} with new period end: ${currentPeriodEnd.toISOString()}`,
         );
@@ -1904,6 +1966,7 @@ export class StripeService {
       // Fallback: match by plan if no stripeSubscriptionId match
       // This handles legacy subscriptions
       if (!sub.stripeSubscriptionId && sub.plan === plan) {
+        subscriptionFound = true;
         this.logger.log(
           `✅ Updating legacy subscription for plan ${plan} with new period end: ${currentPeriodEnd.toISOString()}`,
         );
@@ -1918,18 +1981,11 @@ export class StripeService {
       return sub;
     });
 
-    // Check if we found and updated a subscription
-    const subscriptionUpdated = userSubscriptions.some(
-      sub => sub.stripeSubscriptionId === subscriptionId && 
-             sub.currentPeriodEnd?.getTime() === currentPeriodEnd.getTime()
-    );
-
-    if (!subscriptionUpdated) {
-      // If no existing subscription was updated, log a warning
+    // Only add a new subscription if we didn't find an existing one to update
+    if (!subscriptionFound) {
       this.logger.warn(
-        `No matching subscription found to update for ${subscriptionId}. Plan: ${plan}`,
+        `No matching subscription found to update for ${subscriptionId}. Adding new subscription for plan: ${plan}`,
       );
-      // Optionally add the subscription if it doesn't exist
       userSubscriptions.push({
         plan: plan,
         stripeSubscriptionId: subscriptionId,

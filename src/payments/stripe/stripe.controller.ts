@@ -104,17 +104,27 @@ export class StripeController {
     @Res() response: Response,
     @Headers('stripe-signature') signature: string,
   ) {
+    console.log('🔔 Webhook endpoint hit at /payments/webhook');
+    console.log('🔑 Stripe signature present:', !!signature);
+    
     try {
       const rawBody = (request as any).rawBody; // ✅ Use manually stored raw body
+      console.log('📦 Raw body present:', !!rawBody);
+      console.log('📦 Raw body type:', typeof rawBody);
+      console.log('📦 Raw body length:', rawBody ? rawBody.length : 0);
 
       if (!rawBody) {
+        console.error('❌ Raw body is missing');
         throw new Error('Raw body is missing.');
       }
 
+      console.log('🚀 Calling handleWebhookEvent...');
       await this.stripeService.handleWebhookEvent(signature, rawBody);
+      console.log('✅ Webhook processed successfully');
       response.sendStatus(200);
     } catch (error) {
-      console.error('Stripe Webhook Error:', error.message);
+      console.error('❌ Stripe Webhook Error:', error.message);
+      console.error('Stack trace:', error.stack);
       response.status(400).send(`Webhook Error: ${error.message}`);
     }
   }
