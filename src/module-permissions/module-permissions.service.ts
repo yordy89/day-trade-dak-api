@@ -93,10 +93,10 @@ export class ModulePermissionsService {
     }
 
     // Check if user has an active subscription for this module
-    // Map module types to subscription plans
-    const moduleToSubscriptionMap: Partial<Record<ModuleType, string>> = {
+    // Map module types to subscription plans (can be multiple plans per module)
+    const moduleToSubscriptionMap: Partial<Record<ModuleType, string | string[]>> = {
       [ModuleType.CLASSES]: 'Classes',
-      [ModuleType.LIVE_WEEKLY]: 'LiveWeeklyManual',
+      [ModuleType.LIVE_WEEKLY]: ['LiveWeeklyManual', 'LiveWeeklyRecurring'],
       [ModuleType.LIVE_RECORDED]: 'LiveRecorded',
       [ModuleType.MASTER_CLASSES]: 'MasterClases',
       [ModuleType.PSICOTRADING]: 'Psicotrading',
@@ -128,17 +128,31 @@ export class ModulePermissionsService {
       }
     }
 
-    const requiredSubscription = moduleToSubscriptionMap[moduleType];
-    if (requiredSubscription && user?.subscriptions) {
+    const requiredSubscriptions = moduleToSubscriptionMap[moduleType];
+    if (requiredSubscriptions && user?.subscriptions) {
+      // Convert to array if single string
+      const acceptablePlans = Array.isArray(requiredSubscriptions) 
+        ? requiredSubscriptions 
+        : [requiredSubscriptions];
+      
       const hasSubscription = user.subscriptions.some((sub: any) => {
-        if (typeof sub === 'string') {
-          return sub === requiredSubscription;
+        const subPlan = typeof sub === 'string' ? sub : sub.plan;
+        
+        // Check if plan is in acceptable plans
+        if (!acceptablePlans.includes(subPlan)) {
+          return false;
         }
+        
+        // If subscription is just a string (legacy), we can't check dates
+        if (typeof sub === 'string') {
+          return true;
+        }
+        
         // Check if subscription is active and not expired
-        return sub.plan === requiredSubscription && 
-               (!sub.status || sub.status === 'active') &&
-               (!sub.expiresAt || new Date(sub.expiresAt) > new Date()) &&
-               (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > new Date());
+        const now = new Date();
+        return (!sub.status || sub.status === 'active') &&
+               (!sub.expiresAt || new Date(sub.expiresAt) > now) &&
+               (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > now);
       });
       
       if (hasSubscription) {

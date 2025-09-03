@@ -1737,6 +1737,7 @@ export class StripeService {
 
   // ✅ **Handle Recurring Payments**
   private async handleRecurringPayment(invoice: Stripe.Invoice) {
+    this.logger.log(`Processing invoice.payment_succeeded for invoice: ${invoice.id}`);
     console.log('Invoice:', invoice);
     const customerId = invoice.customer as string;
     
@@ -1775,13 +1776,22 @@ export class StripeService {
     let plan: SubscriptionPlan = SubscriptionPlan.MASTER_CLASES; // Default fallback
     let billingCycle: BillingCycle = BillingCycle.MONTHLY;
 
-    if (invoice.subscription_details?.metadata) {
+    // First try to get metadata from invoice lines (most reliable for recurring payments)
+    if (invoice.lines?.data?.[0]?.metadata) {
+      const lineMetadata = invoice.lines.data[0].metadata;
+      if (lineMetadata.plan) {
+        plan = lineMetadata.plan as SubscriptionPlan;
+        billingCycle = (lineMetadata.billingCycle as BillingCycle) || BillingCycle.MONTHLY;
+        this.logger.log(`Found plan from line metadata: ${plan}, billingCycle: ${billingCycle}`);
+      }
+    } else if (invoice.subscription_details?.metadata) {
       plan =
         (invoice.subscription_details.metadata.plan as SubscriptionPlan) ||
         SubscriptionPlan.MASTER_CLASES;
       billingCycle =
         (invoice.subscription_details.metadata.billingCycle as BillingCycle) ||
         BillingCycle.MONTHLY;
+      this.logger.log(`Found plan from subscription_details: ${plan}, billingCycle: ${billingCycle}`);
     } else if (subscriptionId) {
       // Fetch subscription from Stripe to get metadata
       try {
@@ -1792,6 +1802,7 @@ export class StripeService {
           billingCycle =
             (subscription.metadata.billingCycle as BillingCycle) ||
             BillingCycle.MONTHLY;
+          this.logger.log(`Found plan from subscription fetch: ${plan}, billingCycle: ${billingCycle}`);
         }
       } catch (error) {
         this.logger.error(
@@ -1851,17 +1862,36 @@ export class StripeService {
     });
 
     // Update user's subscription with new period end date
-    // Get current period end from invoice
-    const currentPeriodEnd = new Date(
-      invoice.lines.data[0]?.period.end * 1000,
-    );
+    // Get current period end from invoice - this is the new period end after payment
+    let currentPeriodEnd: Date;
+    if (invoice.lines?.data?.[0]?.period?.end) {
+      currentPeriodEnd = new Date(invoice.lines.data[0].period.end * 1000);
+      this.logger.log(`✅ Got new period end from invoice line: ${currentPeriodEnd.toISOString()}`);
+    } else {
+      // Fallback to calculating based on billing cycle
+      currentPeriodEnd = new Date();
+      if (billingCycle === BillingCycle.WEEKLY) {
+        currentPeriodEnd.setDate(currentPeriodEnd.getDate() + 7);
+      } else {
+        currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + 1);
+      }
+      this.logger.warn(`⚠️ No period.end in invoice, calculated new period end: ${currentPeriodEnd.toISOString()}`);
+    }
+
+    this.logger.log(`📅 User ${user._id} (${user.email}) - Processing recurring payment for subscription ${subscriptionId}`);
+    this.logger.log(`   Current subscriptions before update: ${JSON.stringify(user.subscriptions.map(s => ({
+      plan: s.plan,
+      stripeId: s.stripeSubscriptionId,
+      currentPeriodEnd: s.currentPeriodEnd,
+      expiresAt: s.expiresAt
+    })))}`);
 
     // More robust subscription matching and update
     const userSubscriptions = user.subscriptions.map((sub) => {
       // Match by stripeSubscriptionId first (most reliable)
       if (sub.stripeSubscriptionId === subscriptionId) {
         this.logger.log(
-          `Updating subscription ${subscriptionId} for plan ${sub.plan} with new period end: ${currentPeriodEnd}`,
+          `✅ Updating subscription ${subscriptionId} for plan ${sub.plan} with new period end: ${currentPeriodEnd.toISOString()}`,
         );
         return {
           ...sub,
@@ -1875,7 +1905,7 @@ export class StripeService {
       // This handles legacy subscriptions
       if (!sub.stripeSubscriptionId && sub.plan === plan) {
         this.logger.log(
-          `Updating legacy subscription for plan ${plan} with new period end: ${currentPeriodEnd}`,
+          `✅ Updating legacy subscription for plan ${plan} with new period end: ${currentPeriodEnd.toISOString()}`,
         );
         return {
           ...sub,
@@ -1914,9 +1944,25 @@ export class StripeService {
       subscriptions: userSubscriptions,
     });
 
+    this.logger.log(`   Updated subscriptions after payment: ${JSON.stringify(userSubscriptions.map(s => ({
+      plan: s.plan,
+      stripeId: s.stripeSubscriptionId,
+      currentPeriodEnd: s.currentPeriodEnd,
+      expiresAt: s.expiresAt,
+      status: s.status
+    })))}`);
+
     this.logger.log(
-      `✅ Recurring payment recorded for user ${user._id} - Plan: ${plan}`,
+      `✅ Recurring payment recorded for user ${user._id} - Plan: ${plan}, New Period End: ${currentPeriodEnd.toISOString()}`,
     );
+    
+    // Also ensure activeSubscriptions array includes this subscription
+    if (!user.activeSubscriptions.includes(subscriptionId)) {
+      this.logger.log(`Adding ${subscriptionId} to activeSubscriptions array`);
+      await this.userService.updateUser(user._id.toString(), {
+        $addToSet: { activeSubscriptions: subscriptionId },
+      });
+    }
   }
 
   // ✅ **Handle Subscription Cancellation**

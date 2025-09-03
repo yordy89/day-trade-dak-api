@@ -71,11 +71,19 @@ export class LiveKitController {
     // Check if user has access to live meetings
     const hasLiveSubscription = user.subscriptions?.some((sub: any) => {
       const plan = typeof sub === 'string' ? sub : sub.plan;
-      return (plan === 'LIVE_WEEKLY_MANUAL' || 
-              plan === 'LIVE_WEEKLY_RECURRING' || 
-              plan === 'LiveWeeklyManual' || 
-              plan === 'LiveWeeklyRecurring') &&
-             (!sub.expiresAt || new Date(sub.expiresAt) > new Date());
+      const isValidPlan = plan === 'LIVE_WEEKLY_MANUAL' || 
+                          plan === 'LIVE_WEEKLY_RECURRING' || 
+                          plan === 'LiveWeeklyManual' || 
+                          plan === 'LiveWeeklyRecurring';
+      
+      // Check both expiresAt and currentPeriodEnd for expiration
+      const expirationDate = sub.currentPeriodEnd || sub.expiresAt;
+      const isNotExpired = !expirationDate || new Date(expirationDate) > new Date();
+      const isActive = !sub.status || sub.status === 'active';
+      
+      console.log(`LiveKit Access Check - Plan: ${plan}, Valid: ${isValidPlan}, Not Expired: ${isNotExpired}, Active: ${isActive}, CurrentPeriodEnd: ${sub.currentPeriodEnd}, ExpiresAt: ${sub.expiresAt}`);
+      
+      return isValidPlan && isNotExpired && isActive;
     });
     
     const hasLivePermission = user.allowLiveMeetingAccess === true;

@@ -382,10 +382,29 @@ export class MeetingsService {
         ModuleType.LIVE_WEEKLY,
       );
 
-      // Check if user has live subscription
+      // Check if user has live subscription that is active and not expired
       const hasLiveSubscription = user.subscriptions?.some((sub: any) => {
         const plan = typeof sub === 'string' ? sub : sub.plan;
-        return plan?.includes('LIVE_WEEKLY') || plan?.includes('LIVE_CLASS');
+        
+        // Check for valid plan names
+        const hasValidPlan = plan === 'LiveWeeklyRecurring' ||
+                            plan === 'LiveWeeklyManual' ||
+                            plan === 'MasterClases';
+        
+        if (!hasValidPlan) return false;
+        
+        // If subscription is just a string (legacy), assume it's valid
+        if (typeof sub === 'string') {
+          return hasValidPlan;
+        }
+        
+        // Check if subscription is active and not expired
+        const now = new Date();
+        const isActive = !sub.status || sub.status === 'active';
+        const notExpired = (!sub.expiresAt || new Date(sub.expiresAt) > now) &&
+                          (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > now);
+        
+        return hasValidPlan && isActive && notExpired;
       });
 
       if (!isSuperAdmin && !hasLiveWeeklyAccess && !hasLiveSubscription) {
