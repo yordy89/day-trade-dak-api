@@ -1851,27 +1851,68 @@ export class StripeService {
     });
 
     // Update user's subscription with new period end date
-    if (nextBillingDate) {
-      // Get current period end from invoice
-      const currentPeriodEnd = new Date(
-        invoice.lines.data[0]?.period.end * 1000,
+    // Get current period end from invoice
+    const currentPeriodEnd = new Date(
+      invoice.lines.data[0]?.period.end * 1000,
+    );
+
+    // More robust subscription matching and update
+    const userSubscriptions = user.subscriptions.map((sub) => {
+      // Match by stripeSubscriptionId first (most reliable)
+      if (sub.stripeSubscriptionId === subscriptionId) {
+        this.logger.log(
+          `Updating subscription ${subscriptionId} for plan ${sub.plan} with new period end: ${currentPeriodEnd}`,
+        );
+        return {
+          ...sub,
+          currentPeriodEnd: currentPeriodEnd,
+          expiresAt: currentPeriodEnd, // Also update expiresAt for consistency
+          status: 'active',
+          plan: plan || sub.plan, // Update plan if it changed
+        };
+      }
+      // Fallback: match by plan if no stripeSubscriptionId match
+      // This handles legacy subscriptions
+      if (!sub.stripeSubscriptionId && sub.plan === plan) {
+        this.logger.log(
+          `Updating legacy subscription for plan ${plan} with new period end: ${currentPeriodEnd}`,
+        );
+        return {
+          ...sub,
+          stripeSubscriptionId: subscriptionId, // Add the subscription ID
+          currentPeriodEnd: currentPeriodEnd,
+          expiresAt: currentPeriodEnd,
+          status: 'active',
+        };
+      }
+      return sub;
+    });
+
+    // Check if we found and updated a subscription
+    const subscriptionUpdated = userSubscriptions.some(
+      sub => sub.stripeSubscriptionId === subscriptionId && 
+             sub.currentPeriodEnd?.getTime() === currentPeriodEnd.getTime()
+    );
+
+    if (!subscriptionUpdated) {
+      // If no existing subscription was updated, log a warning
+      this.logger.warn(
+        `No matching subscription found to update for ${subscriptionId}. Plan: ${plan}`,
       );
-
-      const userSubscriptions = user.subscriptions.map((sub) => {
-        if (sub.plan === plan && sub.stripeSubscriptionId === subscriptionId) {
-          return {
-            ...sub,
-            currentPeriodEnd: currentPeriodEnd,
-            status: 'active',
-          };
-        }
-        return sub;
-      });
-
-      await this.userService.updateUser(user._id.toString(), {
-        subscriptions: userSubscriptions,
+      // Optionally add the subscription if it doesn't exist
+      userSubscriptions.push({
+        plan: plan,
+        stripeSubscriptionId: subscriptionId,
+        currentPeriodEnd: currentPeriodEnd,
+        expiresAt: currentPeriodEnd,
+        status: 'active',
+        createdAt: new Date(),
       });
     }
+
+    await this.userService.updateUser(user._id.toString(), {
+      subscriptions: userSubscriptions,
+    });
 
     this.logger.log(
       `✅ Recurring payment recorded for user ${user._id} - Plan: ${plan}`,
@@ -2202,11 +2243,56 @@ export class StripeService {
       return;
     }
 
-    // Check if plan changed
+    // Get the plan from metadata
     const plan = subscription.metadata?.plan as SubscriptionPlan;
+    const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+    const status = subscription.status;
+
+    // Update the user's subscription data
+    const userSubscriptions = user.subscriptions.map((sub) => {
+      if (sub.stripeSubscriptionId === subscription.id) {
+        this.logger.log(
+          `Updating subscription ${subscription.id} - Status: ${status}, Period End: ${currentPeriodEnd}`,
+        );
+        return {
+          ...sub,
+          plan: plan || sub.plan,
+          currentPeriodEnd: currentPeriodEnd,
+          expiresAt: currentPeriodEnd, // Keep both dates in sync
+          status: status,
+        };
+      }
+      return sub;
+    });
+
+    // Check if subscription exists, if not add it
+    const subscriptionExists = userSubscriptions.some(
+      sub => sub.stripeSubscriptionId === subscription.id
+    );
+
+    if (!subscriptionExists && plan) {
+      this.logger.log(
+        `Adding new subscription ${subscription.id} for plan ${plan}`,
+      );
+      userSubscriptions.push({
+        plan: plan,
+        stripeSubscriptionId: subscription.id,
+        currentPeriodEnd: currentPeriodEnd,
+        expiresAt: currentPeriodEnd,
+        status: status,
+        createdAt: new Date(),
+      });
+    }
+
+    // Update user subscriptions
+    await this.userService.updateUser(user._id.toString(), {
+      subscriptions: userSubscriptions,
+    });
+
+    // Check if plan changed and record it
     if (plan) {
       const previousPlan = user.subscriptions.find((sub) =>
-        user.activeSubscriptions.includes(subscription.id),
+        sub.stripeSubscriptionId === subscription.id
       )?.plan;
 
       if (previousPlan && previousPlan !== plan) {
