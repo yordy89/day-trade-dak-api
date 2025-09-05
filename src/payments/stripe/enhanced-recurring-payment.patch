@@ -1,0 +1,276 @@
+// PATCH for stripe.service.ts - Replace the handleRecurringPayment method
+// This enhanced version ensures currentPeriodEnd is properly updated
+
+  // ✅ **Handle Recurring Payments - ENHANCED VERSION**
+  private async handleRecurringPayment(invoice: Stripe.Invoice) {
+    this.logger.log(`🔄 Processing RECURRING PAYMENT for invoice: ${invoice.id}`);
+    this.logger.log(`   Billing reason: ${invoice.billing_reason}`);
+    this.logger.log(`   Customer ID: ${invoice.customer}`);
+    this.logger.log(`   Subscription ID: ${invoice.subscription}`);
+    this.logger.log(`   Amount paid: ${invoice.amount_paid / 100} ${invoice.currency.toUpperCase()}`);
+    
+    const customerId = invoice.customer as string;
+    
+    // Check if this is an installment plan payment
+    if (invoice.subscription_details?.metadata?.isInstallmentPlan === 'true') {
+      this.logger.log('Processing installment plan payment');
+      return;
+    }
+    
+    const user = await this.userService.findByStripeCustomerId(customerId);
+
+    if (!user) {
+      this.logger.error(`❌ CRITICAL: No user found for Stripe customer: ${customerId}`);
+      this.logger.error(`   Invoice ID: ${invoice.id}`);
+      this.logger.error(`   Subscription ID: ${invoice.subscription}`);
+      
+      if (invoice.customer_email) {
+        this.logger.error(`   Customer email from invoice: ${invoice.customer_email}`);
+        const userByEmail = await this.userService.findByEmail(invoice.customer_email);
+        if (userByEmail) {
+          this.logger.error(`   ⚠️ Found user by email but stripeCustomerId doesn't match!`);
+        }
+      }
+      return;
+    }
+
+    const amountPaid = invoice.amount_paid / 100;
+    const currency = invoice.currency;
+    const invoiceId = invoice.id;
+    const subscriptionId = invoice.subscription as string;
+
+    // Check if already processed
+    const existingTransaction = await this.transactionModel.findOne({
+      stripePaymentIntentId: invoice.payment_intent as string,
+    });
+
+    if (existingTransaction) {
+      this.logger.warn(`⚠️ Invoice ${invoiceId} already processed`);
+      return;
+    }
+
+    // Get subscription metadata to determine plan
+    let plan: SubscriptionPlan = SubscriptionPlan.MASTER_CLASES;
+    let billingCycle: BillingCycle = BillingCycle.MONTHLY;
+
+    if (invoice.lines?.data?.[0]?.metadata) {
+      const lineMetadata = invoice.lines.data[0].metadata;
+      if (lineMetadata.plan) {
+        plan = lineMetadata.plan as SubscriptionPlan;
+      }
+    } else if (invoice.subscription_details?.metadata) {
+      plan = (invoice.subscription_details.metadata.plan as SubscriptionPlan) ||
+        SubscriptionPlan.MASTER_CLASES;
+      billingCycle = (invoice.subscription_details.metadata.billingCycle as BillingCycle) ||
+        BillingCycle.MONTHLY;
+    } else if (subscriptionId) {
+      try {
+        const subscription = await this.stripe.subscriptions.retrieve(subscriptionId);
+        if (subscription.metadata?.plan) {
+          plan = subscription.metadata.plan as SubscriptionPlan;
+          billingCycle = (subscription.metadata.billingCycle as BillingCycle) ||
+            BillingCycle.MONTHLY;
+        }
+      } catch (error) {
+        this.logger.error(`Error fetching subscription ${subscriptionId}:`, error);
+      }
+    }
+
+    // Calculate the current period end
+    let currentPeriodEnd: Date;
+    if (invoice.lines?.data?.[0]?.period?.end) {
+      currentPeriodEnd = new Date(invoice.lines.data[0].period.end * 1000);
+    } else if (invoice.period_end) {
+      currentPeriodEnd = new Date(invoice.period_end * 1000);
+    } else {
+      currentPeriodEnd = new Date();
+      currentPeriodEnd.setDate(currentPeriodEnd.getDate() + 7);
+    }
+
+    // Create transaction record
+    const transaction = await this.transactionModel.create({
+      userId: user._id,
+      amount: amountPaid,
+      currency,
+      status: PaymentStatus.SUCCEEDED,
+      plan,
+      type: TransactionType.SUBSCRIPTION_PAYMENT,
+      subscriptionId,
+      stripePaymentIntentId: invoice.payment_intent as string,
+      stripeCustomerId: customerId,
+      paymentMethod: PaymentMethod.CARD,
+      metadata: {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.number,
+      },
+      receiptUrl: invoice.hosted_invoice_url,
+      invoiceUrl: invoice.invoice_pdf,
+      billingCycle,
+      nextBillingDate: currentPeriodEnd,
+    });
+
+    // Record subscription history
+    await this.subscriptionHistoryModel.create({
+      userId: user._id,
+      transactionId: transaction._id,
+      plan,
+      action: SubscriptionAction.RENEWED,
+      stripeSubscriptionId: subscriptionId,
+      stripeEventId: invoiceId,
+      price: amountPaid,
+      currency,
+      metadata: {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.number,
+      },
+      effectiveDate: new Date(),
+    });
+
+    this.logger.log(`📅 Updating subscription for user ${user.email} (${user._id})`);
+    this.logger.log(`   Subscription ID: ${subscriptionId}`);
+    this.logger.log(`   New Period End: ${currentPeriodEnd.toISOString()}`);
+
+    // ENHANCED UPDATE METHOD - Use atomic operations with positional operator
+    try {
+      // Method 1: Try to update existing subscription with positional operator
+      const updateResult = await this.userModel.updateOne(
+        { 
+          _id: user._id,
+          'subscriptions.stripeSubscriptionId': subscriptionId 
+        },
+        {
+          $set: {
+            'subscriptions.$.currentPeriodEnd': currentPeriodEnd,
+            'subscriptions.$.expiresAt': currentPeriodEnd,
+            'subscriptions.$.status': 'active',
+            'subscriptions.$.plan': plan,
+            updatedAt: new Date()
+          }
+        }
+      );
+
+      if (updateResult.modifiedCount > 0) {
+        this.logger.log(`✅ Successfully updated subscription using positional operator`);
+      } else if (updateResult.matchedCount === 0) {
+        // Method 2: If no match found, the subscription might not exist, add it
+        this.logger.warn(`Subscription ${subscriptionId} not found, adding new subscription`);
+        
+        const addResult = await this.userModel.updateOne(
+          { _id: user._id },
+          {
+            $push: {
+              subscriptions: {
+                plan,
+                stripeSubscriptionId: subscriptionId,
+                currentPeriodEnd: currentPeriodEnd,
+                expiresAt: currentPeriodEnd,
+                status: 'active',
+                createdAt: new Date()
+              }
+            },
+            $addToSet: {
+              activeSubscriptions: subscriptionId
+            }
+          }
+        );
+
+        if (addResult.modifiedCount > 0) {
+          this.logger.log(`✅ Added new subscription successfully`);
+        }
+      } else {
+        // Method 3: Fallback - Replace entire subscriptions array
+        this.logger.warn(`Update didn't modify, trying full replacement`);
+        
+        const freshUser = await this.userModel.findById(user._id);
+        if (freshUser) {
+          const updatedSubs = freshUser.subscriptions.map(sub => {
+            if (sub.stripeSubscriptionId === subscriptionId) {
+              return {
+                ...sub.toObject(),
+                currentPeriodEnd,
+                expiresAt: currentPeriodEnd,
+                status: 'active',
+                plan
+              };
+            }
+            return sub.toObject();
+          });
+
+          // If subscription wasn't found, add it
+          if (!updatedSubs.some(s => s.stripeSubscriptionId === subscriptionId)) {
+            updatedSubs.push({
+              plan,
+              stripeSubscriptionId: subscriptionId,
+              currentPeriodEnd,
+              expiresAt: currentPeriodEnd,
+              status: 'active',
+              createdAt: new Date()
+            });
+          }
+
+          const replaceResult = await this.userModel.updateOne(
+            { _id: user._id },
+            { 
+              $set: { 
+                subscriptions: updatedSubs,
+                updatedAt: new Date()
+              }
+            }
+          );
+
+          if (replaceResult.modifiedCount > 0) {
+            this.logger.log(`✅ Successfully updated subscription using full replacement`);
+          }
+        }
+      }
+
+      // Verify the update
+      const verifyUser = await this.userModel.findById(user._id);
+      const updatedSub = verifyUser?.subscriptions.find(s => s.stripeSubscriptionId === subscriptionId);
+      
+      if (updatedSub) {
+        this.logger.log(`✅ Verification: Subscription updated successfully`);
+        this.logger.log(`   Current Period End: ${updatedSub.currentPeriodEnd}`);
+      } else {
+        this.logger.error(`❌ Verification Failed: Subscription not found after update`);
+      }
+
+    } catch (error) {
+      this.logger.error(`❌ Error updating subscription:`, error);
+      
+      // Last resort: Try direct MongoDB operation
+      try {
+        const db = this.userModel.db;
+        const result = await db.collection('users').findOneAndUpdate(
+          { 
+            _id: user._id,
+            'subscriptions.stripeSubscriptionId': subscriptionId
+          },
+          {
+            $set: {
+              'subscriptions.$.currentPeriodEnd': currentPeriodEnd,
+              'subscriptions.$.expiresAt': currentPeriodEnd,
+              'subscriptions.$.status': 'active'
+            }
+          },
+          { returnDocument: 'after' }
+        );
+        
+        if (result) {
+          this.logger.log(`✅ Updated using direct MongoDB operation`);
+        }
+      } catch (dbError) {
+        this.logger.error(`❌ Direct MongoDB update also failed:`, dbError);
+      }
+    }
+
+    // Also ensure activeSubscriptions array includes this subscription
+    if (!user.activeSubscriptions.includes(subscriptionId)) {
+      await this.userModel.updateOne(
+        { _id: user._id },
+        { $addToSet: { activeSubscriptions: subscriptionId } }
+      );
+    }
+
+    this.logger.log(`✅ Recurring payment fully processed for user ${user._id}`);
+  }

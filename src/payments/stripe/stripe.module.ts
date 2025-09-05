@@ -5,12 +5,14 @@ import { PricingService } from './pricing.service';
 import { PaymentAnalyticsService } from './payment-analytics.service';
 import { PaymentReportsController } from './payment-reports.controller';
 import { PublicPricingController } from './public-pricing.controller';
+import { SubscriptionUpdateFixer } from './subscription-update-fix';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TransactionSchema } from './transaction.schema';
 import { SubscriptionHistorySchema } from './subscription-history.schema';
 import { WebhookEventSchema } from './webhook-event.schema';
 import { EventSchema } from 'src/event/schemas/event.schema';
 import { SubscriptionPlanSchema } from 'src/subscriptions/subscription-plan.schema';
+import { UserSchema } from 'src/users/user.schema';
 import { UsersModule } from 'src/users/users.module';
 import { AuthModule } from 'src/auth/auth.module';
 import { EventModule } from 'src/event/event.module';
@@ -25,6 +27,7 @@ import { AffiliateModule } from 'src/affiliate/affiliate.module';
       { name: 'WebhookEvent', schema: WebhookEventSchema },
       { name: 'Event', schema: EventSchema },
       { name: 'SubscriptionPlan', schema: SubscriptionPlanSchema },
+      { name: 'User', schema: UserSchema },
     ]),
     UsersModule,
     AuthModule,
@@ -37,7 +40,7 @@ import { AffiliateModule } from 'src/affiliate/affiliate.module';
     PaymentReportsController,
     PublicPricingController,
   ],
-  providers: [StripeService, PricingService, PaymentAnalyticsService],
-  exports: [StripeService, PricingService, PaymentAnalyticsService],
+  providers: [StripeService, PricingService, PaymentAnalyticsService, SubscriptionUpdateFixer],
+  exports: [StripeService, PricingService, PaymentAnalyticsService, SubscriptionUpdateFixer],
 })
 export class StripeModule {}
