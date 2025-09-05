@@ -25,11 +25,17 @@ export class CronService {
     private subscriptionHistoryModel: Model<SubscriptionHistory>,
   ) {}
 
+  // ✅ Test cron job - runs every minute (REMOVE IN PRODUCTION)
+  @Cron('0 * * * * *') // Every minute at 0 seconds
+  async testCronJob() {
+    this.logger.log('🧪 TEST: Cron jobs are working! Time: ' + new Date().toISOString());
+  }
+
   // ✅ Remove expired subscriptions every midnight
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async removeExpiredSubscriptions() {
     const now = new Date();
-    this.logger.log('🔄 Running cleanup for expired subscriptions...');
+    this.logger.log('🔄 Running cleanup for expired subscriptions at ' + now.toISOString());
 
     const users = await this.userService.findAll();
 

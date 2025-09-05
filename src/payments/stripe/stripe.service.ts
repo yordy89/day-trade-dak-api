@@ -1795,8 +1795,12 @@ export class StripeService {
 
   // ✅ **Handle Recurring Payments**
   private async handleRecurringPayment(invoice: Stripe.Invoice) {
-    this.logger.log(`Processing invoice.payment_succeeded for invoice: ${invoice.id}`);
-    console.log('Invoice:', invoice);
+    this.logger.log(`🔄 Processing RECURRING PAYMENT for invoice: ${invoice.id}`);
+    this.logger.log(`   Billing reason: ${invoice.billing_reason}`);
+    this.logger.log(`   Customer ID: ${invoice.customer}`);
+    this.logger.log(`   Subscription ID: ${invoice.subscription}`);
+    this.logger.log(`   Amount paid: ${invoice.amount_paid / 100} ${invoice.currency.toUpperCase()}`);
+    console.log('Full Invoice Object:', JSON.stringify(invoice, null, 2));
     const customerId = invoice.customer as string;
     
     // Check if this is an installment plan payment
@@ -1811,7 +1815,18 @@ export class StripeService {
     const user = await this.userService.findByStripeCustomerId(customerId);
 
     if (!user) {
-      this.logger.warn(`⚠️ No user found for customer: ${customerId}`);
+      this.logger.error(`❌ CRITICAL: No user found for Stripe customer: ${customerId}`);
+      this.logger.error(`   This payment will not update any user's subscription!`);
+      this.logger.error(`   Invoice ID: ${invoice.id}`);
+      this.logger.error(`   Subscription ID: ${invoice.subscription}`);
+      // Try to find user by email from the invoice
+      if (invoice.customer_email) {
+        this.logger.error(`   Customer email from invoice: ${invoice.customer_email}`);
+        const userByEmail = await this.userService.findByEmail(invoice.customer_email);
+        if (userByEmail) {
+          this.logger.error(`   ⚠️ Found user by email but their stripeCustomerId (${userByEmail.stripeCustomerId}) doesn't match!`);
+        }
+      }
       return;
     }
 

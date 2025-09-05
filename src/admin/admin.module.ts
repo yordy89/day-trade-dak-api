@@ -12,6 +12,7 @@ import { AdminReportsController } from './controllers/admin-reports.controller';
 import { AdminTransactionsController } from './controllers/admin-transactions.controller';
 import { AdminContentTestController } from './controllers/admin-content-test.controller';
 import { AdminContentWorkflowController } from './controllers/admin-content-workflow.controller';
+import { AdminMaintenanceController } from './controllers/admin-maintenance.controller';
 import { AdminService } from './admin.service';
 import { AdminUsersService } from './services/admin-users.service';
 import { AdminAnalyticsService } from './services/admin-analytics.service';
@@ -23,6 +24,7 @@ import { AdminReportsService } from './services/admin-reports.service';
 import { AdminTransactionsService } from './services/admin-transactions.service';
 import { AdminContentSimpleService } from './services/admin-content-simple.service';
 import { AdminContentWorkflowService } from './services/admin-content-workflow.service';
+import { AdminMaintenanceService } from './services/admin-maintenance.service';
 import { VideoUploadService } from '../content/services/video-upload.service';
 import { VideoNotificationService } from '../content/services/video-notification.service';
 import { WebSocketGateway } from '../websockets/websockets.gateway';
@@ -70,6 +72,7 @@ import {
   ContentVideoSchema,
 } from '../content/schemas/content-video.schema';
 import { BullModule } from '@nestjs/bull';
+import { ModulePermissionsModule } from '../module-permissions/module-permissions.module';
 
 @Module({
   imports: [
@@ -99,6 +102,7 @@ import { BullModule } from '@nestjs/bull';
     StripeModule,
     EmailModule,
     WebSocketsModule,
+    ModulePermissionsModule,
   ],
   controllers: [
     AdminController,
@@ -114,6 +118,7 @@ import { BullModule } from '@nestjs/bull';
     AdminTransactionsController,
     AdminContentTestController,
     AdminContentWorkflowController,
+    AdminMaintenanceController,
   ],
   providers: [
     AdminService,
@@ -127,6 +132,7 @@ import { BullModule } from '@nestjs/bull';
     AdminTransactionsService,
     AdminContentSimpleService,
     AdminContentWorkflowService,
+    AdminMaintenanceService,
     VideoUploadService,
     VideoNotificationService,
     MeetingCronService,
