@@ -315,8 +315,8 @@ export class AdminEventsController {
         registrations: result.data.map((reg: any) => ({
           _id: reg._id,
           eventId: reg.eventId,
-          user: reg.userId || {
-            _id: reg._id,
+          user: {
+            _id: reg.userId || reg._id,
             firstName: reg.firstName,
             lastName: reg.lastName,
             email: reg.email,

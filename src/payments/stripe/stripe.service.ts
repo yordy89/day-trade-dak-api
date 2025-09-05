@@ -24,6 +24,7 @@ import {
 import { WebhookEvent, WebhookEventStatus } from './webhook-event.schema';
 import { Model } from 'mongoose';
 import { UserService } from 'src/users/users.service';
+import { User } from 'src/users/user.schema';
 import { SubscriptionPlan } from 'src/users/user.dto';
 import {
   SubscriptionPlan as SubscriptionPlanSchema,
@@ -58,6 +59,7 @@ export class StripeService {
     @InjectModel(Event.name) private eventModel: Model<Event>,
     @InjectModel(SubscriptionPlanSchema.name)
     private subscriptionPlanModel: Model<SubscriptionPlanDocument>,
+    @InjectModel(User.name) private userModel: Model<User>,
   ) {
     this.stripe = new Stripe(
       this.configService.get<string>('STRIPE_SECRET_KEY'),
@@ -1793,22 +1795,19 @@ export class StripeService {
     return mapping[stripeType] || PaymentMethod.CARD;
   }
 
-  // ✅ **Handle Recurring Payments**
+  // ✅ **Handle Recurring Payments - ENHANCED VERSION**
   private async handleRecurringPayment(invoice: Stripe.Invoice) {
     this.logger.log(`🔄 Processing RECURRING PAYMENT for invoice: ${invoice.id}`);
     this.logger.log(`   Billing reason: ${invoice.billing_reason}`);
     this.logger.log(`   Customer ID: ${invoice.customer}`);
     this.logger.log(`   Subscription ID: ${invoice.subscription}`);
     this.logger.log(`   Amount paid: ${invoice.amount_paid / 100} ${invoice.currency.toUpperCase()}`);
-    console.log('Full Invoice Object:', JSON.stringify(invoice, null, 2));
+    
     const customerId = invoice.customer as string;
     
     // Check if this is an installment plan payment
     if (invoice.subscription_details?.metadata?.isInstallmentPlan === 'true') {
-      // Import and use local financing service for installment payments
-      // This will be injected properly in production
       this.logger.log('Processing installment plan payment');
-      // TODO: Inject LocalFinancingService and call handlePaymentSucceeded
       return;
     }
     
@@ -1816,15 +1815,14 @@ export class StripeService {
 
     if (!user) {
       this.logger.error(`❌ CRITICAL: No user found for Stripe customer: ${customerId}`);
-      this.logger.error(`   This payment will not update any user's subscription!`);
       this.logger.error(`   Invoice ID: ${invoice.id}`);
       this.logger.error(`   Subscription ID: ${invoice.subscription}`);
-      // Try to find user by email from the invoice
+      
       if (invoice.customer_email) {
         this.logger.error(`   Customer email from invoice: ${invoice.customer_email}`);
         const userByEmail = await this.userService.findByEmail(invoice.customer_email);
         if (userByEmail) {
-          this.logger.error(`   ⚠️ Found user by email but their stripeCustomerId (${userByEmail.stripeCustomerId}) doesn't match!`);
+          this.logger.error(`   ⚠️ Found user by email but stripeCustomerId doesn't match!`);
         }
       }
       return;
@@ -1835,7 +1833,7 @@ export class StripeService {
     const invoiceId = invoice.id;
     const subscriptionId = invoice.subscription as string;
 
-    // ✅ Ensure the invoice does not already exist
+    // Check if already processed
     const existingTransaction = await this.transactionModel.findOne({
       stripePaymentIntentId: invoice.payment_intent as string,
     });
@@ -1846,80 +1844,68 @@ export class StripeService {
     }
 
     // Get subscription metadata to determine plan
-    let plan: SubscriptionPlan = SubscriptionPlan.MASTER_CLASES; // Default fallback
+    let plan: SubscriptionPlan = SubscriptionPlan.MASTER_CLASES;
     let billingCycle: BillingCycle = BillingCycle.MONTHLY;
 
-    // First try to get metadata from invoice lines (most reliable for recurring payments)
     if (invoice.lines?.data?.[0]?.metadata) {
       const lineMetadata = invoice.lines.data[0].metadata;
       if (lineMetadata.plan) {
         plan = lineMetadata.plan as SubscriptionPlan;
-        billingCycle = (lineMetadata.billingCycle as BillingCycle) || BillingCycle.MONTHLY;
-        this.logger.log(`Found plan from line metadata: ${plan}, billingCycle: ${billingCycle}`);
       }
     } else if (invoice.subscription_details?.metadata) {
-      plan =
-        (invoice.subscription_details.metadata.plan as SubscriptionPlan) ||
+      plan = (invoice.subscription_details.metadata.plan as SubscriptionPlan) ||
         SubscriptionPlan.MASTER_CLASES;
-      billingCycle =
-        (invoice.subscription_details.metadata.billingCycle as BillingCycle) ||
+      billingCycle = (invoice.subscription_details.metadata.billingCycle as BillingCycle) ||
         BillingCycle.MONTHLY;
-      this.logger.log(`Found plan from subscription_details: ${plan}, billingCycle: ${billingCycle}`);
     } else if (subscriptionId) {
-      // Fetch subscription from Stripe to get metadata
       try {
-        const subscription =
-          await this.stripe.subscriptions.retrieve(subscriptionId);
+        const subscription = await this.stripe.subscriptions.retrieve(subscriptionId);
         if (subscription.metadata?.plan) {
           plan = subscription.metadata.plan as SubscriptionPlan;
-          billingCycle =
-            (subscription.metadata.billingCycle as BillingCycle) ||
+          billingCycle = (subscription.metadata.billingCycle as BillingCycle) ||
             BillingCycle.MONTHLY;
-          this.logger.log(`Found plan from subscription fetch: ${plan}, billingCycle: ${billingCycle}`);
         }
       } catch (error) {
-        this.logger.error(
-          `Error fetching subscription ${subscriptionId}:`,
-          error,
-        );
+        this.logger.error(`Error fetching subscription ${subscriptionId}:`, error);
       }
     }
 
-    // Calculate next billing date based on billing cycle
-    let nextBillingDate: Date | undefined;
-    if (billingCycle === BillingCycle.WEEKLY) {
-      nextBillingDate = new Date();
-      nextBillingDate.setDate(nextBillingDate.getDate() + 7);
-    } else if (billingCycle === BillingCycle.MONTHLY) {
-      nextBillingDate = new Date();
-      nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
+    // Calculate the current period end
+    let currentPeriodEnd: Date;
+    if (invoice.lines?.data?.[0]?.period?.end) {
+      currentPeriodEnd = new Date(invoice.lines.data[0].period.end * 1000);
+    } else if (invoice.period_end) {
+      currentPeriodEnd = new Date(invoice.period_end * 1000);
+    } else {
+      currentPeriodEnd = new Date();
+      currentPeriodEnd.setDate(currentPeriodEnd.getDate() + 7);
     }
 
-    // ✅ Create new transaction for the recurring payment
+    // Create transaction record
     const transaction = await this.transactionModel.create({
-      userId: user._id.toString(),
+      userId: user._id,
       amount: amountPaid,
       currency,
       status: PaymentStatus.SUCCEEDED,
       plan,
+      type: TransactionType.SUBSCRIPTION_PAYMENT,
       subscriptionId,
       stripePaymentIntentId: invoice.payment_intent as string,
       stripeCustomerId: customerId,
       paymentMethod: PaymentMethod.CARD,
-      billingCycle,
-      nextBillingDate,
+      metadata: {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.number,
+      },
       receiptUrl: invoice.hosted_invoice_url,
       invoiceUrl: invoice.invoice_pdf,
-      metadata: {
-        invoiceId,
-        invoiceNumber: invoice.number,
-        billingReason: invoice.billing_reason,
-      },
+      billingCycle,
+      nextBillingDate: currentPeriodEnd,
     });
 
     // Record subscription history
     await this.subscriptionHistoryModel.create({
-      userId: user._id.toString(),
+      userId: user._id,
       transactionId: transaction._id,
       plan,
       action: SubscriptionAction.RENEWED,
@@ -1927,113 +1913,168 @@ export class StripeService {
       stripeEventId: invoiceId,
       price: amountPaid,
       currency,
-      effectiveDate: new Date(),
       metadata: {
-        invoiceId,
+        invoiceId: invoice.id,
         invoiceNumber: invoice.number,
       },
+      effectiveDate: new Date(),
     });
 
-    // Update user's subscription with new period end date
-    // Get current period end from invoice - this is the new period end after payment
-    let currentPeriodEnd: Date;
-    if (invoice.lines?.data?.[0]?.period?.end) {
-      currentPeriodEnd = new Date(invoice.lines.data[0].period.end * 1000);
-      this.logger.log(`✅ Got new period end from invoice line: ${currentPeriodEnd.toISOString()}`);
-    } else {
-      // Fallback to calculating based on billing cycle
-      currentPeriodEnd = new Date();
-      if (billingCycle === BillingCycle.WEEKLY) {
-        currentPeriodEnd.setDate(currentPeriodEnd.getDate() + 7);
-      } else {
-        currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + 1);
-      }
-      this.logger.warn(`⚠️ No period.end in invoice, calculated new period end: ${currentPeriodEnd.toISOString()}`);
-    }
+    this.logger.log(`📅 Updating subscription for user ${user.email} (${user._id})`);
+    this.logger.log(`   Subscription ID: ${subscriptionId}`);
+    this.logger.log(`   New Period End: ${currentPeriodEnd.toISOString()}`);
 
-    this.logger.log(`📅 User ${user._id} (${user.email}) - Processing recurring payment for subscription ${subscriptionId}`);
-    this.logger.log(`   Current subscriptions before update: ${JSON.stringify(user.subscriptions.map(s => ({
-      plan: s.plan,
-      stripeId: s.stripeSubscriptionId,
-      currentPeriodEnd: s.currentPeriodEnd,
-      expiresAt: s.expiresAt
-    })))}`);
-
-    // Track if we found an existing subscription to update
-    let subscriptionFound = false;
-    
-    // More robust subscription matching and update
-    const userSubscriptions = user.subscriptions.map((sub) => {
-      // Match by stripeSubscriptionId first (most reliable)
-      if (sub.stripeSubscriptionId === subscriptionId) {
-        subscriptionFound = true;
-        this.logger.log(
-          `✅ Updating subscription ${subscriptionId} for plan ${sub.plan} with new period end: ${currentPeriodEnd.toISOString()}`,
-        );
-        return {
-          ...sub,
-          currentPeriodEnd: currentPeriodEnd,
-          expiresAt: currentPeriodEnd, // Also update expiresAt for consistency
-          status: 'active',
-          plan: plan || sub.plan, // Update plan if it changed
-        };
-      }
-      // Fallback: match by plan if no stripeSubscriptionId match
-      // This handles legacy subscriptions
-      if (!sub.stripeSubscriptionId && sub.plan === plan) {
-        subscriptionFound = true;
-        this.logger.log(
-          `✅ Updating legacy subscription for plan ${plan} with new period end: ${currentPeriodEnd.toISOString()}`,
-        );
-        return {
-          ...sub,
-          stripeSubscriptionId: subscriptionId, // Add the subscription ID
-          currentPeriodEnd: currentPeriodEnd,
-          expiresAt: currentPeriodEnd,
-          status: 'active',
-        };
-      }
-      return sub;
-    });
-
-    // Only add a new subscription if we didn't find an existing one to update
-    if (!subscriptionFound) {
-      this.logger.warn(
-        `No matching subscription found to update for ${subscriptionId}. Adding new subscription for plan: ${plan}`,
+    // ENHANCED UPDATE METHOD - Use atomic operations with positional operator
+    try {
+      // Method 1: Try to update existing subscription with positional operator
+      const updateResult = await this.userModel.updateOne(
+        { 
+          _id: user._id,
+          'subscriptions.stripeSubscriptionId': subscriptionId 
+        },
+        {
+          $set: {
+            'subscriptions.$.currentPeriodEnd': currentPeriodEnd,
+            'subscriptions.$.expiresAt': currentPeriodEnd,
+            'subscriptions.$.status': 'active',
+            'subscriptions.$.plan': plan,
+            updatedAt: new Date()
+          }
+        }
       );
-      userSubscriptions.push({
-        plan: plan,
-        stripeSubscriptionId: subscriptionId,
-        currentPeriodEnd: currentPeriodEnd,
-        expiresAt: currentPeriodEnd,
-        status: 'active',
-        createdAt: new Date(),
-      });
+
+      if (updateResult.modifiedCount > 0) {
+        this.logger.log(`✅ Successfully updated subscription using positional operator`);
+      } else if (updateResult.matchedCount === 0) {
+        // Method 2: If no match found, the subscription might not exist, add it
+        this.logger.warn(`Subscription ${subscriptionId} not found, adding new subscription`);
+        
+        const addResult = await this.userModel.updateOne(
+          { _id: user._id },
+          {
+            $push: {
+              subscriptions: {
+                plan,
+                stripeSubscriptionId: subscriptionId,
+                currentPeriodEnd: currentPeriodEnd,
+                expiresAt: currentPeriodEnd,
+                status: 'active',
+                createdAt: new Date()
+              }
+            },
+            $addToSet: {
+              activeSubscriptions: subscriptionId
+            }
+          }
+        );
+
+        if (addResult.modifiedCount > 0) {
+          this.logger.log(`✅ Added new subscription successfully`);
+        }
+      } else {
+        // Method 3: Fallback - Replace entire subscriptions array
+        this.logger.warn(`Update didn't modify, trying full replacement`);
+        
+        const freshUser = await this.userModel.findById(user._id);
+        if (freshUser) {
+          const updatedSubs = freshUser.subscriptions.map(sub => {
+            if (sub.stripeSubscriptionId === subscriptionId) {
+              return {
+                plan: sub.plan || plan,
+                stripeSubscriptionId: sub.stripeSubscriptionId,
+                currentPeriodEnd,
+                expiresAt: currentPeriodEnd,
+                status: 'active',
+                createdAt: sub.createdAt
+              };
+            }
+            return {
+              plan: sub.plan,
+              stripeSubscriptionId: sub.stripeSubscriptionId,
+              currentPeriodEnd: sub.currentPeriodEnd,
+              expiresAt: sub.expiresAt,
+              status: sub.status,
+              createdAt: sub.createdAt
+            };
+          });
+
+          // If subscription wasn't found, add it
+          if (!updatedSubs.some(s => s.stripeSubscriptionId === subscriptionId)) {
+            updatedSubs.push({
+              plan,
+              stripeSubscriptionId: subscriptionId,
+              currentPeriodEnd,
+              expiresAt: currentPeriodEnd,
+              status: 'active',
+              createdAt: new Date()
+            });
+          }
+
+          const replaceResult = await this.userModel.updateOne(
+            { _id: user._id },
+            { 
+              $set: { 
+                subscriptions: updatedSubs,
+                updatedAt: new Date()
+              }
+            }
+          );
+
+          if (replaceResult.modifiedCount > 0) {
+            this.logger.log(`✅ Successfully updated subscription using full replacement`);
+          }
+        }
+      }
+
+      // Verify the update
+      const verifyUser = await this.userModel.findById(user._id);
+      const updatedSub = verifyUser?.subscriptions.find(s => s.stripeSubscriptionId === subscriptionId);
+      
+      if (updatedSub) {
+        this.logger.log(`✅ Verification: Subscription updated successfully`);
+        this.logger.log(`   Current Period End: ${updatedSub.currentPeriodEnd}`);
+      } else {
+        this.logger.error(`❌ Verification Failed: Subscription not found after update`);
+      }
+
+    } catch (error) {
+      this.logger.error(`❌ Error updating subscription:`, error);
+      
+      // Last resort: Try direct MongoDB operation
+      try {
+        const db = this.userModel.db;
+        const result = await db.collection('users').findOneAndUpdate(
+          { 
+            _id: user._id,
+            'subscriptions.stripeSubscriptionId': subscriptionId
+          },
+          {
+            $set: {
+              'subscriptions.$.currentPeriodEnd': currentPeriodEnd,
+              'subscriptions.$.expiresAt': currentPeriodEnd,
+              'subscriptions.$.status': 'active'
+            }
+          },
+          { returnDocument: 'after' }
+        );
+        
+        if (result) {
+          this.logger.log(`✅ Updated using direct MongoDB operation`);
+        }
+      } catch (dbError) {
+        this.logger.error(`❌ Direct MongoDB update also failed:`, dbError);
+      }
     }
 
-    await this.userService.updateUser(user._id.toString(), {
-      subscriptions: userSubscriptions,
-    });
-
-    this.logger.log(`   Updated subscriptions after payment: ${JSON.stringify(userSubscriptions.map(s => ({
-      plan: s.plan,
-      stripeId: s.stripeSubscriptionId,
-      currentPeriodEnd: s.currentPeriodEnd,
-      expiresAt: s.expiresAt,
-      status: s.status
-    })))}`);
-
-    this.logger.log(
-      `✅ Recurring payment recorded for user ${user._id} - Plan: ${plan}, New Period End: ${currentPeriodEnd.toISOString()}`,
-    );
-    
     // Also ensure activeSubscriptions array includes this subscription
     if (!user.activeSubscriptions.includes(subscriptionId)) {
-      this.logger.log(`Adding ${subscriptionId} to activeSubscriptions array`);
-      await this.userService.updateUser(user._id.toString(), {
-        $addToSet: { activeSubscriptions: subscriptionId },
-      });
+      await this.userModel.updateOne(
+        { _id: user._id },
+        { $addToSet: { activeSubscriptions: subscriptionId } }
+      );
     }
+
+    this.logger.log(`✅ Recurring payment fully processed for user ${user._id}`);
   }
 
   // ✅ **Handle Subscription Cancellation**
