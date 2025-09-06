@@ -52,7 +52,7 @@ export class CreateEventDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['master_course', 'community_event', 'general'])
+  @IsIn(['master_course', 'community_event', 'general', 'workshop', 'webinar', 'seminar', 'bootcamp', 'conference'])
   type?: string;
 
   @IsOptional()
@@ -70,6 +70,10 @@ export class CreateEventDto {
   @IsOptional()
   @IsNumber()
   currentRegistrations?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  showInLandingPage?: boolean;
 
   @IsOptional()
   metadata?: any;

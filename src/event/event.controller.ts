@@ -31,6 +31,11 @@ export class EventsController {
     return this.eventsService.findCommunityEventById(id);
   }
 
+  @Get('landing-page')
+  findLandingPageEvents() {
+    return this.eventsService.findLandingPageEvents();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.eventsService.findOne(id);

@@ -535,6 +535,49 @@ export class EventsServiceOptimized {
     }
   }
 
+  async findLandingPageEvents(): Promise<EventDocument[]> {
+    const startTime = Date.now();
+    try {
+      const cacheKey = this.buildCacheKey('landing-page', {});
+      
+      // Check cache
+      const cached = await this.cache.get<EventDocument[]>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      // Find events that are:
+      // - Marked for landing page display
+      // - Active
+      // - Future dated
+      const now = new Date();
+      const events = await this.eventModel
+        .find({
+          showInLandingPage: true,
+          isActive: true,
+          date: { $gte: now },
+        })
+        .sort({ date: 1 }) // Sort by date ascending
+        .lean()
+        .exec();
+
+      // Cache result
+      await this.cache.set(cacheKey, events, this.CACHE_TTL);
+
+      // Log metrics
+      const duration = Date.now() - startTime;
+      this.logger.logPerformanceMetric('event_findLandingPage', duration);
+
+      return events as EventDocument[];
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.logPerformanceMetric('event_findLandingPage_failed', duration);
+
+      this.logger.error('Failed to retrieve landing page events', error.stack);
+      throw new InternalServerErrorException('Failed to retrieve landing page events');
+    }
+  }
+
   private async invalidateCache(eventId?: string): Promise<void> {
     try {
       // Invalidate all list caches
@@ -542,6 +585,7 @@ export class EventsServiceOptimized {
       await this.cache.invalidatePattern(`${this.CACHE_PREFIX}:upcoming:*`);
       await this.cache.invalidatePattern(`${this.CACHE_PREFIX}:active-community:*`);
       await this.cache.invalidatePattern(`${this.CACHE_PREFIX}:community-detail:*`);
+      await this.cache.invalidatePattern(`${this.CACHE_PREFIX}:landing-page:*`);
 
       // Invalidate specific event cache if ID provided
       if (eventId) {
