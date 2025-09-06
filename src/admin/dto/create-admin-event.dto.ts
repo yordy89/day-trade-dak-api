@@ -18,6 +18,11 @@ export enum EventType {
   MASTER_COURSE = 'master_course',
   COMMUNITY_EVENT = 'community_event',
   GENERAL = 'general',
+  WORKSHOP = 'workshop',
+  WEBINAR = 'webinar',
+  SEMINAR = 'seminar',
+  BOOTCAMP = 'bootcamp',
+  CONFERENCE = 'conference',
 }
 
 export class EventMetadataDto {
@@ -159,4 +164,8 @@ export class CreateAdminEventDto {
   @IsBoolean()
   @IsOptional()
   featuredInCRM?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  showInLandingPage?: boolean;
 }

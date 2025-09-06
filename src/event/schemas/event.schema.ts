@@ -39,7 +39,7 @@ export class Event {
 
   // New fields for enhanced event functionality
   @Prop({
-    enum: ['master_course', 'community_event', 'general'],
+    enum: ['master_course', 'community_event', 'general', 'workshop', 'webinar', 'seminar', 'bootcamp', 'conference'],
     default: 'general',
   })
   type: string;
@@ -95,6 +95,9 @@ export class Event {
 
   @Prop({ default: false })
   featuredInCRM: boolean;
+
+  @Prop({ default: false })
+  showInLandingPage: boolean;
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);
