@@ -1417,12 +1417,8 @@ export class StripeService {
               eventType,
             );
           } else {
-            // Fallback to old template if event not found
-            await this.emailService.sendEventRegistrationTemplate(
-              email,
-              firstName,
-              2,
-            );
+            // Fallback to simple email if event not found
+            await this.emailService.sendEventRegistrationConfirmation(email);
           }
         } catch (emailError) {
           this.logger.error(
