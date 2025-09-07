@@ -33,7 +33,7 @@ export class EventRegistrationsService {
   ) {}
 
   async create(createEventRegistrationDto: CreateEventRegistrationDto) {
-    const { eventId, email, firstName } = createEventRegistrationDto;
+    const { eventId, email, firstName, lastName } = createEventRegistrationDto;
 
     try {
       await this.validateNotRegistered(eventId, email); // ✅ New line
@@ -45,14 +45,55 @@ export class EventRegistrationsService {
 
       const saved = await createdRegistration.save();
 
-      await this.emailService.sendEventRegistrationTemplate(
-        email,
-        firstName,
-        2,
-      );
+      // Get event details for the email
+      const event = await this.eventModel.findById(eventId).exec();
+      
+      if (event) {
+        // Send email with proper event data
+        // Check if it's a webinar and use specific template
+        if (event.type === 'webinar') {
+          await this.emailService.sendWebinarRegistrationEmail(email, {
+            firstName: firstName,
+            eventName: event.name || 'Webinar DayTradeDak',
+            eventDate: event.date ? new Date(event.date) : undefined,
+            eventTime: '8:00 PM EST', // Default time for webinars
+            webinarLink: event.location?.includes('zoom') ? event.location : undefined,
+            description: event.description,
+            registrationNumber: saved._id.toString(),
+          });
+        } else {
+          // Map event type to email template type for other events
+          let emailEventType: 'master_course' | 'community_event' | 'vip_event' = 'community_event';
+          if (event.type === 'master_course') {
+            emailEventType = 'master_course';
+          } else if (event.type === 'vip_event') {
+            emailEventType = 'vip_event';
+          } else {
+            emailEventType = 'community_event'; // Default for workshop, etc.
+          }
+          
+          await this.emailService.sendEventRegistrationEmail(email, {
+            firstName: firstName,
+            eventName: event.name || 'Evento DayTradeDak',
+            eventType: emailEventType,
+            eventDate: event.date ? new Date(event.date) : undefined,
+            eventLocation: event.location,
+            eventDescription: event.description,
+            isPaid: createEventRegistrationDto.paymentStatus === 'paid' || createEventRegistrationDto.paymentStatus === 'free',
+            amount: createEventRegistrationDto.amountPaid || 0,
+            currency: 'USD',
+            additionalInfo: createEventRegistrationDto.additionalInfo,
+          });
+        }
+      } else {
+        // Fallback to simple email if event not found
+        await this.emailService.sendEventRegistrationConfirmation(email);
+      }
+      
       return saved;
     } catch (error) {
-      throw new BadRequestException(error);
+      console.error('Error creating registration:', error);
+      throw new BadRequestException(error.message || error);
     }
   }
 

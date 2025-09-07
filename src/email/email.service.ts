@@ -29,6 +29,10 @@ import {
   passwordResetTemplate,
   PasswordResetData,
 } from './templates/password-reset.template';
+import {
+  webinarRegistrationTemplate,
+  WebinarRegistrationData,
+} from './templates/webinar-registration.template';
 
 @Injectable()
 export class EmailService {
@@ -142,6 +146,23 @@ export class EmailService {
     } catch (error) {
       this.logger.error(
         `Failed to send subscription expiring email to ${to}`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async sendWebinarRegistrationEmail(to: string, data: WebinarRegistrationData) {
+    try {
+      const html = webinarRegistrationTemplate(data);
+      const subject = `🎯 Confirmación de registro - ${data.eventName}`;
+      
+      const result = await this.send(to, subject, html);
+      this.logger.log(`Webinar registration email sent to ${to}`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Failed to send webinar registration email to ${to}`,
         error,
       );
       throw error;
