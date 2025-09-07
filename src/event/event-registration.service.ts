@@ -56,7 +56,7 @@ export class EventRegistrationsService {
             firstName: firstName,
             eventName: event.name || 'Webinar DayTradeDak',
             eventDate: event.date ? new Date(event.date) : undefined,
-            eventTime: '8:00 PM EST', // Default time for webinars
+            eventTime: '5:00 PM EST', // Default time for webinars
             webinarLink: event.location?.includes('zoom') ? event.location : undefined,
             description: event.description,
             registrationNumber: saved._id.toString(),
