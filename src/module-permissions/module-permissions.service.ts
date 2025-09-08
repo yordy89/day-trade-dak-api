@@ -113,10 +113,29 @@ export class ModulePermissionsService {
         }
         
         // Check if Live Weekly subscription is active and not expired
-        return isLiveWeekly && 
-               (!sub.status || sub.status === 'active') &&
-               (!sub.expiresAt || new Date(sub.expiresAt) > new Date()) &&
-               (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > new Date());
+        // Add 12-hour buffer for timezone differences to ensure users
+        // have access until end of day in their local timezone
+        if (isLiveWeekly && (!sub.status || sub.status === 'active')) {
+          const now = new Date();
+          
+          // Check expiresAt with buffer
+          if (sub.expiresAt) {
+            const expiresDate = new Date(sub.expiresAt);
+            expiresDate.setHours(expiresDate.getHours() + 12); // Add 12-hour buffer
+            if (expiresDate <= now) return false;
+          }
+          
+          // Check currentPeriodEnd with buffer
+          if (sub.currentPeriodEnd) {
+            const periodEndDate = new Date(sub.currentPeriodEnd);
+            periodEndDate.setHours(periodEndDate.getHours() + 12); // Add 12-hour buffer
+            if (periodEndDate <= now) return false;
+          }
+          
+          return true;
+        }
+        
+        return false;
       });
       
       if (hasLiveWeekly) {
@@ -149,10 +168,29 @@ export class ModulePermissionsService {
         }
         
         // Check if subscription is active and not expired
-        const now = new Date();
-        return (!sub.status || sub.status === 'active') &&
-               (!sub.expiresAt || new Date(sub.expiresAt) > now) &&
-               (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > now);
+        // Add 12-hour buffer for timezone differences to ensure users
+        // have access until end of day in their local timezone
+        if (!sub.status || sub.status === 'active') {
+          const now = new Date();
+          
+          // Check expiresAt with buffer
+          if (sub.expiresAt) {
+            const expiresDate = new Date(sub.expiresAt);
+            expiresDate.setHours(expiresDate.getHours() + 12); // Add 12-hour buffer
+            if (expiresDate <= now) return false;
+          }
+          
+          // Check currentPeriodEnd with buffer
+          if (sub.currentPeriodEnd) {
+            const periodEndDate = new Date(sub.currentPeriodEnd);
+            periodEndDate.setHours(periodEndDate.getHours() + 12); // Add 12-hour buffer
+            if (periodEndDate <= now) return false;
+          }
+          
+          return true;
+        }
+        
+        return false;
       });
       
       if (hasSubscription) {
