@@ -173,12 +173,21 @@ export class CampaignService {
   async delete(id: string) {
     const campaign = await this.findOne(id);
 
-    if (campaign.status === CampaignStatus.SENDING || campaign.status === CampaignStatus.SENT) {
-      throw new BadRequestException('Cannot delete a campaign that is sending or has been sent');
+    // Only prevent deletion if campaign is currently sending
+    if (campaign.status === CampaignStatus.SENDING) {
+      throw new BadRequestException('Cannot delete a campaign that is currently being sent. Please wait for it to complete.');
+    }
+
+    // Delete all associated analytics data if campaign was sent
+    if (campaign.status === CampaignStatus.SENT) {
+      await this.analyticsModel.deleteMany({ campaignId: id });
+      this.logger.log(`Deleted analytics for campaign: ${id}`);
     }
 
     await this.campaignModel.findByIdAndDelete(id);
     this.logger.log(`Campaign deleted: ${id}`);
+    
+    return { success: true, message: 'Campaign deleted successfully' };
   }
 
   async sendTestEmail(sendTestEmailDto: SendTestEmailDto) {
@@ -191,8 +200,18 @@ export class CampaignService {
     let htmlContent = campaign.htmlContent;
     
     if (campaign.templateId) {
-      const template = await this.templateService.findOne(campaign.templateId.toString());
-      htmlContent = template.htmlContent;
+      // Check if templateId is populated (has htmlContent property) or just an ID
+      const templateIdAny = campaign.templateId as any;
+      
+      if (templateIdAny.htmlContent) {
+        // Template is already populated
+        htmlContent = templateIdAny.htmlContent;
+      } else {
+        // Template is just an ID, need to fetch it
+        const templateId = templateIdAny._id?.toString() || templateIdAny.toString();
+        const template = await this.templateService.findOne(templateId);
+        htmlContent = template.htmlContent;
+      }
     }
 
     // Replace variables with test data
@@ -206,13 +225,55 @@ export class CampaignService {
 
     // Send test emails
     const results = await Promise.allSettled(
-      sendTestEmailDto.testEmails.map((email) =>
-        this.emailService.sendBasicEmail(
+      sendTestEmailDto.testEmails.map(async (email) => {
+        // Add tracking to test emails too
+        const trackedContent = this.addEmailTracking(
+          htmlContent,
+          campaign._id.toString(),
+          email,
+        );
+        
+        // Send the email
+        await this.emailService.sendBasicEmail(
           email,
           `[TEST] ${campaign.subject}`,
-          htmlContent,
-        ),
-      ),
+          trackedContent,
+        );
+        
+        // Create or update analytics entry for test email
+        try {
+          await this.analyticsModel.findOneAndUpdate(
+            {
+              campaignId: campaign._id,
+              recipientEmail: email,
+            },
+            {
+              $set: {
+                sent: true,
+                sentAt: new Date(),
+                isTestEmail: true,
+              },
+              $setOnInsert: {
+                delivered: false,
+                opened: false,
+                clicked: false,
+                bounced: false,
+                unsubscribed: false,
+                openCount: 0,
+                clickCount: 0,
+              }
+            },
+            {
+              new: true,
+              upsert: true,
+            }
+          );
+          
+          this.logger.log(`Created/Updated analytics entry for test email: ${email} - Campaign: ${campaign._id}`);
+        } catch (error) {
+          this.logger.error(`Failed to create test email analytics: ${error.message}`);
+        }
+      }),
     );
 
     // Update campaign with test emails
@@ -254,11 +315,43 @@ export class CampaignService {
         campaign.recipientEmails,
       );
 
+      this.logger.log(`Sending campaign ${id} to ${recipients.count} recipients`);
+      
+      // Store the actual recipient emails and initialize recipients array
+      const recipientEmailsList = recipients.emails.map(r => r.email);
+      const recipientsData = recipients.emails.map(r => ({
+        email: r.email,
+        sent: false,
+        delivered: false,
+        opened: false,
+        openCount: 0,
+        clicked: false,
+        clickCount: 0,
+        bounced: false,
+        unsubscribed: false,
+      }));
+      
+      await this.campaignModel.findByIdAndUpdate(id, {
+        recipientEmails: recipientEmailsList,
+        recipients: recipientsData,
+        recipientCount: recipients.count,
+      });
+
       let htmlContent = campaign.htmlContent;
       
       if (campaign.templateId) {
-        const template = await this.templateService.findOne(campaign.templateId.toString());
-        htmlContent = template.htmlContent;
+        // Check if templateId is populated (has htmlContent property) or just an ID
+        const templateIdAny = campaign.templateId as any;
+        
+        if (templateIdAny.htmlContent) {
+          // Template is already populated
+          htmlContent = templateIdAny.htmlContent;
+        } else {
+          // Template is just an ID, need to fetch it
+          const templateId = templateIdAny._id?.toString() || templateIdAny.toString();
+          const template = await this.templateService.findOne(templateId);
+          htmlContent = template.htmlContent;
+        }
       }
 
       // Send emails in batches
@@ -271,13 +364,27 @@ export class CampaignService {
         
         const results = await Promise.allSettled(
           batch.map(async (recipient) => {
-            const personalizedContent = this.replaceVariables(htmlContent, {
+            let personalizedContent = this.replaceVariables(htmlContent, {
               firstName: recipient.firstName || '',
               lastName: recipient.lastName || '',
               email: recipient.email,
               ...recipient,
             });
 
+            // Add tracking to the email content
+            personalizedContent = this.addEmailTracking(
+              personalizedContent,
+              campaign._id.toString(),
+              recipient.email,
+            );
+
+            // Log tracking status
+            this.logger.log(`Sending to ${recipient.email} with tracking:`, {
+              hasPixel: personalizedContent.includes('/tracking/open/'),
+              hasTrackedLinks: personalizedContent.includes('/tracking/click/'),
+              contentLength: personalizedContent.length
+            });
+            
             // Send email via Brevo
             await this.emailService.sendBasicEmail(
               recipient.email,
@@ -285,14 +392,58 @@ export class CampaignService {
               personalizedContent,
             );
 
-            // Create analytics entry
-            await this.analyticsModel.create({
-              campaignId: campaign._id,
-              recipientEmail: recipient.email,
-              userId: recipient._id,
-              delivered: true,
-              deliveredAt: new Date(),
-            });
+            // Update recipient status in campaign document
+            try {
+              const now = new Date();
+              await this.campaignModel.updateOne(
+                { 
+                  _id: campaign._id,
+                  'recipients.email': recipient.email 
+                },
+                {
+                  $set: {
+                    'recipients.$.sent': true,
+                    'recipients.$.sentAt': now,
+                    'recipients.$.delivered': true,
+                    'recipients.$.deliveredAt': now,
+                  }
+                }
+              );
+              
+              this.logger.log(`Updated recipient status for ${recipient.email} - Campaign: ${campaign._id}`);
+              
+              // Also create/update analytics entry for backward compatibility
+              await this.analyticsModel.findOneAndUpdate(
+                {
+                  campaignId: campaign._id,
+                  recipientEmail: recipient.email,
+                },
+                {
+                  $set: {
+                    userId: recipient._id,
+                    sent: true,
+                    sentAt: now,
+                    delivered: true,
+                    deliveredAt: now,
+                  },
+                  $setOnInsert: {
+                    opened: false,
+                    clicked: false,
+                    bounced: false,
+                    unsubscribed: false,
+                    openCount: 0,
+                    clickCount: 0,
+                  }
+                },
+                {
+                  new: true,
+                  upsert: true,
+                }
+              );
+            } catch (analyticsError) {
+              this.logger.error(`Failed to update recipient status for ${recipient.email}: ${analyticsError.message}`);
+              // Don't fail the email send if analytics update fails
+            }
           }),
         );
 
@@ -306,11 +457,17 @@ export class CampaignService {
       }
 
       // Update campaign status and analytics
+      // Note: We're not storing the tracked HTML to avoid bloat, 
+      // but tracking is added during send
       await this.campaignModel.findByIdAndUpdate(id, {
         status: CampaignStatus.SENT,
         sentDate: new Date(),
         'analytics.sent': sent,
         'analytics.delivered': sent,
+        'analytics.opened': 0,
+        'analytics.clicked': 0,
+        'analytics.bounced': 0,
+        'analytics.unsubscribed': 0,
       });
 
       this.logger.log(`Campaign sent: ${id}, Recipients: ${sent}, Failed: ${failed}`);
@@ -426,5 +583,73 @@ export class CampaignService {
     return content.replace(/\{\{(\w+)\}\}/g, (match, key) => {
       return data[key] || match;
     });
+  }
+
+  private addEmailTracking(htmlContent: string, campaignId: string, recipientEmail: string): string {
+    // Use local URL for development, production URL for production
+    const apiUrl = process.env.API_URL || 'http://localhost:4000';
+    const baseUrl = `${apiUrl}/api/v1`;
+    const encodedEmail = encodeURIComponent(recipientEmail);
+    
+    this.logger.log(`Adding email tracking - Campaign: ${campaignId}, Recipient: ${recipientEmail}`);
+    this.logger.log(`Using API URL: ${apiUrl}, Base URL: ${baseUrl}`);
+    
+    // Add tracking pixel for open tracking
+    // The pixel is a 1x1 transparent image that loads when the email is opened
+    const trackingPixel = `<img src="${baseUrl}/email-marketing/tracking/open/${campaignId}/${encodedEmail}.png" width="1" height="1" style="display:block;border:0;" alt="" />`;
+    
+    // Add the tracking pixel before the closing body tag
+    let trackedContent = htmlContent;
+    if (htmlContent.includes('</body>')) {
+      trackedContent = htmlContent.replace('</body>', `${trackingPixel}</body>`);
+    } else {
+      // If no body tag, add at the end
+      trackedContent = htmlContent + trackingPixel;
+    }
+    
+    // Wrap all links for click tracking
+    // Find all href links and wrap them with our tracking URL
+    let linkCount = 0;
+    trackedContent = trackedContent.replace(
+      /href="([^"]+)"/g,
+      (match, url) => {
+        // Don't track unsubscribe links, already tracked links, or mailto links
+        if (url.includes('unsubscribe') || url.includes('/tracking/') || url.startsWith('mailto:')) {
+          return match;
+        }
+        
+        // Create tracked URL
+        const encodedUrl = encodeURIComponent(url);
+        const linkId = this.generateLinkId(url);
+        const trackedUrl = `${baseUrl}/email-marketing/tracking/click/${campaignId}/${encodedEmail}?url=${encodedUrl}&linkId=${linkId}`;
+        
+        linkCount++;
+        this.logger.log(`Tracking link #${linkCount}: ${url} -> ${trackedUrl}`);
+        
+        return `href="${trackedUrl}"`;
+      }
+    );
+    
+    // Add unsubscribe link if not present
+    if (!trackedContent.includes('unsubscribe')) {
+      const unsubscribeUrl = `${baseUrl}/email-marketing/tracking/unsubscribe/${campaignId}/${encodedEmail}`;
+      const unsubscribeLink = `<div style="text-align:center;margin-top:20px;font-size:12px;color:#666;">
+        <a href="${unsubscribeUrl}" style="color:#666;text-decoration:underline;">Unsubscribe</a>
+      </div>`;
+      
+      if (trackedContent.includes('</body>')) {
+        trackedContent = trackedContent.replace('</body>', `${unsubscribeLink}</body>`);
+      } else {
+        trackedContent = trackedContent + unsubscribeLink;
+      }
+    }
+    
+    return trackedContent;
+  }
+
+  private generateLinkId(url: string): string {
+    // Generate a simple ID based on the URL
+    // In production, you might want to use a hash or store link mappings
+    return Buffer.from(url).toString('base64').substring(0, 10);
   }
 }

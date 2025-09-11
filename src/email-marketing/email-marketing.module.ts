@@ -14,6 +14,7 @@ import { CampaignController } from './controllers/campaign.controller';
 import { TemplateController } from './controllers/template.controller';
 import { RecipientController, SegmentController } from './controllers/recipient.controller';
 import { AnalyticsController } from './controllers/analytics.controller';
+import { TrackingController } from './controllers/tracking.controller';
 import { User, UserSchema } from '../users/user.schema';
 import { EventRegistration, EventRegistrationSchema } from '../event/schemas/eventRegistration.schema';
 import { EmailModule } from '../email/email.module';
@@ -46,6 +47,7 @@ import { UsersModule } from '../users/users.module';
     RecipientController,
     SegmentController,
     AnalyticsController,
+    TrackingController,
   ],
   providers: [CampaignService, TemplateService, RecipientService, AnalyticsService],
   exports: [CampaignService, TemplateService, RecipientService, AnalyticsService],

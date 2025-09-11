@@ -15,6 +15,15 @@ export class CampaignAnalytics {
   userId?: Types.ObjectId;
 
   @Prop({ default: false })
+  sent: boolean;
+
+  @Prop()
+  sentAt?: Date;
+
+  @Prop({ default: false })
+  isTestEmail: boolean;
+
+  @Prop({ default: false })
   delivered: boolean;
 
   @Prop()

@@ -1,12 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { CampaignAnalytics } from '../schemas/campaign-analytics.schema';
 import { Campaign } from '../schemas/campaign.schema';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
 
 @Injectable()
 export class AnalyticsService {
+  private readonly logger = new Logger(AnalyticsService.name);
+
   constructor(
     @InjectModel(CampaignAnalytics.name)
     private analyticsModel: Model<CampaignAnalytics>,
@@ -111,13 +113,131 @@ export class AnalyticsService {
   }
 
   async getCampaignAnalytics(campaignId: string) {
+    // First, get the campaign with recipients data
+    const campaign = await this.campaignModel.findById(campaignId).exec();
+    
+    if (campaign) {
+      this.logger.log(`Campaign found: ${campaign.name}, Recipients: ${campaign.recipients?.length || campaign.recipientEmails?.length || 0}`);
+      
+      // If campaign has recipients array with analytics, use that
+      if (campaign.recipients && campaign.recipients.length > 0) {
+        const recipients = campaign.recipients;
+        
+        const summary = {
+          sent: recipients.filter(r => r.sent).length,
+          delivered: recipients.filter(r => r.delivered).length,
+          opened: recipients.filter(r => r.opened).length,
+          clicked: recipients.filter(r => r.clicked).length,
+          bounced: recipients.filter(r => r.bounced).length,
+          unsubscribed: recipients.filter(r => r.unsubscribed).length,
+          marked_spam: 0, // We don't track this in the new structure yet
+        };
+        
+        this.logger.log(`Using embedded recipients data - Summary: ${JSON.stringify(summary)}`);
+        
+        return {
+          summary,
+          deliveryRate: summary.sent > 0 ? (summary.delivered / summary.sent) * 100 : 0,
+          openRate: summary.delivered > 0 ? (summary.opened / summary.delivered) * 100 : 0,
+          clickRate: summary.opened > 0 ? (summary.clicked / summary.opened) * 100 : 0,
+          bounceRate: summary.sent > 0 ? (summary.bounced / summary.sent) * 100 : 0,
+          unsubscribeRate: summary.delivered > 0 ? (summary.unsubscribed / summary.delivered) * 100 : 0,
+          recipients: recipients.map(r => ({
+            recipientEmail: r.email,
+            sent: r.sent,
+            sentAt: r.sentAt,
+            delivered: r.delivered,
+            deliveredAt: r.deliveredAt,
+            opened: r.opened,
+            firstOpenedAt: r.openedAt,
+            openCount: r.openCount,
+            clicked: r.clicked,
+            firstClickedAt: r.clickedAt,
+            clickCount: r.clickCount,
+            bounced: r.bounced,
+            unsubscribed: r.unsubscribed,
+          })),
+        };
+      }
+    }
+    
+    // Convert string to ObjectId for querying
+    const campaignObjectId = Types.ObjectId.isValid(campaignId) 
+      ? new Types.ObjectId(campaignId) 
+      : campaignId;
+    
+    this.logger.log(`Querying analytics for campaign: ${campaignId} (as ${campaignObjectId})`);
+    
     const analytics = await this.analyticsModel
-      .find({ campaignId })
+      .find({ campaignId: campaignObjectId })
+      .populate('userId', 'firstName lastName email')
       .sort({ createdAt: -1 })
       .exec();
 
+    this.logger.log(`Found ${analytics.length} analytics records for campaign: ${campaignId}`);
+    
+    // Also try with string campaignId if ObjectId query returns nothing
+    if (analytics.length === 0) {
+      this.logger.log(`No records found with ObjectId, trying with string campaignId: ${campaignId}`);
+      const analyticsWithString = await this.analyticsModel
+        .find({ campaignId: campaignId })
+        .populate('userId', 'firstName lastName email')
+        .sort({ createdAt: -1 })
+        .exec();
+      
+      if (analyticsWithString.length > 0) {
+        this.logger.log(`Found ${analyticsWithString.length} records with string campaignId`);
+        analytics.push(...analyticsWithString);
+      }
+    }
+    
+    // If still no analytics records but campaign has recipientEmails, create basic records
+    if (analytics.length === 0 && campaign && campaign.recipientEmails?.length > 0) {
+      this.logger.log(`No analytics records found, creating from campaign recipientEmails`);
+      
+      // Create analytics records for each recipient email
+      const createdAnalytics = [];
+      for (const email of campaign.recipientEmails) {
+        try {
+          const newAnalytics = await this.analyticsModel.findOneAndUpdate(
+            { 
+              campaignId: campaignObjectId, 
+              recipientEmail: email 
+            },
+            {
+              $setOnInsert: {
+                campaignId: campaignObjectId,
+                recipientEmail: email,
+                sent: true,
+                sentAt: campaign.sentDate || new Date(),
+                delivered: true,
+                opened: false,
+                clicked: false,
+                bounced: false,
+                unsubscribed: false,
+                openCount: 0,
+                clickCount: 0,
+              }
+            },
+            { 
+              new: true, 
+              upsert: true,
+              setDefaultsOnInsert: true
+            }
+          ).populate('userId', 'firstName lastName email').exec();
+          
+          createdAnalytics.push(newAnalytics);
+        } catch (error) {
+          this.logger.error(`Error creating analytics for ${email}: ${error.message}`);
+        }
+      }
+      
+      analytics.push(...createdAnalytics);
+      this.logger.log(`Created ${createdAnalytics.length} analytics records`);
+    }
+
     const summary = {
-      sent: analytics.length,
+      sent: analytics.filter(a => a.sent || a.delivered).length, // Count as sent if either sent or delivered
       delivered: analytics.filter(a => a.delivered).length,
       opened: analytics.filter(a => a.opened).length,
       clicked: analytics.filter(a => a.clicked).length,
@@ -206,6 +326,214 @@ export class AnalyticsService {
     ].join('\n');
 
     return csv;
+  }
+
+  async trackEmailOpen(campaignId: string, recipientEmail: string) {
+    try {
+      this.logger.log(`[trackEmailOpen] Starting for campaign: ${campaignId}, email: ${recipientEmail}`);
+      
+      // First check if analytics record exists
+      let analyticsRecord = await this.analyticsModel.findOne({
+        campaignId,
+        recipientEmail
+      });
+      
+      const isFirstOpen = !analyticsRecord?.opened;
+      
+      // Update or create analytics record
+      analyticsRecord = await this.analyticsModel.findOneAndUpdate(
+        { campaignId, recipientEmail },
+        { 
+          $set: { 
+            opened: true,
+            firstOpenedAt: isFirstOpen ? new Date() : analyticsRecord?.firstOpenedAt,
+            delivered: true, // If email is opened, it was delivered
+          },
+          $inc: { openCount: 1 },
+          $setOnInsert: {
+            sent: true,
+            sentAt: new Date(),
+            deliveredAt: new Date(),
+          }
+        },
+        { 
+          new: true, 
+          upsert: true 
+        },
+      );
+      
+      this.logger.log(`[trackEmailOpen] Analytics record updated - opened: ${analyticsRecord.opened}, openCount: ${analyticsRecord.openCount}`);
+      
+      // Update the campaign recipients array
+      const campaign = await this.campaignModel.findById(campaignId);
+      
+      if (campaign && campaign.recipients) {
+        const recipientIndex = campaign.recipients.findIndex(r => r.email === recipientEmail);
+        
+        if (recipientIndex >= 0) {
+          // Update existing recipient
+          await this.campaignModel.updateOne(
+            { 
+              _id: campaignId,
+              'recipients.email': recipientEmail 
+            },
+            {
+              $set: {
+                'recipients.$.opened': true,
+                'recipients.$.openedAt': isFirstOpen ? new Date() : campaign.recipients[recipientIndex].openedAt,
+                'recipients.$.delivered': true, // Mark as delivered if opened
+              },
+              $inc: {
+                'recipients.$.openCount': 1
+              }
+            }
+          );
+          
+          this.logger.log(`[trackEmailOpen] Updated recipient in campaign.recipients array`);
+        } else {
+          // Recipient not in array, add them
+          await this.campaignModel.updateOne(
+            { _id: campaignId },
+            {
+              $push: {
+                recipients: {
+                  email: recipientEmail,
+                  sent: true,
+                  sentAt: new Date(),
+                  delivered: true,
+                  deliveredAt: new Date(),
+                  opened: true,
+                  openedAt: new Date(),
+                  openCount: 1,
+                  clicked: false,
+                  clickCount: 0,
+                  bounced: false,
+                  unsubscribed: false,
+                }
+              }
+            }
+          );
+          
+          this.logger.log(`[trackEmailOpen] Added new recipient to campaign.recipients array`);
+        }
+      }
+      
+      // Update global campaign analytics if first open
+      if (isFirstOpen) {
+        await this.campaignModel.updateOne(
+          { _id: campaignId },
+          { $inc: { 'analytics.opened': 1 } }
+        );
+        
+        this.logger.log(`[trackEmailOpen] Incremented campaign.analytics.opened`);
+      }
+      
+      this.logger.log(`[trackEmailOpen] Completed - First Open: ${isFirstOpen}`);
+    } catch (error) {
+      this.logger.error(`Error tracking email open: ${error.message}`);
+      this.logger.error(`Error details:`, error);
+    }
+  }
+
+  async trackEmailClick(campaignId: string, recipientEmail: string, linkId?: string) {
+    try {
+      // First, update the recipient in the campaign document
+      const campaign = await this.campaignModel.findOne({
+        _id: campaignId,
+        'recipients.email': recipientEmail
+      });
+      
+      if (campaign) {
+        const recipient = campaign.recipients?.find(r => r.email === recipientEmail);
+        const isFirstClick = !recipient?.clicked;
+        
+        // Update recipient in campaign document
+        await this.campaignModel.updateOne(
+          { 
+            _id: campaignId,
+            'recipients.email': recipientEmail 
+          },
+          {
+            $set: {
+              'recipients.$.clicked': true,
+              'recipients.$.clickedAt': new Date(),
+            },
+            $inc: {
+              'recipients.$.clickCount': 1
+            }
+          }
+        );
+        
+        // Update global campaign analytics if first click
+        if (isFirstClick) {
+          await this.campaignModel.updateOne(
+            { _id: campaignId },
+            { $inc: { 'analytics.clicked': 1 } }
+          );
+        }
+        
+        this.logger.log(`Link clicked - Campaign: ${campaignId}, Recipient: ${recipientEmail}, Link: ${linkId}, First Click: ${isFirstClick}`);
+      }
+      
+      // Also update analytics collection for backward compatibility
+      const update: any = {
+        $set: { 
+          clicked: true,
+          firstClickedAt: new Date(),
+        },
+        $inc: { clickCount: 1 },
+        $setOnInsert: {
+          sent: true,
+          sentAt: new Date(),
+          delivered: true,
+          deliveredAt: new Date(),
+        }
+      };
+
+      if (linkId) {
+        update.$push = { clickedLinks: { linkId, clickedAt: new Date() } };
+      }
+
+      const result = await this.analyticsModel.findOneAndUpdate(
+        { campaignId, recipientEmail },
+        update,
+        { 
+          new: true, 
+          upsert: true 
+        },
+      );
+      
+      this.logger.log(`Analytics collection updated: ${result ? result._id : 'No result'}, ClickCount: ${result?.clickCount}`);
+    } catch (error) {
+      this.logger.error(`Error tracking email click: ${error.message}`);
+      this.logger.error(`Error details:`, error);
+    }
+  }
+
+  async trackEmailUnsubscribe(campaignId: string, recipientEmail: string) {
+    try {
+      await this.analyticsModel.findOneAndUpdate(
+        { campaignId, recipientEmail },
+        { 
+          $set: { 
+            unsubscribed: true,
+            unsubscribedAt: new Date(),
+          },
+          $setOnInsert: {
+            sent: true,
+            sentAt: new Date(),
+          }
+        },
+        { 
+          new: true, 
+          upsert: true 
+        },
+      );
+      
+      this.logger.log(`Email unsubscribed - Campaign: ${campaignId}, Recipient: ${recipientEmail}`);
+    } catch (error) {
+      this.logger.error(`Error tracking email unsubscribe: ${error.message}`);
+    }
   }
 
   async handleBrevoWebhook(event: string, data: any) {
