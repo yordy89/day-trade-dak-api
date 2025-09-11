@@ -67,6 +67,44 @@ export class Campaign {
   @Prop({ type: [String] })
   recipientEmails?: string[];
 
+  @Prop({ 
+    type: [{
+      email: String,
+      sent: { type: Boolean, default: false },
+      sentAt: Date,
+      delivered: { type: Boolean, default: false },
+      deliveredAt: Date,
+      opened: { type: Boolean, default: false },
+      openedAt: Date,
+      openCount: { type: Number, default: 0 },
+      clicked: { type: Boolean, default: false },
+      clickedAt: Date,
+      clickCount: { type: Number, default: 0 },
+      bounced: { type: Boolean, default: false },
+      bouncedAt: Date,
+      unsubscribed: { type: Boolean, default: false },
+      unsubscribedAt: Date,
+    }],
+    default: []
+  })
+  recipients?: Array<{
+    email: string;
+    sent?: boolean;
+    sentAt?: Date;
+    delivered?: boolean;
+    deliveredAt?: Date;
+    opened?: boolean;
+    openedAt?: Date;
+    openCount?: number;
+    clicked?: boolean;
+    clickedAt?: Date;
+    clickCount?: number;
+    bounced?: boolean;
+    bouncedAt?: Date;
+    unsubscribed?: boolean;
+    unsubscribedAt?: Date;
+  }>;
+
   @Prop({ default: 0 })
   recipientCount: number;
 
