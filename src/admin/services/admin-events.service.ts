@@ -526,9 +526,20 @@ export class AdminEventsService {
         (sum, r) => sum + (r.amountPaid || 0),
         0,
       );
+      
+      // Calculate total attendees
+      let totalAttendeesCount = 0;
+      registrations.forEach((reg) => {
+        totalAttendeesCount += 1; // The registrant
+        if (reg.additionalInfo?.additionalAttendees) {
+          totalAttendeesCount += reg.additionalInfo.additionalAttendees.adults || 0;
+          totalAttendeesCount += reg.additionalInfo.additionalAttendees.children || 0;
+        }
+      });
 
       doc.text(`Paid Registrations: ${paidCount}`);
       doc.text(`Free Registrations: ${freeCount}`);
+      doc.text(`Total Attendees: ${totalAttendeesCount} (Including companions)`);
       doc.text(`Total Revenue: $${totalRevenue.toFixed(2)}`);
       doc.moveDown();
 
@@ -541,10 +552,16 @@ export class AdminEventsService {
           doc.addPage();
         }
 
+        // Calculate attendees for this registration
+        const additionalAdults = reg.additionalInfo?.additionalAttendees?.adults || 0;
+        const children = reg.additionalInfo?.additionalAttendees?.children || 0;
+        const totalAttendees = 1 + additionalAdults + children;
+        
         doc.fontSize(10);
         doc.text(`${index + 1}. ${reg.firstName} ${reg.lastName}`);
         doc.text(`   Email: ${reg.email}`);
         doc.text(`   Phone: ${reg.phoneNumber || 'N/A'}`);
+        doc.text(`   Asistentes: ${totalAttendees} (${1 + additionalAdults} adulto${1 + additionalAdults > 1 ? 's' : ''}${children > 0 ? `, ${children} niño${children > 1 ? 's' : ''}` : ''})`);
         doc.text(
           `   Status: ${reg.paymentStatus} | Amount: $${reg.amountPaid || 0}`,
         );
