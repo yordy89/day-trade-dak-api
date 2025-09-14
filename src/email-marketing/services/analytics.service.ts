@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { CampaignAnalytics } from '../schemas/campaign-analytics.schema';
 import { Campaign } from '../schemas/campaign.schema';
+import { UnsubscribedEmail, UnsubscribeReason, UnsubscribeSource } from '../schemas/unsubscribed-email.schema';
+import { User } from '../../users/user.schema';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
 
 @Injectable()
@@ -14,6 +16,10 @@ export class AnalyticsService {
     private analyticsModel: Model<CampaignAnalytics>,
     @InjectModel(Campaign.name)
     private campaignModel: Model<Campaign>,
+    @InjectModel(UnsubscribedEmail.name)
+    private unsubscribedEmailModel: Model<UnsubscribedEmail>,
+    @InjectModel(User.name)
+    private userModel: Model<User>,
   ) {}
 
   async getAnalytics(filters: {
@@ -510,18 +516,27 @@ export class AnalyticsService {
     }
   }
 
-  async trackEmailUnsubscribe(campaignId: string, recipientEmail: string) {
+  async trackEmailUnsubscribe(
+    campaignId: string, 
+    recipientEmail: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
     try {
+      const now = new Date();
+      const emailLower = recipientEmail.toLowerCase().trim();
+      
+      // 1. Update campaign analytics
       await this.analyticsModel.findOneAndUpdate(
-        { campaignId, recipientEmail },
+        { campaignId, recipientEmail: emailLower },
         { 
           $set: { 
             unsubscribed: true,
-            unsubscribedAt: new Date(),
+            unsubscribedAt: now,
           },
           $setOnInsert: {
             sent: true,
-            sentAt: new Date(),
+            sentAt: now,
           }
         },
         { 
@@ -530,9 +545,91 @@ export class AnalyticsService {
         },
       );
       
-      this.logger.log(`Email unsubscribed - Campaign: ${campaignId}, Recipient: ${recipientEmail}`);
+      // 2. Add to global unsubscribe list
+      const existingUnsubscribe = await this.unsubscribedEmailModel.findOne({
+        email: emailLower,
+        isActive: true,
+      });
+      
+      if (!existingUnsubscribe) {
+        // Find user by email if exists
+        const user = await this.userModel.findOne({ email: emailLower });
+        
+        await this.unsubscribedEmailModel.create({
+          email: emailLower,
+          userId: user?._id,
+          campaignId: new Types.ObjectId(campaignId),
+          reason: UnsubscribeReason.USER_REQUEST,
+          source: UnsubscribeSource.EMAIL_LINK,
+          unsubscribedAt: now,
+          ipAddress,
+          userAgent,
+          isActive: true,
+        });
+        
+        this.logger.log(`Added ${emailLower} to global unsubscribe list`);
+      }
+      
+      // 3. Update user preferences if user exists
+      const user = await this.userModel.findOne({ email: emailLower });
+      if (user) {
+        await this.userModel.updateOne(
+          { _id: user._id },
+          {
+            $set: {
+              'emailPreferences.marketing': false,
+              'emailPreferences.newsletter': false,
+              'emailPreferences.events': false,
+              'emailPreferences.educational': false,
+              'emailPreferences.promotional': false,
+              'emailPreferences.unsubscribedAt': now,
+              // Note: transactional emails remain true for important notifications
+            }
+          }
+        );
+        
+        this.logger.log(`Updated email preferences for user: ${user._id}`);
+      }
+      
+      // 4. Update campaign statistics
+      await this.campaignModel.updateOne(
+        { _id: campaignId },
+        { 
+          $inc: { 
+            'analytics.unsubscribed': 1,
+          }
+        }
+      );
+      
+      // 5. Update recipient status in campaign if exists
+      const campaign = await this.campaignModel.findById(campaignId);
+      if (campaign?.recipients) {
+        const recipientIndex = campaign.recipients.findIndex(
+          r => r.email?.toLowerCase() === emailLower
+        );
+        
+        if (recipientIndex !== -1) {
+          await this.campaignModel.updateOne(
+            { 
+              _id: campaignId,
+              'recipients.email': emailLower 
+            },
+            {
+              $set: {
+                'recipients.$.unsubscribed': true,
+                'recipients.$.unsubscribedAt': now,
+              }
+            }
+          );
+        }
+      }
+      
+      this.logger.log(`Complete unsubscribe process for ${emailLower} from campaign ${campaignId}`);
+      return { success: true, email: emailLower };
+      
     } catch (error) {
-      this.logger.error(`Error tracking email unsubscribe: ${error.message}`);
+      this.logger.error(`Error in complete unsubscribe process: ${error.message}`, error);
+      throw error;
     }
   }
 

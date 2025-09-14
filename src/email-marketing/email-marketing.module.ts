@@ -6,6 +6,7 @@ import { Campaign, CampaignSchema } from './schemas/campaign.schema';
 import { EmailTemplate, EmailTemplateSchema } from './schemas/email-template.schema';
 import { CampaignAnalytics, CampaignAnalyticsSchema } from './schemas/campaign-analytics.schema';
 import { RecipientSegment, RecipientSegmentSchema } from './schemas/recipient-segment.schema';
+import { UnsubscribedEmail, UnsubscribedEmailSchema } from './schemas/unsubscribed-email.schema';
 import { CampaignService } from './services/campaign.service';
 import { TemplateService } from './services/template.service';
 import { RecipientService } from './services/recipient.service';
@@ -27,6 +28,7 @@ import { UsersModule } from '../users/users.module';
       { name: EmailTemplate.name, schema: EmailTemplateSchema },
       { name: CampaignAnalytics.name, schema: CampaignAnalyticsSchema },
       { name: RecipientSegment.name, schema: RecipientSegmentSchema },
+      { name: UnsubscribedEmail.name, schema: UnsubscribedEmailSchema },
       { name: User.name, schema: UserSchema },
       { name: EventRegistration.name, schema: EventRegistrationSchema },
     ]),

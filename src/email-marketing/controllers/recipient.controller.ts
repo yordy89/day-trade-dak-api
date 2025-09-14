@@ -35,6 +35,12 @@ import { RequestWithUser } from '../../types/request-with-user.interface';
 export class RecipientController {
   constructor(private readonly recipientService: RecipientService) {}
 
+  @Get('brevo-lists')
+  @ApiOperation({ summary: 'Get all Brevo marketing lists' })
+  async getBrevoLists() {
+    return this.recipientService.getBrevoLists();
+  }
+
   @Post('preview')
   @ApiOperation({ summary: 'Preview filtered recipients' })
   async previewRecipients(
@@ -60,7 +66,16 @@ export class RecipientController {
   async getRecipientCount(
     @Body() filters: RecipientFilterDto,
   ) {
+    // Log incoming filters for debugging
+    console.log('Recipient count requested with filters:', JSON.stringify({
+      eventIds: filters.eventIds,
+      subscriptions: filters.subscriptions,
+      noSubscription: filters.noSubscription,
+    }));
+    
     const count = await this.recipientService.getRecipientCount(filters);
+    console.log('Recipient count result:', count);
+    
     return { count };
   }
 }

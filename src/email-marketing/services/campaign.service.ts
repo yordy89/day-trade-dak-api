@@ -16,6 +16,8 @@ import {
   CampaignAnalytics,
   CampaignAnalyticsDocument,
 } from '../schemas/campaign-analytics.schema';
+import { UnsubscribedEmail } from '../schemas/unsubscribed-email.schema';
+import { User } from '../../users/user.schema';
 import { CreateCampaignDto } from '../dto/create-campaign.dto';
 import { UpdateCampaignDto } from '../dto/update-campaign.dto';
 import { SendTestEmailDto } from '../dto/send-test-email.dto';
@@ -33,6 +35,10 @@ export class CampaignService {
     private campaignModel: Model<CampaignDocument>,
     @InjectModel(CampaignAnalytics.name)
     private analyticsModel: Model<CampaignAnalyticsDocument>,
+    @InjectModel(UnsubscribedEmail.name)
+    private unsubscribedEmailModel: Model<UnsubscribedEmail>,
+    @InjectModel(User.name)
+    private userModel: Model<User>,
     private recipientService: RecipientService,
     private templateService: TemplateService,
     private emailService: EmailService,
@@ -315,11 +321,52 @@ export class CampaignService {
         campaign.recipientEmails,
       );
 
-      this.logger.log(`Sending campaign ${id} to ${recipients.count} recipients`);
+      this.logger.log(`Initial recipients for campaign ${id}: ${recipients.count}`);
+      
+      // Filter out unsubscribed emails
+      const unsubscribedEmails = await this.unsubscribedEmailModel
+        .find({ isActive: true })
+        .select('email')
+        .lean();
+      
+      const unsubscribedSet = new Set(
+        unsubscribedEmails.map(u => u.email.toLowerCase())
+      );
+      
+      // Also check user preferences for registered users
+      const usersWithOptOut = await this.userModel
+        .find({
+          $or: [
+            { 'emailPreferences.marketing': false },
+            { 'emailPreferences.newsletter': false },
+            { 'emailPreferences.events': false },
+            { 'emailPreferences.promotional': false },
+          ]
+        })
+        .select('email')
+        .lean();
+      
+      usersWithOptOut.forEach(user => {
+        if (user.email) {
+          unsubscribedSet.add(user.email.toLowerCase());
+        }
+      });
+      
+      // Filter recipients
+      const filteredRecipients = recipients.emails.filter(
+        r => !unsubscribedSet.has(r.email?.toLowerCase())
+      );
+      
+      const removedCount = recipients.emails.length - filteredRecipients.length;
+      if (removedCount > 0) {
+        this.logger.log(`Removed ${removedCount} unsubscribed emails from campaign ${id}`);
+      }
+      
+      this.logger.log(`Sending campaign ${id} to ${filteredRecipients.length} recipients (after filtering)`);
       
       // Store the actual recipient emails and initialize recipients array
-      const recipientEmailsList = recipients.emails.map(r => r.email);
-      const recipientsData = recipients.emails.map(r => ({
+      const recipientEmailsList = filteredRecipients.map(r => r.email);
+      const recipientsData = filteredRecipients.map(r => ({
         email: r.email,
         sent: false,
         delivered: false,
@@ -334,7 +381,7 @@ export class CampaignService {
       await this.campaignModel.findByIdAndUpdate(id, {
         recipientEmails: recipientEmailsList,
         recipients: recipientsData,
-        recipientCount: recipients.count,
+        recipientCount: filteredRecipients.length,
       });
 
       let htmlContent = campaign.htmlContent;
@@ -359,8 +406,8 @@ export class CampaignService {
       let sent = 0;
       let failed = 0;
 
-      for (let i = 0; i < recipients.emails.length; i += batchSize) {
-        const batch = recipients.emails.slice(i, i + batchSize);
+      for (let i = 0; i < filteredRecipients.length; i += batchSize) {
+        const batch = filteredRecipients.slice(i, i + batchSize);
         
         const results = await Promise.allSettled(
           batch.map(async (recipient) => {
