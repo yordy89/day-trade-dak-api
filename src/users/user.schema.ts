@@ -98,6 +98,38 @@ export class User extends Document {
   @Prop()
   passwordResetExpires?: Date;
 
+  // Email marketing preferences
+  @Prop({ 
+    type: {
+      marketing: { type: Boolean, default: true },
+      newsletter: { type: Boolean, default: true },
+      events: { type: Boolean, default: true },
+      educational: { type: Boolean, default: true },
+      promotional: { type: Boolean, default: true },
+      transactional: { type: Boolean, default: true }, // Always true for important emails
+      unsubscribedAt: Date,
+      resubscribedAt: Date,
+    },
+    default: {
+      marketing: true,
+      newsletter: true,
+      events: true,
+      educational: true,
+      promotional: true,
+      transactional: true,
+    }
+  })
+  emailPreferences?: {
+    marketing: boolean;
+    newsletter: boolean;
+    events: boolean;
+    educational: boolean;
+    promotional: boolean;
+    transactional: boolean;
+    unsubscribedAt?: Date;
+    resubscribedAt?: Date;
+  };
+
   @Prop()
   createdAt?: Date;
 

@@ -3,11 +3,12 @@ import {
   Get,
   Param,
   Query,
+  Req,
   Res,
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AnalyticsService } from '../services/analytics.service';
 
 @Controller('email-marketing/tracking')
@@ -111,15 +112,27 @@ export class TrackingController {
   async trackUnsubscribe(
     @Param('campaignId') campaignId: string,
     @Param('recipientEmail') recipientEmail: string,
+    @Req() req: Request,
     @Res() res: Response,
   ) {
     try {
       // Decode the email address
       const decodedEmail = decodeURIComponent(recipientEmail);
       
-      await this.analyticsService.trackEmailUnsubscribe(campaignId, decodedEmail);
+      // Get IP address and user agent for tracking
+      const ipAddress = req.headers['x-forwarded-for'] as string || 
+                       req.connection?.remoteAddress || 
+                       req.socket?.remoteAddress;
+      const userAgent = req.headers['user-agent'];
       
-      this.logger.log(`Unsubscribe - Campaign: ${campaignId}, Recipient: ${decodedEmail}`);
+      await this.analyticsService.trackEmailUnsubscribe(
+        campaignId, 
+        decodedEmail,
+        ipAddress,
+        userAgent,
+      );
+      
+      this.logger.log(`Unsubscribe - Campaign: ${campaignId}, Recipient: ${decodedEmail}, IP: ${ipAddress}`);
 
       // Redirect to unsubscribe confirmation page
       res.redirect(HttpStatus.MOVED_PERMANENTLY, 'https://daytradedak.com/unsubscribe-success');

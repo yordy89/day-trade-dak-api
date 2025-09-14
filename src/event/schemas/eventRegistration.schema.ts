@@ -7,8 +7,8 @@ export type EventRegistrationDocument = EventRegistration & Document;
 
 @Schema({ timestamps: true })
 export class EventRegistration {
-  @Prop({ type: Types.ObjectId, ref: 'Event', required: true })
-  eventId: Types.ObjectId;
+  @Prop({ type: String, required: true })
+  eventId: string;
 
   @Prop({ required: true })
   firstName: string;

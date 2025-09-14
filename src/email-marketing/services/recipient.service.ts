@@ -30,86 +30,148 @@ export class RecipientService {
       const query: any = {};
       let emails: any[] = [];
 
-      // Apply subscription filters
-      if (filters.subscriptions?.length) {
-        query['subscriptions.plan'] = { $in: filters.subscriptions };
-        query['subscriptions.expiresAt'] = { $gt: new Date() };
-      }
-
-      // Filter for users without active subscriptions
-      if (filters.noSubscription) {
-        query.$or = [
-          { subscriptions: { $exists: false } },
-          { subscriptions: { $size: 0 } },
-          { 'subscriptions.expiresAt': { $lte: new Date() } },
-        ];
-      }
-
-      // Apply status filters
-      if (filters.status?.length) {
-        query.status = { $in: filters.status };
-      }
-
-      // Apply role filters
-      if (filters.roles?.length) {
-        query.role = { $in: filters.roles };
-      }
-
-      // Apply module permission filters
-      if (filters.modulePermissions?.length) {
-        const permissionQueries = filters.modulePermissions.map((perm) => ({
-          [perm]: true,
-        }));
-        query.$and = query.$and || [];
-        query.$and.push({ $or: permissionQueries });
-      }
-
-      // Apply last login filter
-      if (filters.lastLoginDays) {
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - filters.lastLoginDays);
-        query.lastLogin = { $gte: cutoffDate };
-      }
-
-      // Apply registration date range
-      if (filters.registrationDateRange || filters.registrationStartDate || filters.registrationEndDate) {
-        query.createdAt = {};
-        if (filters.registrationDateRange?.start || filters.registrationStartDate) {
-          query.createdAt.$gte = new Date(
-            filters.registrationDateRange?.start || filters.registrationStartDate
-          );
-        }
-        if (filters.registrationDateRange?.end || filters.registrationEndDate) {
-          query.createdAt.$lte = new Date(
-            filters.registrationDateRange?.end || filters.registrationEndDate
-          );
-        }
-      }
-
-      // Get users from database
-      const users = await this.userModel
-        .find(query)
-        .select('email firstName lastName subscriptions status role createdAt')
-        .lean();
-
-      emails = users.map((user) => ({
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        _id: user._id,
-        subscriptions: user.subscriptions,
-        status: user.status,
-        role: user.role,
+      // Log incoming filters for debugging
+      this.logger.log('getFilteredRecipients called with filters:', JSON.stringify({
+        eventIds: filters.eventIds,
+        subscriptions: filters.subscriptions,
+        noSubscription: filters.noSubscription,
+        countOnly: filters.countOnly,
       }));
+
+      // Check if only event filters are applied (no other user filters)
+      const hasUserFilters = filters.subscriptions?.length || 
+        filters.noSubscription || 
+        filters.status?.length || 
+        filters.roles?.length || 
+        filters.modulePermissions?.length || 
+        filters.lastLoginDays || 
+        filters.registrationStartDate || 
+        filters.registrationEndDate;
+
+      // Only query users if there are user-specific filters
+      if (hasUserFilters) {
+        // Apply subscription filters
+        if (filters.subscriptions?.length) {
+          query['subscriptions.plan'] = { $in: filters.subscriptions };
+          query['subscriptions.expiresAt'] = { $gt: new Date() };
+        }
+
+        // Filter for users without active subscriptions
+        if (filters.noSubscription) {
+          query.$or = [
+            { subscriptions: { $exists: false } },
+            { subscriptions: { $size: 0 } },
+            { 'subscriptions.expiresAt': { $lte: new Date() } },
+          ];
+        }
+
+        // Apply status filters
+        if (filters.status?.length) {
+          query.status = { $in: filters.status };
+        }
+
+        // Apply role filters
+        if (filters.roles?.length) {
+          query.role = { $in: filters.roles };
+        }
+
+        // Apply module permission filters
+        if (filters.modulePermissions?.length) {
+          const permissionQueries = filters.modulePermissions.map((perm) => ({
+            [perm]: true,
+          }));
+          query.$and = query.$and || [];
+          query.$and.push({ $or: permissionQueries });
+        }
+
+        // Apply last login filter
+        if (filters.lastLoginDays) {
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - filters.lastLoginDays);
+          query.lastLogin = { $gte: cutoffDate };
+        }
+
+        // Apply registration date range
+        if (filters.registrationDateRange || filters.registrationStartDate || filters.registrationEndDate) {
+          query.createdAt = {};
+          if (filters.registrationDateRange?.start || filters.registrationStartDate) {
+            query.createdAt.$gte = new Date(
+              filters.registrationDateRange?.start || filters.registrationStartDate
+            );
+          }
+          if (filters.registrationDateRange?.end || filters.registrationEndDate) {
+            query.createdAt.$lte = new Date(
+              filters.registrationDateRange?.end || filters.registrationEndDate
+            );
+          }
+        }
+
+        // Get users from database
+        const users = await this.userModel
+          .find(query)
+          .select('email firstName lastName subscriptions status role createdAt')
+          .lean();
+
+        emails = users.map((user) => ({
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          _id: user._id,
+          subscriptions: user.subscriptions,
+          status: user.status,
+          role: user.role,
+        }));
+      }
 
       // Apply event filters
       if (filters.eventIds?.length) {
+        // EventId is stored as STRING in the database, not ObjectId!
+        // Just use the string IDs directly
+        const eventIdStrings = filters.eventIds.map((id: any) => {
+          // Convert ObjectId to string if needed, otherwise use as-is
+          return typeof id === 'object' && id.toString ? id.toString() : String(id);
+        });
+
+        this.logger.log(`Searching for registrations in events (as strings): ${eventIdStrings.join(', ')}`);
+
+        // First, let's check what's in the database with string comparison
+        const totalEventRegs = await this.eventRegistrationModel.countDocuments({
+          eventId: { $in: eventIdStrings }
+        });
+        this.logger.log(`Total registrations for these events (any status): ${totalEventRegs}`);
+
+        // Check different payment statuses with string eventId
+        const paidRegs = await this.eventRegistrationModel.countDocuments({
+          eventId: { $in: eventIdStrings },
+          paymentStatus: 'paid'
+        });
+        const freeRegs = await this.eventRegistrationModel.countDocuments({
+          eventId: { $in: eventIdStrings },
+          paymentStatus: 'free'
+        });
+        const pendingRegs = await this.eventRegistrationModel.countDocuments({
+          eventId: { $in: eventIdStrings },
+          paymentStatus: 'pending'
+        });
+        
+        this.logger.log(`Breakdown - Paid: ${paidRegs}, Free: ${freeRegs}, Pending: ${pendingRegs}`);
+
+        // Now get the actual registrations with string eventId
         const eventRegistrations = await this.eventRegistrationModel
           .find({
-            eventId: { $in: filters.eventIds.map((id) => new Types.ObjectId(id)) },
-            paymentStatus: 'paid',
+            eventId: { $in: eventIdStrings },
+            // Only include paid and free registrations for email campaigns
+            paymentStatus: { $in: ['paid', 'free'] }
           })
-          .select('email firstName lastName userId');
+          .select('email firstName lastName userId paymentStatus');
+        
+        // Log what payment statuses we're seeing
+        if (eventRegistrations.length > 0) {
+          const statusSample = eventRegistrations.slice(0, 5).map(r => r.paymentStatus || 'null');
+          this.logger.log(`Sample payment statuses: ${statusSample.join(', ')}`);
+        }
+
+        this.logger.log(`Found ${eventRegistrations.length} event registrations (after filtering)`);
 
         const eventEmails = eventRegistrations.map((reg) => ({
           email: reg.email,
@@ -118,14 +180,18 @@ export class RecipientService {
           _id: reg.userId,
         }));
 
-        // Merge with existing emails (remove duplicates)
-        const emailSet = new Set(emails.map((e) => e.email));
-        eventEmails.forEach((e) => {
-          if (!emailSet.has(e.email)) {
-            emails.push(e);
-            emailSet.add(e.email);
-          }
-        });
+        // Use the same hasUserFilters variable from above for consistency
+        if (!hasUserFilters) {
+          // If only event filters are applied (no user filters), use only event registrations
+          emails = eventEmails;
+          this.logger.log(`Using only event registrations: ${eventEmails.length} emails`);
+        } else {
+          // When combining with other filters, intersect the results
+          // Only include users who match both the user filters AND are registered for the events
+          const eventEmailSet = new Set(eventEmails.map((e) => e.email));
+          emails = emails.filter((e) => eventEmailSet.has(e.email));
+          this.logger.log(`Intersecting user and event filters: ${emails.length} emails after intersection`);
+        }
       }
 
       // Get emails from Brevo lists
@@ -171,17 +237,22 @@ export class RecipientService {
         emails = emails.filter((e) => !excludeSet.has(e.email));
       }
 
+      // Store total count before pagination
+      const totalCount = emails.length;
+      
+      this.logger.log(`Total recipients found: ${totalCount}, hasUserFilters: ${hasUserFilters}, eventIds: ${filters.eventIds?.length || 0}`);
+      
       // Apply pagination if needed
       const offset = filters.offset || 0;
       const limit = filters.limit;
       
-      if (limit) {
+      if (limit && !filters.countOnly) {
         emails = emails.slice(offset, offset + limit);
       }
 
       return {
-        emails,
-        count: emails.length,
+        emails: filters.countOnly ? [] : emails, // Don't return emails if only counting
+        count: totalCount, // Return total count, not paginated count
         query,
       };
     } catch (error) {
@@ -190,38 +261,116 @@ export class RecipientService {
     }
   }
 
+  async getBrevoLists(): Promise<any[]> {
+    try {
+      const response = await axios.get(
+        'https://api.brevo.com/v3/contacts/lists',
+        {
+          headers: {
+            'api-key': this.brevoApiKey,
+            'Content-Type': 'application/json',
+          },
+          params: {
+            limit: 50,
+            offset: 0,
+          },
+        },
+      );
+
+      const lists = response.data.lists || [];
+      
+      // Get count for each list
+      const listsWithCounts = await Promise.all(
+        lists.map(async (list) => {
+          try {
+            const countResponse = await axios.get(
+              `https://api.brevo.com/v3/contacts/lists/${list.id}/contacts`,
+              {
+                headers: {
+                  'api-key': this.brevoApiKey,
+                  'Content-Type': 'application/json',
+                },
+                params: {
+                  limit: 1,
+                },
+              },
+            );
+            
+            return {
+              id: list.id,
+              name: list.name,
+              totalSubscribers: countResponse.data.count || 0,
+              folderId: list.folderId,
+            };
+          } catch (error) {
+            this.logger.error(`Error getting count for list ${list.id}:`, error);
+            return {
+              id: list.id,
+              name: list.name,
+              totalSubscribers: 0,
+              folderId: list.folderId,
+            };
+          }
+        }),
+      );
+
+      return listsWithCounts;
+    } catch (error) {
+      this.logger.error('Error fetching Brevo lists:', error);
+      return [];
+    }
+  }
+
   async getEmailsFromBrevoLists(listIds: number[]): Promise<any[]> {
     try {
       const allContacts = [];
 
       for (const listId of listIds) {
-        const response = await axios.get(
-          `https://api.brevo.com/v3/contacts/lists/${listId}/contacts`,
-          {
-            headers: {
-              'api-key': this.brevoApiKey,
-              'Content-Type': 'application/json',
+        let offset = 0;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const response = await axios.get(
+            `https://api.brevo.com/v3/contacts/lists/${listId}/contacts`,
+            {
+              headers: {
+                'api-key': this.brevoApiKey,
+                'Content-Type': 'application/json',
+              },
+              params: {
+                limit: 500,
+                offset: offset,
+              },
             },
-            params: {
-              limit: 500,
-              offset: 0,
-            },
-          },
-        );
+          );
 
-        const contacts = response.data.contacts || [];
-        allContacts.push(
-          ...contacts.map((c) => ({
-            email: c.email,
-            firstName: c.attributes?.FIRSTNAME,
-            lastName: c.attributes?.LASTNAME,
-          })),
-        );
+          const contacts = response.data.contacts || [];
+          allContacts.push(
+            ...contacts.map((c) => ({
+              email: c.email,
+              firstName: c.attributes?.FIRSTNAME,
+              lastName: c.attributes?.LASTNAME,
+            })),
+          );
+          
+          // Check if there are more contacts to fetch
+          if (contacts.length < 500) {
+            hasMore = false;
+          } else {
+            offset += 500;
+          }
+          
+          // Safety limit to prevent infinite loops
+          if (offset > 10000) {
+            this.logger.warn(`Reached safety limit for list ${listId}`);
+            hasMore = false;
+          }
+        }
       }
 
       return allContacts;
     } catch (error) {
-      this.logger.error('Error fetching Brevo lists:', error);
+      this.logger.error('Error fetching contacts from Brevo:', error);
       return [];
     }
   }
