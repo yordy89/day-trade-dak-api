@@ -428,8 +428,9 @@ export class CampaignService {
             // Log tracking status
             this.logger.log(`Sending to ${recipient.email} with tracking:`, {
               hasPixel: personalizedContent.includes('/tracking/open/'),
-              hasTrackedLinks: personalizedContent.includes('/tracking/click/'),
-              contentLength: personalizedContent.length
+              hasUnsubscribeLink: personalizedContent.includes('/tracking/unsubscribe/'),
+              contentLength: personalizedContent.length,
+              note: 'Link tracking handled by Brevo'
             });
             
             // Send email via Brevo
@@ -638,8 +639,9 @@ export class CampaignService {
     const baseUrl = `${apiUrl}/api/v1`;
     const encodedEmail = encodeURIComponent(recipientEmail);
     
-    this.logger.log(`Adding email tracking - Campaign: ${campaignId}, Recipient: ${recipientEmail}`);
+    this.logger.log(`Adding open tracking pixel - Campaign: ${campaignId}, Recipient: ${recipientEmail}`);
     this.logger.log(`Using API URL: ${apiUrl}, Base URL: ${baseUrl}`);
+    this.logger.log('Note: Link tracking will be handled by Brevo automatically');
     
     // Add tracking pixel for open tracking
     // The pixel is a 1x1 transparent image that loads when the email is opened
@@ -654,28 +656,13 @@ export class CampaignService {
       trackedContent = htmlContent + trackingPixel;
     }
     
-    // Wrap all links for click tracking
-    // Find all href links and wrap them with our tracking URL
-    let linkCount = 0;
-    trackedContent = trackedContent.replace(
-      /href="([^"]+)"/g,
-      (match, url) => {
-        // Don't track unsubscribe links, already tracked links, or mailto links
-        if (url.includes('unsubscribe') || url.includes('/tracking/') || url.startsWith('mailto:')) {
-          return match;
-        }
-        
-        // Create tracked URL
-        const encodedUrl = encodeURIComponent(url);
-        const linkId = this.generateLinkId(url);
-        const trackedUrl = `${baseUrl}/email-marketing/tracking/click/${campaignId}/${encodedEmail}?url=${encodedUrl}&linkId=${linkId}`;
-        
-        linkCount++;
-        this.logger.log(`Tracking link #${linkCount}: ${url} -> ${trackedUrl}`);
-        
-        return `href="${trackedUrl}"`;
-      }
-    );
+    // IMPORTANT: We're NOT adding custom link tracking anymore
+    // Brevo automatically wraps all links with their tracking URLs
+    // Double-wrapping breaks the links, so we let Brevo handle link tracking
+    // We still keep our open tracking pixel for analytics
+    
+    // Note: Brevo's link tracking cannot be disabled for transactional emails
+    // This is a known limitation of their API
     
     // Add unsubscribe link if not present
     if (!trackedContent.includes('unsubscribe')) {
