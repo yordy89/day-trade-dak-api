@@ -3,6 +3,8 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ContentVideo, ContentVideoSchema } from './schemas/content-video.schema';
 import { ContentService } from './content.service';
 import { ContentController } from './content.controller';
+import { RecordingsController } from './recordings.controller';
+import { RecordingsService } from './recordings.service';
 import { S3Module } from '../aws/s3/s3.module';
 import { BullModule } from '@nestjs/bull';
 import { VideoProcessorService } from './services/video-processor.service';
@@ -28,9 +30,10 @@ import { UsersModule } from '../users/users.module';
     AuthModule,
     UsersModule,
   ],
-  controllers: [ContentController],
+  controllers: [ContentController, RecordingsController],
   providers: [
     ContentService,
+    RecordingsService,
     VideoProcessorService,
     VideoUploadService,
     VideoNotificationService,

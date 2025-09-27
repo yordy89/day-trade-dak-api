@@ -376,6 +376,12 @@ export class MeetingsService {
       // Check if user is super admin
       const isSuperAdmin = user.role === Role.SUPER_ADMIN;
 
+      // Check if user has the allowLiveWeeklyAccess flag set to true
+      const hasAllowLiveWeeklyAccess = user.allowLiveWeeklyAccess === true;
+
+      // Check if user has the allowLiveMeetingAccess flag set to true
+      const hasAllowLiveMeetingAccess = user.allowLiveMeetingAccess === true;
+
       // Check if user has admin access through module permissions for live meetings
       const hasLiveWeeklyAccess = await this.modulePermissionsService.hasModuleAccess(
         userId,
@@ -407,7 +413,7 @@ export class MeetingsService {
         return hasValidPlan && isActive && notExpired;
       });
 
-      if (!isSuperAdmin && !hasLiveWeeklyAccess && !hasLiveSubscription) {
+      if (!isSuperAdmin && !hasAllowLiveWeeklyAccess && !hasAllowLiveMeetingAccess && !hasLiveWeeklyAccess && !hasLiveSubscription) {
         throw new ForbiddenException('You do not have access to this meeting');
       }
     }

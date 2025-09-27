@@ -33,6 +33,10 @@ import {
   webinarRegistrationTemplate,
   WebinarRegistrationData,
 } from './templates/webinar-registration.template';
+import {
+  newUserEventTemplate,
+  NewUserEventData,
+} from './templates/new-user-event.template';
 
 @Injectable()
 export class EmailService {
@@ -253,6 +257,23 @@ export class EmailService {
         error.response?.data || error.message,
       );
       throw new Error('Failed to send email');
+    }
+  }
+
+  async sendNewUserEventEmail(to: string, data: NewUserEventData) {
+    try {
+      const html = newUserEventTemplate(data);
+      const subject = `🎉 ¡Bienvenido a DayTradeDak! - Cuenta creada para ${data.eventName}`;
+
+      const result = await this.send(to, subject, html);
+      this.logger.log(`New user event email sent to ${to}`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Failed to send new user event email to ${to}`,
+        error,
+      );
+      throw error;
     }
   }
 

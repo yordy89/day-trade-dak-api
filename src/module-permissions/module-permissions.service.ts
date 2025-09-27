@@ -13,8 +13,14 @@ import {
 } from './module-permission.schema';
 import { CreateModulePermissionDto } from './dto/create-module-permission.dto';
 import { UpdateModulePermissionDto } from './dto/update-module-permission.dto';
+import {
+  GrantEventPermissionsDto,
+  GrantEventPermissionsResponseDto
+} from './dto/grant-event-permissions.dto';
 import { User, UserDocument } from '../users/user.schema';
 import { CustomLoggerService } from '../logger/logger.service';
+import { EmailService } from '../email/email.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class ModulePermissionsService {
@@ -24,6 +30,7 @@ export class ModulePermissionsService {
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
     private readonly logger: CustomLoggerService,
+    private readonly emailService: EmailService,
   ) {}
 
   async create(
@@ -370,5 +377,165 @@ export class ModulePermissionsService {
       granted: result.upsertedCount + result.modifiedCount,
       total: userIds.length,
     };
+  }
+
+  private generateTemporaryPassword(): string {
+    // Generate a secure temporary password
+    const length = 12;
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+      password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return password;
+  }
+
+  async grantEventPermissions(
+    dto: GrantEventPermissionsDto,
+    grantedBy: string,
+  ): Promise<GrantEventPermissionsResponseDto> {
+    const response: GrantEventPermissionsResponseDto = {
+      permissionsGranted: 0,
+      usersCreated: 0,
+      usersUpdated: 0,
+      totalProcessed: 0,
+      createdUsers: [],
+      errors: [],
+    };
+
+    for (const participant of dto.participants) {
+      try {
+        let userId: string;
+        let isNewUser = false;
+        let temporaryPassword: string | null = null;
+
+        // Check if user exists by email
+        let user = await this.userModel.findOne({ email: participant.email });
+
+        if (!user) {
+          // Create new user
+          temporaryPassword = this.generateTemporaryPassword();
+          const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+
+          user = new this.userModel({
+            email: participant.email,
+            firstName: participant.firstName,
+            lastName: participant.lastName,
+            fullName: `${participant.firstName} ${participant.lastName}`.trim(),
+            password: hashedPassword,
+            role: 'user',
+            status: 'active',
+            subscriptions: [],
+            activeSubscriptions: [],
+          });
+
+          await user.save();
+          isNewUser = true;
+          response.usersCreated++;
+
+          userId = user._id.toString();
+
+          // Add to created users list
+          response.createdUsers.push({
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            temporaryPassword,
+            userId,
+          });
+
+          this.logger.log(
+            `Created new user ${user.email} for event ${dto.eventName}`,
+            'ModulePermissionsService',
+          );
+        } else {
+          userId = user._id.toString();
+          response.usersUpdated++;
+        }
+
+        // Grant permissions for each module type
+        for (const moduleType of dto.moduleTypes) {
+          try {
+            // Check for existing active permission
+            const existingPermission = await this.modulePermissionModel.findOne({
+              userId,
+              moduleType,
+              isActive: true,
+            });
+
+            if (existingPermission) {
+              // Update existing permission
+              existingPermission.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : undefined;
+              existingPermission.reason = dto.reason || `Access for event: ${dto.eventName}`;
+              existingPermission.grantedBy = new Types.ObjectId(grantedBy);
+              await existingPermission.save();
+            } else {
+              // Create new permission
+              const permission = new this.modulePermissionModel({
+                userId,
+                moduleType,
+                hasAccess: true,
+                isActive: true,
+                expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+                reason: dto.reason || `Access for event: ${dto.eventName}`,
+                grantedBy: new Types.ObjectId(grantedBy),
+              });
+              await permission.save();
+            }
+
+            response.permissionsGranted++;
+          } catch (error) {
+            this.logger.error(
+              `Failed to grant ${moduleType} permission to ${participant.email}: ${error.message}`,
+              'ModulePermissionsService',
+            );
+          }
+        }
+
+        // Send welcome email to new users
+        if (isNewUser && temporaryPassword) {
+          try {
+            await this.emailService.sendNewUserEventEmail(user.email, {
+              firstName: user.firstName,
+              lastName: user.lastName,
+              email: user.email,
+              temporaryPassword,
+              eventName: dto.eventName || 'Evento de DayTradeDak',
+              modules: dto.moduleTypes,
+              expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+            });
+
+            this.logger.log(
+              `Welcome email sent to new user ${user.email}`,
+              'ModulePermissionsService',
+            );
+          } catch (emailError) {
+            this.logger.error(
+              `Failed to send welcome email to ${user.email}: ${emailError.message}`,
+              'ModulePermissionsService',
+            );
+            // Don't fail the whole process if email fails
+          }
+        }
+
+        response.totalProcessed++;
+      } catch (error) {
+        response.errors.push({
+          email: participant.email,
+          error: error.message,
+        });
+        this.logger.error(
+          `Failed to process participant ${participant.email}: ${error.message}`,
+          'ModulePermissionsService',
+        );
+      }
+    }
+
+    this.logger.log(
+      `Event permissions granted: ${response.permissionsGranted} permissions, ${response.usersCreated} users created, ${response.usersUpdated} users updated`,
+      'ModulePermissionsService',
+    );
+
+    return response;
   }
 }

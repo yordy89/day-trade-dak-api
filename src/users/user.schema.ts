@@ -98,6 +98,12 @@ export class User extends Document {
   @Prop()
   passwordResetExpires?: Date;
 
+  @Prop({ default: false })
+  acceptedMediaUsageTerms?: boolean;
+
+  @Prop()
+  mediaUsageTermsAcceptedAt?: Date;
+
   // Email marketing preferences
   @Prop({ 
     type: {

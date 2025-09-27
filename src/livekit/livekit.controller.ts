@@ -87,17 +87,18 @@ export class LiveKitController {
     });
     
     const hasLivePermission = user.allowLiveMeetingAccess === true;
-    
-    const hasModulePermission = user.modulePermissions?.some((perm: any) => 
-      perm.module === 'LIVE_WEEKLY' && 
+    const hasLiveWeeklyAccess = user.allowLiveWeeklyAccess === true;
+
+    const hasModulePermission = user.modulePermissions?.some((perm: any) =>
+      perm.module === 'LIVE_WEEKLY' &&
       perm.hasAccess === true &&
       (!perm.expiresAt || new Date(perm.expiresAt) > new Date())
     );
-    
+
     const isSuperAdmin = user.role === 'SUPER_ADMIN';
-    
+
     // Check if user has any form of live access
-    const hasLiveAccess = hasLiveSubscription || hasLivePermission || hasModulePermission || isSuperAdmin;
+    const hasLiveAccess = hasLiveSubscription || hasLivePermission || hasLiveWeeklyAccess || hasModulePermission || isSuperAdmin;
     
     // If not host and no live access, deny token generation
     if (!isHost && !hasLiveAccess) {
