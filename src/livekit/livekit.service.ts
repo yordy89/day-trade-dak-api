@@ -2,7 +2,14 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { AccessToken, RoomServiceClient, ParticipantInfo } from 'livekit-server-sdk';
+import {
+  AccessToken,
+  RoomServiceClient,
+  ParticipantInfo,
+  EgressClient,
+  EncodedFileOutput,
+  S3Upload
+} from 'livekit-server-sdk';
 import { Meeting, MeetingDocument } from '../schemas/meeting.schema';
 import { CreateLiveKitRoomDto } from './dto/create-livekit-room.dto';
 import { JoinLiveKitRoomDto } from './dto/join-livekit-room.dto';
@@ -14,6 +21,7 @@ import { WebSocketGateway } from '../websockets/websockets.gateway';
 export class LiveKitService {
   private readonly logger = new Logger(LiveKitService.name);
   private roomService: RoomServiceClient;
+  private egressClient: EgressClient;
   private config: LiveKitConfig;
 
   constructor(
@@ -36,6 +44,12 @@ export class LiveKitService {
     };
 
     this.roomService = new RoomServiceClient(
+      this.config.httpUrl,
+      this.config.apiKey,
+      this.config.apiSecret,
+    );
+
+    this.egressClient = new EgressClient(
       this.config.httpUrl,
       this.config.apiKey,
       this.config.apiSecret,
@@ -265,18 +279,28 @@ export class LiveKitService {
   private async handleRoomFinished(webhook: LiveKitWebhookDto): Promise<void> {
     if (!webhook.room) return;
 
-    const meeting = await this.meetingModel.findOne({ 
-      livekitRoomName: webhook.room.name 
+    const meeting = await this.meetingModel.findOne({
+      livekitRoomName: webhook.room.name
     });
 
     if (meeting) {
-      meeting.status = 'completed';
-      meeting.endedAt = new Date();
-      await meeting.save();
-      this.logger.log(`Meeting ${meeting._id} finished`);
-      
-      // Emit WebSocket event
-      await this.wsGateway.emitMeetingEnded(meeting._id.toString());
+      // Only mark as completed if it was explicitly ended or all participants left
+      // Check if the room is truly empty (no participants)
+      const numParticipants = webhook.room.numParticipants || 0;
+
+      if (numParticipants === 0) {
+        // Room is empty, safe to mark as completed
+        meeting.status = 'completed';
+        meeting.endedAt = new Date();
+        await meeting.save();
+        this.logger.log(`Meeting ${meeting._id} finished (room empty)`);
+
+        // Emit WebSocket event
+        await this.wsGateway.emitMeetingEnded(meeting._id.toString());
+      } else {
+        // Room still has participants, don't end the meeting
+        this.logger.log(`Room finished event for meeting ${meeting._id} but ${numParticipants} participants still present`);
+      }
     }
   }
 
@@ -308,39 +332,35 @@ export class LiveKitService {
   private async handleParticipantLeft(webhook: LiveKitWebhookDto): Promise<void> {
     if (!webhook.room || !webhook.participant) return;
 
-    const meeting = await this.meetingModel.findOne({ 
-      livekitRoomName: webhook.room.name 
+    const meeting = await this.meetingModel.findOne({
+      livekitRoomName: webhook.room.name
     }).populate('host');
 
     if (meeting) {
       this.logger.log(`Participant ${webhook.participant.name} (${webhook.participant.identity}) left meeting ${meeting._id}`);
-      
+
       // Check if the leaving participant is the host
-      const participantMetadata = webhook.participant.metadata ? 
+      const participantMetadata = webhook.participant.metadata ?
         JSON.parse(webhook.participant.metadata) : {};
-      const isHost = participantMetadata.isHost || 
+      const isHost = participantMetadata.isHost ||
         webhook.participant.identity === meeting.host._id?.toString() ||
         webhook.participant.identity === meeting.host.toString();
 
       if (isHost) {
-        this.logger.log(`Host is leaving meeting ${meeting._id}, ending meeting for all participants`);
-        
-        // Delete the LiveKit room to disconnect all participants
-        try {
-          await this.roomService.deleteRoom(meeting.livekitRoomName);
-          this.logger.log(`LiveKit room ${meeting.livekitRoomName} deleted`);
-        } catch (error) {
-          this.logger.error(`Failed to delete LiveKit room: ${error.message}`);
-        }
-        
-        // Update meeting status
-        meeting.status = 'completed';
-        meeting.endedAt = new Date();
-        await meeting.save();
-        
-        // Emit meeting ended event
-        await this.wsGateway.emitMeetingEnded(meeting._id.toString());
-        await this.wsGateway.emitMeetingStatusUpdate(meeting._id.toString(), 'completed');
+        // Host left, but don't automatically end the meeting
+        // Only end it if explicitly requested via endMeetingByHost API
+        this.logger.log(`Host left meeting ${meeting._id}, but meeting continues`);
+
+        // Emit event that host has left (but don't end the meeting)
+        await this.wsGateway.emitLiveKitParticipantLeft({
+          meetingId: meeting._id.toString(),
+          participantId: webhook.participant.sid,
+          participantName: webhook.participant.name || webhook.participant.identity,
+        });
+
+        // Optional: You could implement a grace period here
+        // For example, end the meeting after 5 minutes if host doesn't return
+        // But for now, we'll let the meeting continue until explicitly ended
       } else {
         // Regular participant left
         await this.wsGateway.emitLiveKitParticipantLeft({
@@ -468,10 +488,18 @@ export class LiveKitService {
       throw new NotFoundException('Meeting not found');
     }
 
-    // Check if user is host
-    const isHost = meeting.host._id?.toString() === userId || 
-                   meeting.host.toString() === userId;
-    
+    // Check if user is host - handle both populated and non-populated cases
+    let isHost = false;
+    if (meeting.host && typeof meeting.host === 'object' && meeting.host._id) {
+      // Host is populated - compare both as strings
+      isHost = meeting.host._id.toString() === userId.toString();
+    } else if (meeting.host) {
+      // Host is just an ID - compare as strings
+      isHost = meeting.host.toString() === userId.toString();
+    }
+
+    this.logger.log(`Recording check - Host ID: ${meeting.host._id || meeting.host}, User ID: ${userId}, Is Host: ${isHost}`);
+
     if (!isHost) {
       throw new BadRequestException('Only the host can start recording');
     }
@@ -480,27 +508,56 @@ export class LiveKitService {
       throw new BadRequestException('Meeting does not have a LiveKit room');
     }
 
-    // Note: LiveKit recording requires Egress service to be configured
-    // This is a placeholder for when Egress is set up
-    this.logger.log(`Recording requested for room ${meeting.livekitRoomName}`);
-    
-    // Update meeting to indicate recording
-    meeting.isRecording = true;
-    await meeting.save();
+    try {
+      // Start room composite egress to record the entire room
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `${meeting.livekitRoomName}-${timestamp}.mp4`;
 
-    // In production, you would start the actual recording here using LiveKit Egress API
-    // Example:
-    // const recording = await this.roomService.startRoomCompositeEgress(
-    //   meeting.livekitRoomName,
-    //   { file: { filepath: `recordings/${meetingId}.mp4` } }
-    // );
+      this.logger.log(`Starting recording for room ${meeting.livekitRoomName} with filename ${filename}`);
 
-    return { 
-      success: true, 
-      message: 'Recording started',
-      meetingId,
-      roomName: meeting.livekitRoomName 
-    };
+      // Create S3 upload configuration
+      const s3Upload = new S3Upload({
+        accessKey: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
+        secret: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
+        bucket: 'day-trade-dak-recordings',
+        region: this.configService.get<string>('AWS_REGION', 'us-east-1'),
+      });
+
+      // Create file output with S3 upload
+      const fileOutput = new EncodedFileOutput({
+        filepath: filename,
+        output: {
+          case: 's3',
+          value: s3Upload,
+        },
+      });
+
+      const egressInfo = await this.egressClient.startRoomCompositeEgress(
+        meeting.livekitRoomName,
+        {
+          file: fileOutput,
+        }
+      );
+
+      // Store egress ID for stopping later
+      meeting.isRecording = true;
+      meeting.egressId = egressInfo.egressId;
+      await meeting.save();
+
+      this.logger.log(`Recording started with egress ID: ${egressInfo.egressId}`);
+
+      return {
+        success: true,
+        message: 'Recording started',
+        meetingId,
+        roomName: meeting.livekitRoomName,
+        egressId: egressInfo.egressId,
+        filename
+      };
+    } catch (error) {
+      this.logger.error(`Failed to start recording: ${error.message}`);
+      throw new BadRequestException(`Failed to start recording: ${error.message}`);
+    }
   }
 
   /**
@@ -512,25 +569,49 @@ export class LiveKitService {
       throw new NotFoundException('Meeting not found');
     }
 
-    // Check if user is host
-    const isHost = meeting.host._id?.toString() === userId || 
-                   meeting.host.toString() === userId;
-    
+    // Check if user is host - handle both populated and non-populated cases
+    let isHost = false;
+    if (meeting.host && typeof meeting.host === 'object' && meeting.host._id) {
+      // Host is populated - compare both as strings
+      isHost = meeting.host._id.toString() === userId.toString();
+    } else if (meeting.host) {
+      // Host is just an ID - compare as strings
+      isHost = meeting.host.toString() === userId.toString();
+    }
+
     if (!isHost) {
       throw new BadRequestException('Only the host can stop recording');
     }
 
-    // Update meeting to indicate recording stopped
-    meeting.isRecording = false;
-    await meeting.save();
+    try {
+      // Stop the egress if we have an ID
+      if (meeting.egressId) {
+        this.logger.log(`Stopping egress with ID: ${meeting.egressId}`);
+        await this.egressClient.stopEgress(meeting.egressId);
+      }
 
-    this.logger.log(`Recording stopped for room ${meeting.livekitRoomName}`);
+      // Update meeting to indicate recording stopped
+      meeting.isRecording = false;
+      meeting.egressId = null;
+      await meeting.save();
 
-    return { 
-      success: true, 
-      message: 'Recording stopped',
-      meetingId,
-      roomName: meeting.livekitRoomName 
-    };
+      this.logger.log(`Recording stopped for room ${meeting.livekitRoomName}`);
+
+      return {
+        success: true,
+        message: 'Recording stopped',
+        meetingId,
+        roomName: meeting.livekitRoomName
+      };
+    } catch (error) {
+      this.logger.error(`Failed to stop recording: ${error.message}`);
+
+      // Even if stopping fails, update the database
+      meeting.isRecording = false;
+      meeting.egressId = null;
+      await meeting.save();
+
+      throw new BadRequestException(`Failed to stop recording: ${error.message}`);
+    }
   }
 }

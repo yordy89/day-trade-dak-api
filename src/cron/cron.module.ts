@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { StripeModule } from 'src/payments/stripe/stripe.module';
 import { CronService } from './cron.service';
 import { SubscriptionSyncCron } from './subscription-sync.cron';
+import { AnnouncementCronService } from './announcement-cron.service';
 import { CronController } from './cron.controller';
 import { UsersModule } from 'src/users/users.module';
 import { EmailModule } from 'src/email/email.module';
@@ -14,6 +15,7 @@ import { UserSchema } from 'src/users/user.schema';
 import { TransactionSchema } from 'src/payments/stripe/transaction.schema';
 import { SubscriptionHistorySchema } from 'src/payments/stripe/subscription-history.schema';
 import { ModulePermissionsModule } from 'src/module-permissions/module-permissions.module';
+import { AnnouncementModule } from 'src/announcement/announcement.module';
 
 @Module({
   imports: [
@@ -36,9 +38,10 @@ import { ModulePermissionsModule } from 'src/module-permissions/module-permissio
     AuthModule,
     GuardsModule,
     ModulePermissionsModule,
+    AnnouncementModule,
   ],
   controllers: [CronController],
-  providers: [CronService, SubscriptionSyncCron],
+  providers: [CronService, SubscriptionSyncCron, AnnouncementCronService],
   exports: [SubscriptionSyncCron],
 })
 export class CronModule {}

@@ -23,6 +23,7 @@ import { Role } from '../constants';
 import { ModulePermissionsService } from './module-permissions.service';
 import { CreateModulePermissionDto } from './dto/create-module-permission.dto';
 import { UpdateModulePermissionDto } from './dto/update-module-permission.dto';
+import { GrantEventPermissionsDto } from './dto/grant-event-permissions.dto';
 import { ModuleType } from './module-permission.schema';
 import { RequestWithUser } from '../types/request-with-user.interface';
 
@@ -160,5 +161,24 @@ export class ModulePermissionsController {
       message: `Expired ${count} permissions`,
       expiredCount: count,
     };
+  }
+
+  @Post('grant-event-permissions')
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Grant module permissions to event participants, creating users if needed',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Permissions granted and users created successfully',
+  })
+  async grantEventPermissions(
+    @Body() dto: GrantEventPermissionsDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.modulePermissionsService.grantEventPermissions(
+      dto,
+      req.user._id.toString(),
+    );
   }
 }

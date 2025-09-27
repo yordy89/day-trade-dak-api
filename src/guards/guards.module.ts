@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from './jwt-auth-guard';
 import { RolesGuard } from './roles.guard';
+import { AdminGuard } from './admin.guard';
 import { ModuleAccessGuard } from './module-access.guard';
 import { UsersModule } from '../users/users.module';
 import { ModulePermissionsModule } from '../module-permissions/module-permissions.module';
@@ -23,7 +24,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
       }),
     }),
   ],
-  providers: [JwtAuthGuard, RolesGuard, ModuleAccessGuard],
-  exports: [JwtAuthGuard, RolesGuard, ModuleAccessGuard],
+  providers: [JwtAuthGuard, RolesGuard, AdminGuard, ModuleAccessGuard],
+  exports: [JwtAuthGuard, RolesGuard, AdminGuard, ModuleAccessGuard],
 })
 export class GuardsModule {}

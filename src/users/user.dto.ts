@@ -30,6 +30,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsEnum(Role)
   role: Role;
+
+  @IsOptional()
+  @IsBoolean()
+  acceptedMediaUsageTerms?: boolean;
 }
 
 export class UpdateUserDto {

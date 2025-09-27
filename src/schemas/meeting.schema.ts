@@ -42,6 +42,9 @@ export class Meeting {
   @Prop({ default: false })
   isRecording: boolean;
 
+  @Prop()
+  egressId?: string;
+
   @Prop({ enum: ['daily', 'weekly', 'monthly'] })
   recurringType?: string;
 

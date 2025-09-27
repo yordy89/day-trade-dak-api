@@ -10,6 +10,7 @@ import { UsersModule } from '../users/users.module';
 import { User, UserSchema } from '../users/user.schema';
 import { LoggerModule } from '../logger/logger.module';
 import { AuthModule } from '../auth/auth.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AuthModule } from '../auth/auth.module';
     forwardRef(() => UsersModule),
     LoggerModule,
     AuthModule,
+    EmailModule,
   ],
   controllers: [ModulePermissionsController],
   providers: [ModulePermissionsService],
