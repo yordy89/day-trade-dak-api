@@ -86,6 +86,8 @@ export interface CreateUserInput {
   email: string;
   password: string;
   role?: Role;
+  acceptedMediaUsageTerms?: boolean;
+  mediaUsageTermsAcceptedAt?: Date;
 }
 
 export enum TradingPhases {
