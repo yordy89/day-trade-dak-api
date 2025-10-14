@@ -25,6 +25,6 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     }),
   ],
   providers: [JwtAuthGuard, RolesGuard, AdminGuard, ModuleAccessGuard],
-  exports: [JwtAuthGuard, RolesGuard, AdminGuard, ModuleAccessGuard],
+  exports: [JwtAuthGuard, RolesGuard, AdminGuard, ModuleAccessGuard, JwtModule],
 })
 export class GuardsModule {}

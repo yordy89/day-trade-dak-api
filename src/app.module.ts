@@ -51,6 +51,7 @@ import { AffiliateModule } from './affiliate/affiliate.module';
 import { LocalFinancingModule } from './payments/local-financing/local-financing.module';
 import { EmailMarketingModule } from './email-marketing/email-marketing.module';
 import { AnnouncementModule } from './announcement/announcement.module';
+import { TradingJournalModule } from './trading-journal/trading-journal.module';
 
 @Module({
   controllers: [TestUploadController],
@@ -127,6 +128,7 @@ import { AnnouncementModule } from './announcement/announcement.module';
     LocalFinancingModule,
     EmailMarketingModule,
     AnnouncementModule,
+    TradingJournalModule,
   ],
   providers: [
     {
