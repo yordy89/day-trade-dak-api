@@ -107,6 +107,9 @@ export class ModulePermissionsService {
       [ModuleType.LIVE_RECORDED]: 'LiveRecorded',
       [ModuleType.MASTER_CLASSES]: 'MasterClases',
       [ModuleType.PSICOTRADING]: 'Psicotrading',
+      [ModuleType.PEACE_WITH_MONEY]: 'PeaceWithMoney',
+      [ModuleType.MASTER_COURSE]: 'MasterCourse',
+      [ModuleType.STOCKS]: 'Stocks',
     };
 
     // Special case: Live Recorded is automatically accessible with Live Weekly subscriptions
