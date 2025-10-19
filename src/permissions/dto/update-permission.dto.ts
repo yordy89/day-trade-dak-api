@@ -35,6 +35,21 @@ export class UpdatePermissionDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsBoolean()
+  emailMarketing?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  financing?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  messages?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
   content?: boolean;
 
   @ApiProperty({ required: false })

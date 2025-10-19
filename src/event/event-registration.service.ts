@@ -38,6 +38,11 @@ export class EventRegistrationsService {
     try {
       await this.validateNotRegistered(eventId, email); // ✅ New line
 
+      // Generate registration number if not provided
+      if (!createEventRegistrationDto.registrationNumber) {
+        createEventRegistrationDto.registrationNumber = this.generateRegistrationNumber();
+      }
+
       const createdRegistration = new this.eventRegistrationModel({
         ...createEventRegistrationDto,
         email: email.toLowerCase(),
@@ -108,6 +113,22 @@ export class EventRegistrationsService {
         'Ya te has registrado con este correo electrónico.',
       );
     }
+  }
+
+  private generateRegistrationNumber(): string {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    // Generate random alphanumeric code (5 characters)
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude similar looking chars
+    let code = '';
+    for (let i = 0; i < 5; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    return `REG-${year}${month}${day}-${code}`;
   }
 
   async findByEvent(eventId: string) {

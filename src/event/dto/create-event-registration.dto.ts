@@ -63,4 +63,36 @@ export class CreateEventRegistrationDto {
   @IsOptional()
   @IsNumber()
   klarnaFee?: number;
+
+  // Partial payment fields
+  @IsOptional()
+  @IsString()
+  registrationNumber?: string;
+
+  @IsOptional()
+  @IsEnum(['full', 'partial'])
+  paymentMode?: 'full' | 'partial';
+
+  @IsOptional()
+  @IsNumber()
+  totalAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  totalPaid?: number;
+
+  @IsOptional()
+  @IsNumber()
+  remainingBalance?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isFullyPaid?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  depositPaid?: number;
+
+  @IsOptional()
+  paymentHistory?: any[];
 }

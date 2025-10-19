@@ -7,6 +7,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import Stripe from 'stripe';
@@ -43,6 +44,7 @@ export class StripeService {
   private logger = new Logger(StripeService.name);
 
   constructor(
+    private moduleRef: ModuleRef,
     private configService: ConfigService,
     private userService: UserService,
     @Inject(forwardRef(() => EventRegistrationsService))
@@ -277,6 +279,12 @@ export class StripeService {
     userId?: string;
     paymentMethod?: 'card' | 'klarna' | 'afterpay' | 'local_financing';
     financingPlanId?: string; // For local financing
+    // Partial payment fields
+    isPartialPayment?: boolean;
+    paymentId?: string;
+    amount?: number; // For partial payments
+    description?: string;
+    registrationId?: string;
     // Affiliate/referral fields
     affiliateCode?: string;
     affiliateId?: string;
@@ -294,6 +302,11 @@ export class StripeService {
       additionalInfo,
       userId,
       paymentMethod = 'card',
+      isPartialPayment,
+      paymentId,
+      amount: partialPaymentAmount,
+      description: paymentDescription,
+      registrationId,
       affiliateCode,
       affiliateId,
       discountAmount,
@@ -386,18 +399,26 @@ export class StripeService {
     let adultsCount = 0;
     let childrenCount = 0;
 
-    if (additionalInfo?.additionalAttendees) {
-      adultsCount = additionalInfo.additionalAttendees.adults || 0;
-      childrenCount = additionalInfo.additionalAttendees.children || 0;
-      // Adult: $75, Child: $48
-      totalPrice += adultsCount * 75 + childrenCount * 48;
+    // If this is a partial payment, use the specified amount instead
+    if (isPartialPayment && partialPaymentAmount) {
+      totalPrice = partialPaymentAmount;
+      this.logger.log(`🔵 Partial payment detected - Amount: $${totalPrice}`);
+      this.logger.log(`🔵 Payment ID: ${paymentId}`);
+      this.logger.log(`🔵 Registration ID: ${registrationId}`);
+    } else {
+      if (additionalInfo?.additionalAttendees) {
+        adultsCount = additionalInfo.additionalAttendees.adults || 0;
+        childrenCount = additionalInfo.additionalAttendees.children || 0;
+        // Adult: $75, Child: $48
+        totalPrice += adultsCount * 75 + childrenCount * 48;
 
-      this.logger.log(
-        `Additional attendees: ${adultsCount} adults, ${childrenCount} children`,
-      );
-      this.logger.log(
-        `Price calculation: Base $${event.price} + Adults $${adultsCount * 75} + Children $${childrenCount * 48} = Total $${totalPrice}`,
-      );
+        this.logger.log(
+          `Additional attendees: ${adultsCount} adults, ${childrenCount} children`,
+        );
+        this.logger.log(
+          `Price calculation: Base $${event.price} + Adults $${adultsCount * 75} + Children $${childrenCount * 48} = Total $${totalPrice}`,
+        );
+      }
     }
 
     // Store the original price before any modifications
@@ -482,14 +503,25 @@ export class StripeService {
     this.logger.log(`Payment method: ${paymentMethod}`);
     this.logger.log(`Total price: $${totalPrice.toFixed(2)} USD`);
 
+    // Determine success URL based on payment type
+    let successUrl: string;
+    if (isPartialPayment) {
+      // Redirect to partial payment success page
+      successUrl = event.type === 'master_course'
+        ? `${this.configService.get<string>('FRONTEND_URL')}/master-course/partial-payment-success?session_id={CHECKOUT_SESSION_ID}&registration_id=${registrationId || ''}`
+        : `${this.configService.get<string>('FRONTEND_URL')}/community-event/partial-payment-success?session_id={CHECKOUT_SESSION_ID}&registration_id=${registrationId || ''}`;
+    } else {
+      // Redirect to full payment success page
+      successUrl = event.type === 'master_course'
+        ? `${this.configService.get<string>('FRONTEND_URL')}/master-course/success?session_id={CHECKOUT_SESSION_ID}`
+        : `${this.configService.get<string>('FRONTEND_URL')}/community-event/success?session_id={CHECKOUT_SESSION_ID}&event=${eventId}`;
+    }
+
     const session = await this.stripe.checkout.sessions.create({
       payment_method_types: paymentMethods,
       mode: 'payment',
       line_items: [{ price: price.id, quantity: 1 }],
-      success_url:
-        event.type === 'master_course'
-          ? `${this.configService.get<string>('FRONTEND_URL')}/master-course/success?session_id={CHECKOUT_SESSION_ID}`
-          : `${this.configService.get<string>('FRONTEND_URL')}/community-event/success?session_id={CHECKOUT_SESSION_ID}&event=${eventId}`,
+      success_url: successUrl,
       cancel_url: `${this.configService.get<string>('FRONTEND_URL')}/${event.type === 'master_course' ? 'master-course' : 'community-event'}`,
       customer_email: email,
       // Klarna requires shipping address collection
@@ -533,6 +565,11 @@ export class StripeService {
         registrationType: event.requiresActiveSubscription
           ? 'member_exclusive'
           : 'paid',
+        // Partial payment metadata
+        isPartialPayment: isPartialPayment ? 'true' : 'false',
+        paymentId: paymentId || '',
+        registrationId: registrationId || '',
+        paymentDescription: paymentDescription || '',
         // Additional attendee metadata
         basePrice: (event.price || 0).toString(),
         additionalAdults: adultsCount.toString(),
@@ -561,6 +598,9 @@ export class StripeService {
         finalPrice: totalPrice.toString(),
       },
     });
+
+    this.logger.log(`✅ Stripe checkout session created: ${session.id}`);
+    this.logger.log(`✅ Checkout URL: ${session.url}`);
 
     return { url: session.url, sessionId: session.id };
   }
@@ -1225,6 +1265,8 @@ export class StripeService {
       // Create event registration (if we have a valid event)
       let registration: any;
       if (event && actualEventId !== 'master-course-default') {
+        const totalAmount = session.amount_total ? session.amount_total / 100 : 0;
+
         registration = await this.eventRegistrationsService.create({
           eventId: actualEventId,
           firstName,
@@ -1236,11 +1278,19 @@ export class StripeService {
           additionalInfo: parsedAdditionalInfo,
           registrationType: registrationType || 'paid',
           paymentStatus: 'paid',
-          amountPaid: session.amount_total ? session.amount_total / 100 : 0,
+          amountPaid: totalAmount,
+          // Add partial payment fields for consistency (full payment in one go)
+          totalAmount: totalAmount,
+          totalPaid: totalAmount,
+          remainingBalance: 0,
+          isFullyPaid: true,
+          paymentMode: 'full',
           stripeSessionId: session.id,
           paymentMethod: session.metadata?.paymentMethod || 'card',
           klarnaFee: parseFloat(session.metadata?.klarnaFee || '0'),
         });
+
+        this.logger.log(`✅ Event registration created for ${email} - Amount: $${totalAmount}`);
 
         // Update event registration count
         event.currentRegistrations = (event.currentRegistrations || 0) + 1;
@@ -1547,6 +1597,45 @@ export class StripeService {
     const currency = session.currency || 'usd';
     const subscriptionId = session.subscription as string;
     const paymentMethod = session.payment_method_types?.[0] || 'card';
+
+    // Handle Partial Payment for Events
+    if (session.metadata?.isPartialPayment === 'true' && session.metadata?.paymentId) {
+      this.logger.log('💰 Processing partial payment for event registration');
+
+      try {
+        const paymentId = session.metadata.paymentId;
+        const paymentIntentId = session.payment_intent as string;
+
+        // Get receipt URL from payment intent if available
+        let receiptUrl: string | undefined;
+        try {
+          if (paymentIntentId) {
+            const paymentIntent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
+            receiptUrl = (paymentIntent as any).charges?.data?.[0]?.receipt_url;
+          }
+        } catch (error) {
+          this.logger.warn('Could not retrieve receipt URL:', error);
+        }
+
+        // Import EventPartialPaymentService dynamically to avoid circular dependency
+        const { EventPartialPaymentService } = await import('../../event/event-partial-payment.service');
+        const partialPaymentService = this.moduleRef.get(EventPartialPaymentService, { strict: false });
+
+        if (partialPaymentService) {
+          await partialPaymentService.processSuccessfulPayment(
+            paymentId,
+            paymentIntentId,
+            receiptUrl,
+          );
+          this.logger.log(`✅ Partial payment processed: ${paymentId}`);
+        } else {
+          this.logger.error('EventPartialPaymentService not found');
+        }
+      } catch (error) {
+        this.logger.error('Error processing partial payment:', error);
+      }
+      return;
+    }
 
     // Handle VIP event registration
     if (session.metadata?.eventId && session.metadata?.isVip === 'true') {

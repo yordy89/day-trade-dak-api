@@ -82,6 +82,14 @@ export class AdminEventsController {
           notIncluded: event.notIncluded,
           requirements: event.requirements,
           contact: event.contact,
+          // Payment settings
+          paymentMode: event.paymentMode,
+          minimumDepositAmount: event.minimumDepositAmount,
+          depositPercentage: event.depositPercentage,
+          minimumInstallmentAmount: event.minimumInstallmentAmount,
+          allowedFinancingPlans: event.allowedFinancingPlans,
+          allowCustomPaymentPlan: event.allowCustomPaymentPlan,
+          paymentSettings: event.paymentSettings,
           createdAt: event.createdAt,
           updatedAt: event.updatedAt,
         })),
@@ -310,9 +318,20 @@ export class AdminEventsController {
         status: 'success',
       });
 
+      console.log('🔵 Admin Controller - Raw registration data from service:', result.data[0]);
+
       // Map the response to match frontend expectations
       const mappedResult = {
-        registrations: result.data.map((reg: any) => ({
+        registrations: result.data.map((reg: any) => {
+          console.log('🔵 Mapping registration in controller:', {
+            _id: reg._id,
+            totalPaid: reg.totalPaid,
+            totalAmount: reg.totalAmount,
+            remainingBalance: reg.remainingBalance,
+            paymentMode: reg.paymentMode,
+          });
+
+          return {
           _id: reg._id,
           eventId: reg.eventId,
           user: {
@@ -329,14 +348,21 @@ export class AdminEventsController {
           ticketType: reg.ticketType || (reg.isVip ? 'vip' : 'regular'),
           status: reg.paymentStatus === 'paid' ? 'confirmed' : 'pending',
           paymentStatus: reg.paymentStatus,
-          paymentAmount: reg.amount || reg.amountPaid || 0,
+          paymentAmount: reg.totalPaid || reg.amount || reg.amountPaid || 0,
           stripePaymentIntentId: reg.transactionId || reg.stripeSessionId,
           registrationDate: reg.registeredAt || reg.createdAt,
           createdAt: reg.createdAt,
           updatedAt: reg.updatedAt,
           additionalInfo: reg.additionalInfo,
           checkedIn: reg.checkedIn || false,
-        })),
+          // Partial payment fields
+          totalAmount: reg.totalAmount,
+          totalPaid: reg.totalPaid,
+          remainingBalance: reg.remainingBalance,
+          isFullyPaid: reg.isFullyPaid,
+          paymentMode: reg.paymentMode,
+          };
+        }),
         total: result.total,
         page: result.page,
         limit: limit,
