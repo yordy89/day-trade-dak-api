@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import { TradeType } from 'src/constants';
+import { TradeType } from '../constants';
 import { v4 as uuid } from 'uuid';
 
 @Schema()

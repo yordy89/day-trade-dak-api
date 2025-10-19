@@ -147,8 +147,24 @@ export class AdminEventsService {
         paymentStatus: 'free',
       }),
       this.registrationModel.aggregate([
-        { $match: { eventId: event._id, paymentStatus: { $in: ['paid', 'completed'] } } },
-        { $group: { _id: null, total: { $sum: '$amountPaid' } } },
+        { $match: { eventId: id } }, // Use string ID instead of ObjectId
+        {
+          $project: {
+            paidAmount: {
+              $cond: {
+                if: { $gt: ['$totalPaid', 0] },
+                then: '$totalPaid',
+                else: { $ifNull: ['$amountPaid', 0] }
+              }
+            }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$paidAmount' }
+          }
+        },
       ]),
     ]);
 
@@ -219,6 +235,9 @@ export class AdminEventsService {
     if (!event) {
       throw new NotFoundException('Event not found');
     }
+
+    // Invalidate all event caches to ensure fresh data is loaded
+    await this.invalidateEventCache();
 
     return event;
   }
@@ -325,8 +344,20 @@ export class AdminEventsService {
       this.registrationModel.countDocuments(query),
     ]);
 
+    console.log('🔵 SERVICE - Raw registration from DB:', registrations[0]);
+
     // Map registrations to ensure the frontend gets the expected format
-    const mappedRegistrations = registrations.map((reg: any) => ({
+    const mappedRegistrations = registrations.map((reg: any) => {
+      console.log('🔵 SERVICE - Mapping registration:', {
+        _id: reg._id,
+        totalPaid: reg.totalPaid,
+        totalAmount: reg.totalAmount,
+        remainingBalance: reg.remainingBalance,
+        paymentMode: reg.paymentMode,
+        amountPaid: reg.amountPaid,
+      });
+
+      return {
       _id: reg._id,
       // Don't use userId - use the registration's actual data
       userId: reg.userId, // Keep the userId reference but don't populate it
@@ -336,7 +367,7 @@ export class AdminEventsService {
         reg.paymentStatus === 'paid' ? 'completed' : reg.paymentStatus,
       paymentMethod: reg.paymentMethod,
       transactionId: reg.stripeSessionId,
-      amount: reg.amountPaid || 0,
+      amount: reg.totalPaid || reg.amountPaid || 0,
       registeredAt: reg.createdAt,
       checkedIn: reg.checkedIn || false,
       checkedInAt: reg.checkedInAt,
@@ -350,9 +381,18 @@ export class AdminEventsService {
       phoneNumber: reg.phoneNumber,
       isVip: reg.isVip,
       amountPaid: reg.amountPaid,
+      // Partial payment fields
+      totalAmount: reg.totalAmount,
+      totalPaid: reg.totalPaid,
+      remainingBalance: reg.remainingBalance,
+      isFullyPaid: reg.isFullyPaid,
+      paymentMode: reg.paymentMode,
       // Include additionalInfo for attendees information
       additionalInfo: reg.additionalInfo,
-    }));
+      };
+    });
+
+    console.log('🔵 SERVICE - Mapped result sample:', mappedRegistrations[0]);
 
     return {
       data: mappedRegistrations,
@@ -406,7 +446,7 @@ export class AdminEventsService {
         reg.phoneNumber || '',
         new Date(reg.createdAt).toLocaleString(),
         reg.paymentStatus,
-        reg.amountPaid || 0,
+        reg.totalPaid || reg.amountPaid || 0,
         reg.registrationType,
         additionalAdults,
         children,
@@ -475,7 +515,7 @@ export class AdminEventsService {
         reg.phoneNumber || '',
         new Date(reg.createdAt).toLocaleString(),
         reg.paymentStatus,
-        reg.amountPaid || 0,
+        reg.totalPaid || reg.amountPaid || 0,
         reg.registrationType,
         additionalAdults,
         children,
@@ -523,7 +563,7 @@ export class AdminEventsService {
         (r) => r.paymentStatus === 'free',
       ).length;
       const totalRevenue = registrations.reduce(
-        (sum, r) => sum + (r.amountPaid || 0),
+        (sum, r) => sum + (r.totalPaid || r.amountPaid || 0),
         0,
       );
       
@@ -563,7 +603,7 @@ export class AdminEventsService {
         doc.text(`   Phone: ${reg.phoneNumber || 'N/A'}`);
         doc.text(`   Asistentes: ${totalAttendees} (${1 + additionalAdults} adulto${1 + additionalAdults > 1 ? 's' : ''}${children > 0 ? `, ${children} niño${children > 1 ? 's' : ''}` : ''})`);
         doc.text(
-          `   Status: ${reg.paymentStatus} | Amount: $${reg.amountPaid || 0}`,
+          `   Status: ${reg.paymentStatus} | Amount: $${reg.totalPaid || reg.amountPaid || 0}`,
         );
         doc.moveDown(0.5);
       });
@@ -607,17 +647,17 @@ export class AdminEventsService {
       (r: any) => r.isVip === false,
     ).length;
 
-    // Calculate revenue
+    // Calculate revenue (support both partial and full payments)
     const totalRevenue = registrations.reduce(
-      (sum, r: any) => sum + (r.amountPaid || 0),
+      (sum, r: any) => sum + (r.totalPaid || r.amountPaid || 0),
       0,
     );
     const vipRevenue = registrations
       .filter((r: any) => r.isVip === true)
-      .reduce((sum, r: any) => sum + (r.amountPaid || 0), 0);
+      .reduce((sum, r: any) => sum + (r.totalPaid || r.amountPaid || 0), 0);
     const generalRevenue = registrations
       .filter((r: any) => r.isVip === false)
-      .reduce((sum, r: any) => sum + (r.amountPaid || 0), 0);
+      .reduce((sum, r: any) => sum + (r.totalPaid || r.amountPaid || 0), 0);
 
     // Calculate check-in rate (using a field that might exist)
     const checkedInCount = registrations.filter((r: any) => r.checkedIn).length;
@@ -656,7 +696,7 @@ export class AdminEventsService {
         }
         const dayData = registrationsByDate.get(date);
         dayData.count++;
-        dayData.revenue += reg.amountPaid || 0;
+        dayData.revenue += reg.totalPaid || reg.amountPaid || 0;
       }
     });
 

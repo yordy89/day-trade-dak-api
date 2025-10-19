@@ -98,6 +98,38 @@ export class Event {
 
   @Prop({ default: false })
   showInLandingPage: boolean;
+
+  // Payment settings for partial payments
+  @Prop({
+    enum: ['full_only', 'partial_allowed'],
+    default: 'full_only',
+  })
+  paymentMode: 'full_only' | 'partial_allowed';
+
+  @Prop({ default: 0 })
+  minimumDepositAmount: number; // Minimum deposit amount in USD
+
+  @Prop({ default: 0 })
+  depositPercentage: number; // Alternative: percentage of total price (0-100)
+
+  @Prop({ default: 50 })
+  minimumInstallmentAmount: number; // Minimum amount for each installment payment
+
+  @Prop({ type: [String], default: [] })
+  allowedFinancingPlans: string[]; // References to FinancingPlan.planId
+
+  @Prop({ default: true })
+  allowCustomPaymentPlan: boolean; // Allow users to pay any amount above minimum
+
+  @Prop({ type: Object })
+  paymentSettings: {
+    enablePartialPayments?: boolean;
+    autoReminderDays?: number[]; // Days before due date to send reminders
+    gracePeriodDays?: number; // Days after due date before marking as late
+    lateFeeAmount?: number;
+    lateFeePercentage?: number;
+    maxPaymentAttempts?: number;
+  };
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);

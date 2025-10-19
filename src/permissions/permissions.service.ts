@@ -272,6 +272,10 @@ export class PermissionsService {
       payments: false,
       meetings: false,
       events: false,
+      emailMarketing: false,
+      financing: false,
+      affiliates: false,
+      messages: false,
       content: false,
       courses: false,
       announcements: false,
@@ -283,7 +287,6 @@ export class PermissionsService {
       permissions: false,
       contactMessages: false,
       modulePermissions: false,
-      affiliates: false,
     };
 
     switch (role) {
@@ -305,6 +308,10 @@ export class PermissionsService {
       payments: false,
       meetings: false,
       events: false,
+      emailMarketing: false,
+      financing: false,
+      affiliates: false,
+      messages: false,
       content: false,
       courses: false,
       announcements: false,
@@ -316,7 +323,6 @@ export class PermissionsService {
       permissions: false,
       contactMessages: false,
       modulePermissions: false,
-      affiliates: false,
     };
     
     // Merge provided permissions

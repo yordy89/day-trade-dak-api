@@ -168,4 +168,45 @@ export class CreateAdminEventDto {
   @IsBoolean()
   @IsOptional()
   showInLandingPage?: boolean;
+
+  // Partial payment settings
+  @IsString()
+  @IsOptional()
+  @IsEnum(['full_only', 'partial_allowed'])
+  paymentMode?: string;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  minimumDepositAmount?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  depositPercentage?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  minimumInstallmentAmount?: number;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  allowedFinancingPlans?: string[];
+
+  @IsBoolean()
+  @IsOptional()
+  allowCustomPaymentPlan?: boolean;
+
+  @IsObject()
+  @IsOptional()
+  paymentSettings?: {
+    enablePartialPayments?: boolean;
+    autoReminderDays?: number[];
+    gracePeriodDays?: number;
+    lateFeeAmount?: number;
+    lateFeePercentage?: number;
+    maxPaymentAttempts?: number;
+  };
 }

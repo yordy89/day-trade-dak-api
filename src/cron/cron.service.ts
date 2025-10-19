@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { UserService } from 'src/users/users.service';
 import { InjectModel } from '@nestjs/mongoose';
@@ -11,6 +11,7 @@ import {
 import { EmailService } from 'src/email/email.service';
 import { SubscriptionPlan } from 'src/users/user.dto';
 import { ModulePermissionsService } from 'src/module-permissions/module-permissions.service';
+import { EventPartialPaymentService } from 'src/event/event-partial-payment.service';
 
 @Injectable()
 export class CronService {
@@ -20,6 +21,8 @@ export class CronService {
     private readonly userService: UserService,
     private readonly emailService: EmailService,
     private readonly modulePermissionsService: ModulePermissionsService,
+    @Inject(forwardRef(() => EventPartialPaymentService))
+    private readonly eventPartialPaymentService: EventPartialPaymentService,
     @InjectModel(Transaction.name) private transactionModel: Model<Transaction>,
     @InjectModel(SubscriptionHistory.name)
     private subscriptionHistoryModel: Model<SubscriptionHistory>,
@@ -228,6 +231,24 @@ export class CronService {
       }
     } catch (error) {
       this.logger.error('❌ Error expiring module permissions:', error);
+    }
+  }
+
+  // ✅ Clean up abandoned event checkouts (no payment after 2 hours)
+  @Cron('0 * * * *') // Run every hour
+  async cleanupAbandonedEventCheckouts() {
+    this.logger.log('🧹 Cleaning up abandoned event checkouts...');
+
+    try {
+      const result = await this.eventPartialPaymentService.cleanupAbandonedCheckouts();
+
+      if (result.deletedCount > 0) {
+        this.logger.log(`✅ Cleaned up ${result.deletedCount} abandoned event checkouts`);
+      } else {
+        this.logger.log('✅ No abandoned checkouts to clean up');
+      }
+    } catch (error) {
+      this.logger.error('❌ Error cleaning up abandoned checkouts:', error);
     }
   }
 

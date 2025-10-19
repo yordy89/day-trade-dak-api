@@ -84,7 +84,7 @@ export const masterCourseRegistrationTemplate = (
         </tr>
         <tr>
           <td style="padding: 8px 0; color: #6b7280;">Fechas Presencial:</td>
-          <td style="padding: 8px 0; color: #212636; font-weight: 600; text-align: right;">11-13 de Octubre, 2025</td>
+          <td style="padding: 8px 0; color: #212636; font-weight: 600; text-align: right;">24-26 de Enero, 2026</td>
         </tr>
         <tr>
           <td style="padding: 8px 0; color: #6b7280;">Formato:</td>
@@ -129,7 +129,7 @@ export const masterCourseRegistrationTemplate = (
     <!-- Fase 1 -->
     <div style="background-color: #f0fdf4; border-radius: 8px; padding: 20px; margin: 0 0 15px 0; border-left: 3px solid #16a34a;">
       <h4 style="margin: 0 0 10px 0; color: #16a34a; font-size: 16px; font-weight: 600;">
-        Fase 1: Aprendizaje Online (26 Sep - 10 Oct, 2025)
+        Fase 1: Aprendizaje Online (Antes del Presencial, Enero 2026)
       </h4>
       <p style="margin: 0 0 10px 0; color: #4b5563; font-size: 14px;">
         <strong>15 días antes del presencial • 8 lecciones en video + 4 mentorías vía Zoom</strong>
@@ -150,7 +150,7 @@ export const masterCourseRegistrationTemplate = (
         Fase 2: Entrenamiento Presencial en Tampa (3 Días Intensivos)
       </h4>
       <p style="margin: 0 0 10px 0; color: #4b5563; font-size: 14px;">
-        <strong>11-13 de Octubre, 2025 (Sábado, Domingo y Lunes)</strong><br>
+        <strong>24-26 de Enero, 2026 (Viernes, Sábado y Domingo)</strong><br>
         <span style="color: #3b82f6; font-weight: 600;">📍 Tampa, Florida</span>
       </p>
       <ul style="margin: 0; padding-left: 20px; color: #6b7280; font-size: 14px; line-height: 22px;">
@@ -170,7 +170,7 @@ export const masterCourseRegistrationTemplate = (
     <!-- Fase 3 -->
     <div style="background-color: #fef3c7; border-radius: 8px; padding: 20px; margin: 0 0 30px 0; border-left: 3px solid #f59e0b;">
       <h4 style="margin: 0 0 10px 0; color: #f59e0b; font-size: 16px; font-weight: 600;">
-        Fase 3: Práctica Supervisada (14 Oct - 13 Dic, 2025)
+        Fase 3: Práctica Supervisada (Después del Presencial, 2026)
       </h4>
       <p style="margin: 0 0 10px 0; color: #4b5563; font-size: 14px;">
         <strong>2 Meses - 100% Online • Mes 1: Cuenta Demo | Mes 2: Cuenta Real</strong>
@@ -282,7 +282,7 @@ export const masterCourseRegistrationTemplate = (
           <span style="font-size: 20px;">4️⃣</span> Marca tu calendario
         </p>
         <p style="margin: 5px 0 0 28px; color: #6b7280; font-size: 14px;">
-          Primera sesión en vivo: <strong>26 de Septiembre, 2025 a las 7:00 PM EST</strong>
+          Primera sesión en vivo: <strong>22 de Enero, 2026 a las 7:00 PM EST</strong>
         </p>
       </div>
     </div>
@@ -294,15 +294,15 @@ export const masterCourseRegistrationTemplate = (
       </h4>
       <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 14px;">
         <tr>
-          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>26 de Septiembre, 2025:</strong></td>
+          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>22 de Enero, 2026:</strong></td>
           <td style="padding: 8px 0; color: #78350f;">Inicio del curso - Primera sesión online a las 7:00 PM EST</td>
         </tr>
         <tr>
-          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>11-13 de Octubre, 2025:</strong></td>
+          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>24-26 de Enero, 2026:</strong></td>
           <td style="padding: 8px 0; color: #78350f;">Entrenamiento presencial intensivo en Tampa, Florida</td>
         </tr>
         <tr>
-          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>13 de Diciembre, 2025:</strong></td>
+          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>26 de Enero, 2026:</strong></td>
           <td style="padding: 8px 0; color: #78350f;">Graduación y entrega de certificación oficial</td>
         </tr>
       </table>

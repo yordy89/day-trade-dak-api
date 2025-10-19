@@ -16,6 +16,7 @@ import { TransactionSchema } from 'src/payments/stripe/transaction.schema';
 import { SubscriptionHistorySchema } from 'src/payments/stripe/subscription-history.schema';
 import { ModulePermissionsModule } from 'src/module-permissions/module-permissions.module';
 import { AnnouncementModule } from 'src/announcement/announcement.module';
+import { EventModule } from 'src/event/event.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { AnnouncementModule } from 'src/announcement/announcement.module';
     GuardsModule,
     ModulePermissionsModule,
     AnnouncementModule,
+    EventModule,
   ],
   controllers: [CronController],
   providers: [CronService, SubscriptionSyncCron, AnnouncementCronService],

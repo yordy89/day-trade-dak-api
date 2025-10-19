@@ -11,6 +11,10 @@ export interface PermissionSet {
   payments: boolean;
   meetings: boolean;
   events: boolean;
+  emailMarketing: boolean;
+  financing: boolean;
+  affiliates: boolean;
+  messages: boolean;
   content: boolean;
   courses: boolean;
   announcements: boolean;
@@ -21,8 +25,7 @@ export interface PermissionSet {
   auditLogs: boolean;
   permissions: boolean;
   contactMessages: boolean;
-  modulePermissions: boolean; // New: Permisos de Módulos
-  affiliates: boolean; // New: Afiliados
+  modulePermissions: boolean;
 }
 
 // Define the schema for the permissions object
@@ -33,6 +36,10 @@ const PermissionSetSchema = {
   payments: { type: Boolean, default: false },
   meetings: { type: Boolean, default: false },
   events: { type: Boolean, default: false },
+  emailMarketing: { type: Boolean, default: false },
+  financing: { type: Boolean, default: false },
+  affiliates: { type: Boolean, default: false },
+  messages: { type: Boolean, default: false },
   content: { type: Boolean, default: false },
   courses: { type: Boolean, default: false },
   announcements: { type: Boolean, default: false },
@@ -43,8 +50,7 @@ const PermissionSetSchema = {
   auditLogs: { type: Boolean, default: false },
   permissions: { type: Boolean, default: false },
   contactMessages: { type: Boolean, default: false },
-  modulePermissions: { type: Boolean, default: false }, // New: Permisos de Módulos
-  affiliates: { type: Boolean, default: false }, // New: Afiliados
+  modulePermissions: { type: Boolean, default: false },
 };
 
 @Schema({ timestamps: true })
@@ -88,6 +94,10 @@ export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   payments: true,
   meetings: true,
   events: true,
+  emailMarketing: true,
+  financing: true,
+  affiliates: true,
+  messages: true,
   content: true,
   courses: true,
   announcements: true,
@@ -99,5 +109,4 @@ export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   permissions: true, // Only super admins can manage permissions
   contactMessages: true,
   modulePermissions: true, // Super admins have module permissions
-  affiliates: true, // Super admins have affiliates permission
 };

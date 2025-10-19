@@ -7,6 +7,9 @@ export type EventRegistrationDocument = EventRegistration & Document;
 
 @Schema({ timestamps: true })
 export class EventRegistration {
+  @Prop({ type: String, unique: true, sparse: true })
+  registrationNumber?: string; // User-friendly ID like REG-20251019-A1B2C
+
   @Prop({ type: String, required: true })
   eventId: string;
 
@@ -71,6 +74,83 @@ export class EventRegistration {
 
   @Prop()
   commissionAmount?: number;
+
+  @Prop({ enum: ['percentage', 'fixed'] })
+  commissionType?: 'percentage' | 'fixed';
+
+  @Prop()
+  commissionRate?: number;
+
+  @Prop()
+  commissionFixedAmount?: number;
+
+  // Partial payment fields
+  @Prop({ enum: ['full', 'partial'], default: 'full' })
+  paymentMode?: 'full' | 'partial';
+
+  @Prop()
+  totalAmount?: number; // Total amount for the registration
+
+  @Prop({ default: 0 })
+  depositPaid?: number; // Initial deposit amount paid
+
+  @Prop({ default: 0 })
+  totalPaid?: number; // Total amount paid so far (including deposit)
+
+  @Prop()
+  remainingBalance?: number; // Calculated: totalAmount - totalPaid
+
+  @Prop({ default: false })
+  isFullyPaid?: boolean; // True when totalPaid >= totalAmount
+
+  @Prop({ type: Types.ObjectId, ref: 'InstallmentPlan' })
+  installmentPlanId?: Types.ObjectId; // Reference to InstallmentPlan if using financing
+
+  // Payment history tracking
+  @Prop({
+    type: [
+      {
+        paymentId: { type: String, required: true }, // Unique payment identifier
+        amount: { type: Number, required: true },
+        paymentDate: { type: Date, required: true },
+        paymentMethod: { type: String }, // card, klarna, afterpay, etc.
+        stripePaymentIntentId: { type: String },
+        description: { type: String }, // "Initial Deposit", "Installment #2", etc.
+        status: {
+          type: String,
+          enum: ['pending', 'completed', 'failed', 'refunded'],
+          default: 'completed'
+        },
+        receiptUrl: { type: String },
+        metadata: { type: Object }
+      }
+    ],
+    default: []
+  })
+  paymentHistory?: Array<{
+    paymentId: string;
+    amount: number;
+    paymentDate: Date;
+    paymentMethod?: string;
+    stripePaymentIntentId?: string;
+    description?: string;
+    status: 'pending' | 'completed' | 'failed' | 'refunded';
+    receiptUrl?: string;
+    metadata?: any;
+  }>;
+
+  @Prop()
+  nextPaymentDueDate?: Date; // Next scheduled payment date
+
+  @Prop()
+  lastPaymentReminderSent?: Date; // Track when last reminder was sent
+
+  // Abandoned checkout tracking
+  @Prop()
+  checkoutSessionExpiresAt?: Date; // When the Stripe checkout session expires (24 hours)
+
+  @Prop()
+  stripeCheckoutSessionId?: string; // Store the Stripe checkout session ID
 }
 
 export const EventRegistrationSchema =
