@@ -20,6 +20,12 @@ export class User extends Document {
   password: string;
 
   @Prop()
+  phone?: string;
+
+  @Prop()
+  address?: string;
+
+  @Prop()
   profileImage: string;
 
   @Prop({ default: Role.USER })
@@ -141,6 +147,25 @@ export class User extends Document {
 
   @Prop()
   updatedAt?: Date;
+
+  // Soft delete fields for GDPR compliance
+  @Prop({ default: false })
+  isDeleted?: boolean;
+
+  @Prop()
+  deletedAt?: Date;
+
+  @Prop()
+  deletedBy?: string; // Admin ID who deleted the account
+
+  @Prop({ enum: ['user_request', 'admin_action', 'gdpr_compliance', 'terms_violation', 'inactivity'] })
+  deletionReason?: 'user_request' | 'admin_action' | 'gdpr_compliance' | 'terms_violation' | 'inactivity';
+
+  @Prop()
+  scheduledDeletionDate?: Date; // For 30-day grace period
+
+  @Prop({ default: false })
+  isAnonymized?: boolean; // Track if PII has been anonymized
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

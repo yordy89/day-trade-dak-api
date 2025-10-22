@@ -10,7 +10,11 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  BadRequestException,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { UserService } from './users.service';
 import { RequestWithUser } from 'src/auth/auth.interfaces';
 import { JwtAuthGuard } from 'src/guards/jwt-auth-guard';
@@ -110,10 +114,12 @@ export class UserController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Delete('/admin/:userId')
-  async deleteUserFromAdmin(@Param('userId') userId: string) {
-    return this.userService.deleteUserFromAdmin(userId);
+  async deleteUserFromAdmin(@Param('userId') userId: string, @Req() req: RequestWithUser) {
+    const adminId = req.user?._id;
+    return this.userService.deleteUserFromAdmin(userId, adminId);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -125,5 +131,62 @@ export class UserController {
     }
 
     return this.userService.getSubscriptionDetails(userId);
+  }
+
+  // GDPR: Self-service account deletion
+  @UseGuards(JwtAuthGuard)
+  @Post('request-deletion')
+  async requestAccountDeletion(@Req() req: RequestWithUser) {
+    const userId = req.user?._id;
+    if (!userId) {
+      throw new BadRequestException('Invalid token');
+    }
+
+    return this.userService.requestAccountDeletion(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('cancel-deletion')
+  async cancelAccountDeletion(@Req() req: RequestWithUser) {
+    const userId = req.user?._id;
+    if (!userId) {
+      throw new BadRequestException('Invalid token');
+    }
+
+    return this.userService.cancelAccountDeletion(userId);
+  }
+
+  // GDPR: User data export (Right to Portability)
+  @UseGuards(JwtAuthGuard)
+  @Get('export-my-data/:format')
+  async exportMyData(
+    @Req() req: RequestWithUser,
+    @Param('format') format: 'json' | 'pdf' | 'excel',
+    @Res() res: Response,
+  ) {
+    const userId = req.user?._id;
+    if (!userId) {
+      throw new BadRequestException('Invalid token');
+    }
+
+    const data = await this.userService.exportUserData(userId, format);
+    const timestamp = new Date().toISOString().split('T')[0];
+    const userEmail = req.user?.username || 'user';
+
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="daytradedak-data-${userEmail}-${timestamp}.json"`);
+      return res.send(JSON.stringify(data, null, 2));
+    } else if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="daytradedak-data-${userEmail}-${timestamp}.pdf"`);
+      return res.send(data);
+    } else if (format === 'excel') {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="daytradedak-data-${userEmail}-${timestamp}.xlsx"`);
+      return res.send(data);
+    }
+
+    return res.status(400).send({ error: 'Invalid format' });
   }
 }

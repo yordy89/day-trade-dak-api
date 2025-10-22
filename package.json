@@ -71,6 +71,7 @@
     "joi": "^17.13.3",
     "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^9.0.2",
+    "libphonenumber-js": "^1.12.24",
     "livekit-server-sdk": "^2.13.1",
     "mongoose": "^8.10.1",
     "nest-winston": "^1.10.2",
