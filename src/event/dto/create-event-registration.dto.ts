@@ -7,6 +7,7 @@ import {
   IsObject,
   IsNumber,
 } from 'class-validator';
+import { IsPhoneNumber } from '../../decorators/is-phone-number.decorator';
 
 export class CreateEventRegistrationDto {
   @IsString()
@@ -22,7 +23,7 @@ export class CreateEventRegistrationDto {
   email: string;
 
   @IsOptional()
-  @IsString()
+  @IsPhoneNumber({ message: 'Phone number must be a valid international phone number (e.g., +12345678900)' })
   phoneNumber?: string;
 
   @IsBoolean()

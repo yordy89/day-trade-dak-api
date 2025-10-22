@@ -435,6 +435,21 @@ export class SettingsService {
           order: 3,
         },
       },
+      // Feature Flags
+      {
+        key: 'enable_referral_code',
+        value: false,
+        type: SettingType.BOOLEAN,
+        category: SettingCategory.FEATURES,
+        metadata: {
+          label: 'Enable Referral Code System',
+          description: 'Show referral code input field in Master Course registration (affiliate system)',
+          visible: true,
+          editable: true,
+          order: 1,
+        },
+        defaultValue: false,
+      },
     ];
 
     for (const defaultSetting of defaultSettings) {

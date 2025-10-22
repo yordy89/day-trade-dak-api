@@ -9,6 +9,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { Role } from 'src/constants';
+import { IsStrongPassword } from '../decorators/is-strong-password.decorator';
 
 export class CreateUserDto {
   @IsNotEmpty()
@@ -24,7 +25,8 @@ export class CreateUserDto {
   email: string;
 
   @IsNotEmpty()
-  @MinLength(6)
+  @MinLength(12)
+  @IsStrongPassword()
   password: string;
 
   @IsOptional()
@@ -50,7 +52,8 @@ export class UpdateUserDto {
   email?: string;
 
   @IsOptional()
-  @MinLength(6)
+  @MinLength(12)
+  @IsStrongPassword()
   password?: string;
 
   @IsOptional()

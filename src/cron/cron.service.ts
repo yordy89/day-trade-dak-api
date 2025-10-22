@@ -252,6 +252,46 @@ export class CronService {
     }
   }
 
+  // ✅ Permanently delete/anonymize soft-deleted users after 30-day grace period
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT) // Run at midnight daily
+  async permanentlyDeleteExpiredUsers() {
+    this.logger.log('🗑️ Processing permanent deletion of expired soft-deleted users...');
+
+    try {
+      const now = new Date();
+
+      // Find users marked for deletion with expired grace period
+      const usersToDelete = await this.userService.findUsersForPermanentDeletion(now);
+
+      if (usersToDelete.length === 0) {
+        this.logger.log('✅ No users scheduled for permanent deletion');
+        return;
+      }
+
+      this.logger.log(`Found ${usersToDelete.length} users to permanently delete/anonymize`);
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const user of usersToDelete) {
+        try {
+          await this.userService.permanentlyDeleteUser(user._id.toString());
+          successCount++;
+          this.logger.log(`✅ Permanently anonymized user ${user.email} (ID: ${user._id})`);
+        } catch (error) {
+          failureCount++;
+          this.logger.error(`❌ Failed to permanently delete user ${user._id}:`, error);
+        }
+      }
+
+      this.logger.log(
+        `🗑️ Permanent deletion complete. Success: ${successCount}, Failures: ${failureCount}`,
+      );
+    } catch (error) {
+      this.logger.error('❌ Error in permanent user deletion cron:', error);
+    }
+  }
+
   // ✅ Send module permission expiration reminders
   @Cron('0 9 * * *') // Run at 9 AM every day
   async sendModulePermissionExpirationReminders() {
