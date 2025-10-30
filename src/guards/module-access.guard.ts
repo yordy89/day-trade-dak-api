@@ -87,6 +87,7 @@ export class ModuleAccessGuard implements CanActivate {
       [ModuleType.VIP_EVENTS]: ['VipEvent'],
       [ModuleType.MASTER_COURSE]: ['MasterCourse'],
       [ModuleType.STOCKS]: ['Stocks'],
+      [ModuleType.SUPPORT_VIDEOS]: ['LiveWeeklyManual', 'LiveWeeklyRecurring'],
     };
 
     const requiredPlans = moduleToSubscriptionMap[moduleType];

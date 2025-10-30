@@ -247,6 +247,38 @@ export class VideoController {
     return videosWithTitles;
   }
 
+  @UseGuards(JwtAuthGuard, ModuleAccessGuard)
+  @RequireModule(ModuleType.SUPPORT_VIDEOS)
+  @Get('supportVideos')
+  async getAllSupportVideos() {
+    console.log(
+      'Fetching support videos from S3...',
+      VariableKeys.AWS_S3_HELP_VIDEOS,
+    );
+    const videos = await this.s3Service.listVideos(
+      VariableKeys.AWS_S3_HELP_VIDEOS,
+    );
+
+    console.log(`Total support videos found: ${videos.length}`);
+
+    // Filter to only return master.m3u8 files for HLS videos
+    // Or .mp4 files if they're direct MP4 uploads
+    const supportVideos = videos.filter(video => {
+      return video.key.includes('master.m3u8') ||
+             video.key.endsWith('.mp4') ||
+             (video.key.endsWith('playlist.m3u8') &&
+              !video.key.includes('/360p/') &&
+              !video.key.includes('/480p/') &&
+              !video.key.includes('/720p/') &&
+              !video.key.includes('/1080p/'));
+    });
+
+    console.log(`Filtered to ${supportVideos.length} support videos`);
+
+    // Sort alphabetically by key
+    return supportVideos.sort((a, b) => a.key.localeCompare(b.key));
+  }
+
   @UseGuards(JwtAuthGuard, SubscriptionGuard, ModuleAccessGuard)
   @RequiresSubscription(SubscriptionPlan.LIVE_RECORDED)
   @RequireModule(ModuleType.LIVE_RECORDED)

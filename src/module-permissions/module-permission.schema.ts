@@ -14,6 +14,7 @@ export enum ModuleType {
   VIP_EVENTS = 'vipEvents',
   MASTER_COURSE = 'masterCourse',
   STOCKS = 'stocks',
+  SUPPORT_VIDEOS = 'supportVideos',
 }
 
 @Schema({ timestamps: true })

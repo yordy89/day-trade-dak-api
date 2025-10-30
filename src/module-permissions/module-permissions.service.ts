@@ -110,10 +110,11 @@ export class ModulePermissionsService {
       [ModuleType.PEACE_WITH_MONEY]: 'PeaceWithMoney',
       [ModuleType.MASTER_COURSE]: 'MasterCourse',
       [ModuleType.STOCKS]: 'Stocks',
+      [ModuleType.SUPPORT_VIDEOS]: ['LiveWeeklyManual', 'LiveWeeklyRecurring'],
     };
 
-    // Special case: Live Recorded is automatically accessible with Live Weekly subscriptions
-    if (moduleType === ModuleType.LIVE_RECORDED && user?.subscriptions) {
+    // Special case: Live Recorded and Support Videos are automatically accessible with Live Weekly subscriptions
+    if ((moduleType === ModuleType.LIVE_RECORDED || moduleType === ModuleType.SUPPORT_VIDEOS) && user?.subscriptions) {
       const hasLiveWeekly = user.subscriptions.some((sub: any) => {
         const planName = typeof sub === 'string' ? sub : sub.plan;
         const isLiveWeekly = ['LiveWeeklyManual', 'LiveWeeklyRecurring'].includes(planName);
@@ -150,7 +151,7 @@ export class ModulePermissionsService {
       
       if (hasLiveWeekly) {
         this.logger.log(
-          `User ${userId} has automatic access to Live Recorded via Live Weekly subscription`,
+          `User ${userId} has automatic access to ${moduleType} via Live Weekly subscription`,
           'ModulePermissionsService',
         );
         return true;
@@ -204,6 +205,38 @@ export class ModulePermissionsService {
       });
       
       if (hasSubscription) {
+        return true;
+      }
+    }
+
+    // Special case: If checking Support Videos, also check if user has Live Weekly module permission
+    if (moduleType === ModuleType.SUPPORT_VIDEOS) {
+      const userIdStr = userId.toString();
+      const liveWeeklyPermission = await this.modulePermissionModel.findOne({
+        $and: [
+          {
+            $or: [
+              { userId: userIdStr },
+              { userId: userId },
+            ],
+          },
+          { moduleType: ModuleType.LIVE_WEEKLY },
+          { isActive: true },
+          { hasAccess: true },
+          {
+            $or: [
+              { expiresAt: { $exists: false } },
+              { expiresAt: { $gt: new Date() } },
+            ],
+          },
+        ],
+      });
+
+      if (liveWeeklyPermission) {
+        this.logger.log(
+          `User ${userId} has automatic access to Support Videos via Live Weekly module permission`,
+          'ModulePermissionsService',
+        );
         return true;
       }
     }
