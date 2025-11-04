@@ -96,6 +96,14 @@ export class AdminMaintenanceService {
       if (expiredSubscriptions.length > 0) {
         // Record expired subscriptions in history
         for (const expiredSub of expiredSubscriptions) {
+          // Skip subscriptions without a plan
+          if (!expiredSub.plan) {
+            this.logger.warn(
+              `Skipping subscription without plan during cleanup for user ${user.email}`,
+            );
+            continue;
+          }
+
           try {
             await this.subscriptionHistoryModel.create({
               userId: user._id.toString(),
@@ -104,7 +112,7 @@ export class AdminMaintenanceService {
               price: 0,
               currency: 'usd',
               effectiveDate: now,
-              metadata: { 
+              metadata: {
                 reason: 'Manual cleanup - Subscription expired',
                 expiresAt: expiredSub.expiresAt,
                 currentPeriodEnd: expiredSub.currentPeriodEnd,
@@ -195,8 +203,16 @@ export class AdminMaintenanceService {
       });
 
       for (const sub of userExpired) {
+        // Skip subscriptions without a plan (data corruption/migration issue)
+        if (!sub.plan) {
+          this.logger.warn(
+            `Skipping subscription without plan for user ${user.email} (${user._id})`,
+          );
+          continue;
+        }
+
         // Use the correct expiration date based on subscription type
-        const expirationDate = sub.stripeSubscriptionId 
+        const expirationDate = sub.stripeSubscriptionId
           ? sub.currentPeriodEnd  // For recurring, use currentPeriodEnd
           : (sub.expiresAt || sub.currentPeriodEnd);  // For manual, use expiresAt or fallback to currentPeriodEnd
         const daysExpired = expirationDate
@@ -204,7 +220,7 @@ export class AdminMaintenanceService {
           : 0;
 
         usersWithExpired.add(user._id.toString());
-        
+
         expiredSubscriptions.push({
           userId: user._id,
           userEmail: user.email,
