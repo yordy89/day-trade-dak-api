@@ -6,6 +6,7 @@ import { GlobalSyncConsumer } from './global-sync.consumer';
 import { RabbitMQService } from './rabbitmq.service';
 import { Event, EventSchema } from '../event/schemas/event.schema';
 import { EventRegistration, EventRegistrationSchema } from '../event/schemas/eventRegistration.schema';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { EventRegistration, EventRegistrationSchema } from '../event/schemas/eve
       { name: Event.name, schema: EventSchema },
       { name: EventRegistration.name, schema: EventRegistrationSchema },
     ]),
+    EmailModule,
   ],
   providers: [GlobalSyncService, GlobalSyncConsumer, RabbitMQService],
   exports: [GlobalSyncService, RabbitMQService],
