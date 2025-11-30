@@ -52,6 +52,7 @@ import { LocalFinancingModule } from './payments/local-financing/local-financing
 import { EmailMarketingModule } from './email-marketing/email-marketing.module';
 import { AnnouncementModule } from './announcement/announcement.module';
 import { TradingJournalModule } from './trading-journal/trading-journal.module';
+import { GlobalSyncModule } from './global-sync/global-sync.module';
 
 @Module({
   controllers: [TestUploadController],
@@ -129,6 +130,7 @@ import { TradingJournalModule } from './trading-journal/trading-journal.module';
     EmailMarketingModule,
     AnnouncementModule,
     TradingJournalModule,
+    GlobalSyncModule,
   ],
   providers: [
     {

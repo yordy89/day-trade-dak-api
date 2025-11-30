@@ -504,6 +504,8 @@ export class ModulePermissionsService {
               existingPermission.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : undefined;
               existingPermission.reason = dto.reason || `Access for event: ${dto.eventName}`;
               existingPermission.grantedBy = new Types.ObjectId(grantedBy);
+              existingPermission.eventId = dto.eventId ? new Types.ObjectId(dto.eventId) : undefined;
+              existingPermission.eventName = dto.eventName;
               await existingPermission.save();
             } else {
               // Create new permission
@@ -515,6 +517,8 @@ export class ModulePermissionsService {
                 expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
                 reason: dto.reason || `Access for event: ${dto.eventName}`,
                 grantedBy: new Types.ObjectId(grantedBy),
+                eventId: dto.eventId ? new Types.ObjectId(dto.eventId) : undefined,
+                eventName: dto.eventName,
               });
               await permission.save();
             }
@@ -573,5 +577,51 @@ export class ModulePermissionsService {
     );
 
     return response;
+  }
+
+  /**
+   * Get users by event who have a specific module permission
+   */
+  async getUsersByEventWithModule(
+    eventId: string,
+    moduleType: ModuleType,
+  ): Promise<any[]> {
+    const permissions = await this.modulePermissionModel
+      .find({
+        eventId: new Types.ObjectId(eventId),
+        moduleType,
+        isActive: true,
+        hasAccess: true,
+      })
+      .populate('userId', 'firstName lastName email')
+      .populate('grantedBy', 'firstName lastName email')
+      .sort({ createdAt: -1 });
+
+    return permissions.map((perm: any) => ({
+      permission: {
+        _id: perm._id,
+        moduleType: perm.moduleType,
+        expiresAt: perm.expiresAt,
+        grantedBy: perm.grantedBy,
+        createdAt: perm.createdAt,
+        eventId: perm.eventId,
+        eventName: perm.eventName,
+      },
+      user: perm.userId,
+    }));
+  }
+
+  /**
+   * Get all module permissions for a specific event
+   */
+  async getPermissionsByEvent(eventId: string): Promise<ModulePermission[]> {
+    return this.modulePermissionModel
+      .find({
+        eventId: new Types.ObjectId(eventId),
+        isActive: true,
+      })
+      .populate('userId', 'firstName lastName email')
+      .populate('grantedBy', 'firstName lastName email')
+      .sort({ createdAt: -1 });
   }
 }

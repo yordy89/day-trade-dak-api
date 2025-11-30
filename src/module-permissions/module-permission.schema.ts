@@ -15,6 +15,7 @@ export enum ModuleType {
   MASTER_COURSE = 'masterCourse',
   STOCKS = 'stocks',
   SUPPORT_VIDEOS = 'supportVideos',
+  TRADING_JOURNAL = 'tradingJournal',
 }
 
 @Schema({ timestamps: true })
@@ -46,6 +47,13 @@ export class ModulePermission {
 
   @Prop({ type: Types.ObjectId, ref: 'Subscription' })
   subscriptionId?: Types.ObjectId;
+
+  // Event association (for event-based permissions)
+  @Prop({ type: Types.ObjectId, ref: 'Event' })
+  eventId?: Types.ObjectId;
+
+  @Prop()
+  eventName?: string;
 }
 
 export const ModulePermissionSchema =
@@ -55,6 +63,8 @@ export const ModulePermissionSchema =
 ModulePermissionSchema.index({ userId: 1, moduleType: 1 });
 ModulePermissionSchema.index({ expiresAt: 1 });
 ModulePermissionSchema.index({ isActive: 1 });
+ModulePermissionSchema.index({ eventId: 1, moduleType: 1 });
+ModulePermissionSchema.index({ expiresAt: 1, isActive: 1 });
 
 // Ensure only one active permission per user per module
 ModulePermissionSchema.index(

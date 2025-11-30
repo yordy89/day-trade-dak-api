@@ -88,6 +88,7 @@ export class ModuleAccessGuard implements CanActivate {
       [ModuleType.MASTER_COURSE]: ['MasterCourse'],
       [ModuleType.STOCKS]: ['Stocks'],
       [ModuleType.SUPPORT_VIDEOS]: ['LiveWeeklyManual', 'LiveWeeklyRecurring'],
+      [ModuleType.TRADING_JOURNAL]: [], // No subscription mapping - access via module permission only
     };
 
     const requiredPlans = moduleToSubscriptionMap[moduleType];

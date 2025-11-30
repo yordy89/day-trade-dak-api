@@ -95,15 +95,17 @@ export class CreateTradeDto {
   @MaxLength(100)
   setup: string;
 
-  @ApiProperty({ description: 'Trading strategy', example: 'Momentum Trading' })
+  @ApiProperty({ description: 'Trading strategy (optional)', example: 'Momentum Trading', required: false })
+  @IsOptional()
   @IsString()
   @MaxLength(100)
-  strategy: string;
+  strategy?: string;
 
-  @ApiProperty({ description: 'Timeframe', example: '15m' })
+  @ApiProperty({ description: 'Timeframe (optional)', example: '15m', required: false })
+  @IsOptional()
   @IsString()
   @MaxLength(20)
-  timeframe: string;
+  timeframe?: string;
 
   @ApiProperty({ description: 'Confidence level', minimum: 1, maximum: 10, example: 8 })
   @IsNumber()

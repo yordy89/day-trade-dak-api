@@ -13,6 +13,19 @@ export class EventRegistration {
   @Prop({ type: String, required: true })
   eventId: string;
 
+  // Global sync fields
+  @Prop({ type: String, index: true, sparse: true })
+  globalRegistrationId?: string; // ID from Global API
+
+  @Prop({ type: String, index: true, sparse: true })
+  globalEventId?: string; // Global event ID for reference
+
+  @Prop({ default: false })
+  isGloballyManaged?: boolean; // True if created from Global API
+
+  @Prop()
+  lastSyncedAt?: Date;
+
   @Prop({ required: true })
   firstName: string;
 
