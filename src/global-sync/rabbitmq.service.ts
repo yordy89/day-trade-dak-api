@@ -30,8 +30,10 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {}
 
   async onModuleInit() {
-    const rabbitMqUrl = this.configService.get<string>('RABBITMQ_URL');
+    // Use process.env directly since RABBITMQ_URL is not in the configuration object
+    const rabbitMqUrl = process.env.RABBITMQ_URL;
     if (rabbitMqUrl) {
+      this.logger.log('RABBITMQ_URL found, initiating connection...');
       await this.connect();
     } else {
       this.logger.warn('RABBITMQ_URL not configured. Global sync disabled.');
@@ -44,7 +46,11 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
 
   private async connect(): Promise<void> {
     try {
-      const rabbitMqUrl = this.configService.get<string>('RABBITMQ_URL');
+      const rabbitMqUrl = process.env.RABBITMQ_URL;
+      if (!rabbitMqUrl) {
+        this.logger.error('RABBITMQ_URL not found in environment');
+        return;
+      }
 
       this.logger.log(`Connecting to RabbitMQ...`);
       this.connection = await amqplib.connect(rabbitMqUrl);
@@ -95,14 +101,19 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
           const content = JSON.parse(msg.content.toString());
           const message: GlobalMessage = content;
 
+          this.logger.log(`Received message: type=${message.type}, targetRegions=${JSON.stringify(message.targetRegions)}`);
+
           // Check if this region should process this message
           if (this.shouldProcess(message.targetRegions)) {
+            this.logger.log(`Processing message for region ${this.regionCode}`);
             const handler = this.messageHandlers.get(message.type);
             if (handler) {
               await handler(message);
             } else {
               this.logger.warn(`No handler registered for message type: ${message.type}`);
             }
+          } else {
+            this.logger.log(`Skipping message - not for region ${this.regionCode}`);
           }
 
           this.channel.ack(msg);

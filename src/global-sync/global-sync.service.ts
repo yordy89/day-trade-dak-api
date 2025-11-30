@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Event, EventDocument } from '../event/schemas/event.schema';
 import { EventRegistration, EventRegistrationDocument } from '../event/schemas/eventRegistration.schema';
 import { Types } from 'mongoose';
+import { EmailService } from '../email/email.service';
 
 export interface EventPayload {
   globalId: string;
@@ -82,6 +83,7 @@ export class GlobalSyncService {
     private readonly eventModel: Model<EventDocument>,
     @InjectModel(EventRegistration.name)
     private readonly registrationModel: Model<EventRegistrationDocument>,
+    private readonly emailService: EmailService,
   ) {}
 
   async createEventFromGlobal(payload: EventPayload, version: number): Promise<EventDocument> {
@@ -278,6 +280,42 @@ export class GlobalSyncService {
     this.logger.log(
       `Created local registration from global: ${savedRegistration.email} for event ${event.name} (globalRegistrationId: ${payload.globalRegistrationId})`,
     );
+
+    // Send confirmation email
+    try {
+      // Map event type to email template type
+      let emailEventType: 'master_course' | 'community_event' | 'vip_event' = 'community_event';
+      if (event.type === 'master_course') {
+        emailEventType = 'master_course';
+      } else if (event.type === 'vip_event') {
+        emailEventType = 'vip_event';
+      }
+
+      await this.emailService.sendEventRegistrationEmail(payload.email, {
+        firstName: payload.firstName,
+        eventName: event.name || event.title,
+        eventType: emailEventType,
+        eventDate: event.date,
+        eventStartDate: event.startDate,
+        eventEndDate: event.endDate,
+        eventLocation: event.location,
+        eventDescription: event.description,
+        ticketNumber: savedRegistration.registrationNumber,
+        isPaid: paymentStatus === 'paid' || paymentStatus === 'free',
+        amount: payload.amountPaid || 0,
+        currency: payload.currency || 'USD',
+        additionalInfo: payload.additionalInfo,
+      });
+
+      this.logger.log(
+        `Sent registration confirmation email to ${payload.email} for event ${event.name}`,
+      );
+    } catch (emailError) {
+      // Log error but don't fail the registration
+      this.logger.error(
+        `Failed to send confirmation email for registration ${payload.globalRegistrationId}: ${emailError.message}`,
+      );
+    }
 
     return savedRegistration;
   }
