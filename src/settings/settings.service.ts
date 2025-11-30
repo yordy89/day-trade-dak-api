@@ -135,12 +135,37 @@ export class SettingsService {
           lastModifiedBy: updateValueDto.lastModifiedBy,
           lastModifiedAt: new Date(),
         });
-        
+
         const savedSetting = await newSetting.save();
         await this.invalidateCache(key);
         return savedSetting;
       }
-      
+
+      // Check if it's the trading_journal_enabled_markets setting
+      if (key === 'trading_journal_enabled_markets') {
+        const newSetting = new this.settingModel({
+          key: 'trading_journal_enabled_markets',
+          value: updateValueDto.value || ['stocks', 'forex', 'crypto', 'futures', 'options'],
+          type: 'json',
+          category: 'trading',
+          metadata: {
+            label: 'Trading Journal Enabled Markets',
+            description: 'List of markets available for trading journal entries',
+            visible: true,
+            editable: true,
+            order: 2,
+          },
+          defaultValue: ['stocks', 'forex', 'crypto', 'futures', 'options'],
+          isActive: true,
+          lastModifiedBy: updateValueDto.lastModifiedBy,
+          lastModifiedAt: new Date(),
+        });
+
+        const savedSetting = await newSetting.save();
+        await this.invalidateCache(key);
+        return savedSetting;
+      }
+
       // For other settings, still throw error if not found
       throw new NotFoundException(`Setting with key "${key}" not found`);
     }

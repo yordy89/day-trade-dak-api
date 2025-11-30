@@ -5,6 +5,8 @@ import { TradingJournalController } from './trading-journal.controller';
 import { Trade, TradeSchema } from './schemas/trade.schema';
 import { Feedback, FeedbackSchema } from './schemas/feedback.schema';
 import { UsersModule } from '../users/users.module';
+import { ModulePermissionsModule } from '../module-permissions/module-permissions.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { UsersModule } from '../users/users.module';
       { name: Feedback.name, schema: FeedbackSchema },
     ]),
     forwardRef(() => UsersModule),
+    forwardRef(() => ModulePermissionsModule),
+    forwardRef(() => SubscriptionsModule),
   ],
   controllers: [TradingJournalController],
   providers: [TradingJournalService],

@@ -27,6 +27,24 @@ export enum EmotionType {
   CALM = 'calm',
 }
 
+export enum ExitReason {
+  HIT_STOP_LOSS = 'hit_stop_loss',
+  HIT_TAKE_PROFIT = 'hit_take_profit',
+  MANUAL_EXIT = 'manual_exit',
+  TIME_BASED_EXIT = 'time_based_exit',
+  TRAILING_STOP = 'trailing_stop',
+  TECHNICAL_SIGNAL = 'technical_signal',
+  NEWS_EVENT = 'news_event',
+  RISK_MANAGEMENT = 'risk_management',
+  // Options-specific
+  EXPIRED_WORTHLESS = 'expired_worthless',
+  SOLD_FOR_PROFIT = 'sold_for_profit',
+  SOLD_FOR_LOSS = 'sold_for_loss',
+  EXERCISED = 'exercised',
+  ASSIGNED = 'assigned',
+  ROLLED_POSITION = 'rolled_position',
+}
+
 @Schema({ timestamps: true })
 export class Trade {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
@@ -65,6 +83,29 @@ export class Trade {
   @Prop()
   exitReason?: string;
 
+  @Prop({ enum: ExitReason })
+  exitReasonType?: ExitReason;
+
+  @Prop()
+  exitReasonNotes?: string;
+
+  // Options-specific exit data
+  @Prop()
+  exitPremium?: number;
+
+  @Prop()
+  underlyingPriceAtExit?: number;
+
+  // Self-reflection
+  @Prop()
+  lessonsLearnedOnExit?: string;
+
+  @Prop()
+  wouldRepeatTrade?: boolean;
+
+  @Prop({ enum: EmotionType })
+  exitEmotionState?: EmotionType;
+
   // Risk Management
   @Prop({ required: true })
   stopLoss: number;
@@ -85,11 +126,11 @@ export class Trade {
   @Prop({ required: true })
   setup: string;
 
-  @Prop({ required: true })
-  strategy: string;
+  @Prop()
+  strategy?: string;
 
-  @Prop({ required: true })
-  timeframe: string;
+  @Prop()
+  timeframe?: string;
 
   @Prop({ min: 1, max: 10, required: true })
   confidence: number;

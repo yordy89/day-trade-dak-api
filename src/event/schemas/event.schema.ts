@@ -7,6 +7,19 @@ export type EventDocument = Event & Document;
 
 @Schema({ timestamps: true })
 export class Event {
+  // Global sync fields - for events synced from Global API
+  @Prop({ index: true, sparse: true })
+  globalId?: string; // Reference to Global API event
+
+  @Prop()
+  globalVersion?: number; // Version from Global API for idempotency
+
+  @Prop({ default: false })
+  isGloballyManaged: boolean; // True if synced from Global API
+
+  @Prop()
+  lastSyncedAt?: Date;
+
   @Prop({ required: true })
   name: string;
 

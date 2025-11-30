@@ -8,7 +8,7 @@ import {
 export interface EventRegistrationData {
   firstName: string;
   eventName: string;
-  eventType: 'master_course' | 'community_event' | 'vip_event';
+  eventType: 'master_course' | 'community_event' | 'vip_event' | 'webinar' | 'workshop' | 'seminar' | 'bootcamp' | 'conference';
   eventDate?: Date;
   eventStartDate?: Date;
   eventEndDate?: Date;
@@ -23,6 +23,8 @@ export interface EventRegistrationData {
   additionalChildren?: number;
   hotelName?: string;
   hotelAddress?: string;
+  isOnline?: boolean;
+  meetingLink?: string;
   additionalInfo?: {
     phoneNumber?: string;
     paymentMethod?: string;
@@ -41,15 +43,23 @@ const formatDate = (date: Date): string => {
   }).format(date);
 };
 
+const formatTime = (date: Date): string => {
+  return new Intl.DateTimeFormat('es-ES', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+};
+
 const formatDateRange = (startDate: Date, endDate: Date): string => {
   const start = new Date(startDate);
   const end = new Date(endDate);
-  
+
   const startDay = start.getDate();
   const endDay = end.getDate();
   const month = start.toLocaleDateString('es-ES', { month: 'long' });
   const year = start.getFullYear();
-  
+
   // Get day names
   const days = [];
   const current = new Date(start);
@@ -58,13 +68,13 @@ const formatDateRange = (startDate: Date, endDate: Date): string => {
     days.push(dayName.charAt(0).toUpperCase() + dayName.slice(1));
     current.setDate(current.getDate() + 1);
   }
-  
+
   // Format: "Miércoles - Jueves - Viernes. 13, 14, 15 de noviembre, 2025"
   const dayNumbers = [];
   for (let i = 0; i < days.length; i++) {
     dayNumbers.push(startDay + i);
   }
-  
+
   return `${days.join(' - ')}. ${dayNumbers.join(', ')} de ${month}, ${year}`;
 };
 
@@ -100,12 +110,216 @@ const getEventTypeInfo = (
       color: '#f59e0b',
       title: 'Evento VIP',
     },
+    webinar: {
+      emoji: '🎥',
+      color: '#22c55e',
+      title: 'Webinar en Vivo',
+    },
+    workshop: {
+      emoji: '🛠️',
+      color: '#3b82f6',
+      title: 'Workshop',
+    },
+    seminar: {
+      emoji: '📚',
+      color: '#a855f7',
+      title: 'Seminario',
+    },
+    bootcamp: {
+      emoji: '🚀',
+      color: '#ef4444',
+      title: 'Bootcamp',
+    },
+    conference: {
+      emoji: '🎤',
+      color: '#6366f1',
+      title: 'Conferencia',
+    },
   };
 
   return types[eventType] || types.community_event;
 };
 
-export const eventRegistrationTemplate = (
+// Webinar-specific email template
+const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
+  const {
+    firstName,
+    eventName,
+    eventDate,
+    eventTime,
+    eventLocation,
+    ticketNumber,
+    meetingLink,
+  } = data;
+
+  const formattedDate = eventDate ? formatDate(eventDate) : null;
+  const formattedTime = eventDate ? formatTime(eventDate) : eventTime;
+
+  const content = `
+    <div style="text-align: center; margin-bottom: 30px;">
+      <div style="display: inline-block; width: 80px; height: 80px; background-color: #22c55e15; border-radius: 50%; text-align: center; line-height: 80px; margin-bottom: 20px;">
+        <span style="font-size: 40px;">🎉</span>
+      </div>
+      <h2 style="margin: 0 0 10px 0; color: #212636; font-size: 28px; font-weight: 600;">
+        ¡Felicidades, ${firstName}!
+      </h2>
+      <p style="margin: 0; color: #22c55e; font-size: 18px; font-weight: 600;">
+        Tu lugar está reservado
+      </p>
+    </div>
+
+    <div style="background: linear-gradient(135deg, #22c55e15 0%, #16a34a15 100%); border-radius: 12px; padding: 24px; margin: 0 0 30px 0; border-left: 4px solid #22c55e;">
+      <p style="margin: 0; color: #4b5563; font-size: 16px; line-height: 24px;">
+        Has asegurado tu cupo para el webinar exclusivo:
+      </p>
+      <h3 style="margin: 10px 0 0 0; color: #212636; font-size: 22px; font-weight: 700;">
+        Acceso Blindado: La Metodología Silenciosa que el 95% de los Traders Desconoce
+      </h3>
+    </div>
+
+    <div style="background-color: #1f2937; border-radius: 12px; padding: 24px; margin: 0 0 30px 0; color: white;">
+      <h3 style="margin: 0 0 20px 0; color: #22c55e; font-size: 18px; font-weight: 600;">
+        📅 Detalles del Webinar
+      </h3>
+
+      <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 15px;">
+        <tr>
+          <td style="padding: 12px 0; color: #9ca3af; vertical-align: middle;">
+            <span style="font-size: 18px; margin-right: 8px;">📆</span> Fecha:
+          </td>
+          <td style="padding: 12px 0; color: white; font-weight: 600; text-align: right;">
+            ${formattedDate || 'Por confirmar'}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 12px 0; color: #9ca3af; vertical-align: middle; border-top: 1px solid #374151;">
+            <span style="font-size: 18px; margin-right: 8px;">⏰</span> Hora:
+          </td>
+          <td style="padding: 12px 0; color: white; font-weight: 600; text-align: right; border-top: 1px solid #374151;">
+            ${formattedTime || '5:00 PM'} (Hora del Este)
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 12px 0; color: #9ca3af; vertical-align: middle; border-top: 1px solid #374151;">
+            <span style="font-size: 18px; margin-right: 8px;">📍</span> Modalidad:
+          </td>
+          <td style="padding: 12px 0; color: #22c55e; font-weight: 600; text-align: right; border-top: 1px solid #374151;">
+            🌐 100% Online - EN VIVO
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 12px 0; color: #9ca3af; vertical-align: middle; border-top: 1px solid #374151;">
+            <span style="font-size: 18px; margin-right: 8px;">💰</span> Inversión:
+          </td>
+          <td style="padding: 12px 0; color: #22c55e; font-weight: 700; text-align: right; font-size: 18px; border-top: 1px solid #374151;">
+            GRATIS
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background-color: #fef3c7; border-radius: 12px; padding: 20px; margin: 0 0 30px 0; border-left: 4px solid #f59e0b;">
+      <p style="margin: 0 0 5px 0; color: #92400e; font-size: 14px; font-weight: 600;">
+        ⚠️ IMPORTANTE
+      </p>
+      <p style="margin: 0; color: #78350f; font-size: 14px; line-height: 21px;">
+        Esta sesión es <strong>ÚNICA</strong> y <strong>NO se va a repetir</strong>. Asegúrate de estar puntual para no perderte nada.
+      </p>
+    </div>
+
+    <h3 style="margin: 30px 0 15px 0; color: #212636; font-size: 18px; font-weight: 600;">
+      🎯 Lo que aprenderás en este webinar exclusivo:
+    </h3>
+
+    <div style="margin: 0 0 30px 0;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="padding: 10px 0; vertical-align: top; width: 30px;">
+            <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">1</span>
+          </td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
+            <strong style="color: #212636;">Los mitos del trading</strong> - Desmantelaremos las falsas "soluciones rápidas"
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 0; vertical-align: top; width: 30px;">
+            <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">2</span>
+          </td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
+            <strong style="color: #212636;">El problema del trader típico</strong> - Por qué la falta de estructura causa estancamiento
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 0; vertical-align: top; width: 30px;">
+            <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">3</span>
+          </td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
+            <strong style="color: #212636;">El filtro de precisión</strong> - Enfócate solo en operaciones de alto impacto
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 0; vertical-align: top; width: 30px;">
+            <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">4</span>
+          </td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
+            <strong style="color: #212636;">Pilares de la metodología profesional</strong> - Análisis flexible vs estrategias rígidas
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 0; vertical-align: top; width: 30px;">
+            <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">5</span>
+          </td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
+            <strong style="color: #212636;">Estudio de caso real</strong> - Gráficos limpios y metodología en práctica
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background-color: #f0fdf4; border-radius: 12px; padding: 24px; margin: 0 0 30px 0; text-align: center;">
+      <p style="margin: 0 0 15px 0; color: #166534; font-size: 16px; font-weight: 600;">
+        🔔 Próximos pasos
+      </p>
+      <ol style="margin: 0; padding-left: 20px; color: #15803d; font-size: 14px; line-height: 24px; text-align: left; display: inline-block;">
+        <li>Guarda la fecha en tu calendario</li>
+        <li>Prepara libreta para tomar notas</li>
+        <li>Te enviaremos el enlace de acceso antes del webinar</li>
+        <li>Conéctate 5 minutos antes para asegurar tu lugar</li>
+      </ol>
+    </div>
+
+    ${emailDivider()}
+
+    <div style="text-align: center;">
+      <p style="margin: 0 0 10px 0; color: #6b7280; font-size: 14px;">
+        ¿Tienes preguntas? Contáctanos:
+      </p>
+      <p style="margin: 0; color: #6b7280; font-size: 14px;">
+        <a href="mailto:support@daytradedak.com" style="color: #22c55e; text-decoration: none; font-weight: 600;">support@daytradedak.com</a>
+      </p>
+    </div>
+
+    <p style="margin: 30px 0 0 0; color: #4b5563; font-size: 16px; line-height: 24px; text-align: center;">
+      ¡Nos vemos en el webinar!<br>
+      <strong style="color: #212636;">El equipo de DayTradeDak Academy</strong>
+    </p>
+
+    <div style="margin-top: 30px; padding: 20px; background-color: #f3f4f6; border-radius: 8px; text-align: center;">
+      <p style="margin: 0; color: #6b7280; font-size: 12px;">
+        Este correo es tu confirmación de registro. Por favor, guárdalo.<br>
+        ${ticketNumber ? `Número de ticket: <strong>${ticketNumber}</strong>` : ''}
+      </p>
+    </div>
+  `;
+
+  return baseEmailTemplate({
+    preheader: `¡Confirmado! Tu lugar para el webinar exclusivo está reservado`,
+    content,
+  });
+};
+
+// Default template for other event types
+const defaultEventRegistrationTemplate = (
   data: EventRegistrationData,
 ): string => {
   const {
@@ -158,7 +372,7 @@ export const eventRegistrationTemplate = (
       <h3 style="margin: 0 0 20px 0; color: #212636; font-size: 18px; font-weight: 600;">
         📋 Detalles del evento
       </h3>
-      
+
       <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 14px;">
         <tr>
           <td style="padding: 8px 0; color: #6b7280; vertical-align: top;">Evento:</td>
@@ -324,4 +538,17 @@ export const eventRegistrationTemplate = (
     preheader: `Confirmación de registro - ${eventName}`,
     content,
   });
+};
+
+// Main export - routes to appropriate template based on event type
+export const eventRegistrationTemplate = (
+  data: EventRegistrationData,
+): string => {
+  // Use webinar template for webinar events
+  if (data.eventType === 'webinar') {
+    return webinarRegistrationTemplate(data);
+  }
+
+  // Use default template for other event types
+  return defaultEventRegistrationTemplate(data);
 };

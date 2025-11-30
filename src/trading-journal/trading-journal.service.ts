@@ -10,6 +10,7 @@ import { Trade, TradeDocument, TradeDirection } from './schemas/trade.schema';
 import { Feedback, FeedbackDocument } from './schemas/feedback.schema';
 import { CreateTradeDto } from './dto/create-trade.dto';
 import { UpdateTradeDto } from './dto/update-trade.dto';
+import { CloseTradeDto } from './dto/close-trade.dto';
 import { CreateFeedbackDto } from './dto/create-feedback.dto';
 import { FilterTradesDto, TimeFilter, TradeResult } from './dto/filter-trades.dto';
 import * as moment from 'moment';
@@ -23,15 +24,74 @@ export class TradingJournalService {
 
   // Trade CRUD Operations
   async createTrade(userId: string, createTradeDto: CreateTradeDto): Promise<Trade> {
+    console.log('\n========== CREATE TRADE ==========');
+    console.log('📝 Received userId:', userId);
+    console.log('📝 userId type:', typeof userId);
+    console.log('📝 userId value:', JSON.stringify(userId));
+
+    // Validate market against enabled markets
+    await this.validateMarketType(createTradeDto.market);
+
+    const userObjectId = new Types.ObjectId(userId);
+    console.log('📝 Converted to ObjectId:', userObjectId);
+    console.log('📝 ObjectId toString:', userObjectId.toString());
+
     const trade = new this.tradeModel({
       ...createTradeDto,
-      userId: new Types.ObjectId(userId),
+      userId: userObjectId,
     });
-    return trade.save();
+
+    const savedTrade = await trade.save();
+    console.log('📝 Trade saved with userId:', savedTrade.userId);
+    console.log('📝 Saved userId matches input?', savedTrade.userId.toString() === userId);
+    console.log('==================================\n');
+
+    return savedTrade;
+  }
+
+  /**
+   * Validate market type against enabled markets in settings
+   */
+  private async validateMarketType(market: string): Promise<void> {
+    try {
+      // Dynamically import SettingsService to avoid circular dependency
+      const settingModel = this.tradeModel.db.model('Setting');
+      const setting = await settingModel.findOne({ key: 'trading_journal_enabled_markets' });
+
+      const enabledMarkets = setting?.value || ['stocks', 'forex', 'crypto', 'futures', 'options'];
+
+      if (!enabledMarkets.includes(market)) {
+        throw new BadRequestException(
+          `Market type "${market}" is not enabled. Available markets: ${enabledMarkets.join(', ')}`
+        );
+      }
+    } catch (error) {
+      // If settings check fails, allow all markets as fallback
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      // Log error but don't block trade creation
+      console.error('Failed to validate market type:', error);
+    }
   }
 
   async findAllTrades(userId: string, filters: FilterTradesDto) {
-    const query: any = { userId: new Types.ObjectId(userId) };
+    console.log('\n==========================================');
+    console.log('🔍 findAllTrades called with userId:', userId);
+    console.log('🔍 userId type:', typeof userId);
+    console.log('🔍 Filters:', JSON.stringify(filters, null, 2));
+
+    // Create ObjectId
+    let userObjectId;
+    try {
+      userObjectId = new Types.ObjectId(userId);
+      console.log('🔍 Converted to ObjectId:', userObjectId);
+    } catch (error) {
+      console.error('❌ Failed to convert userId to ObjectId:', error);
+      throw error;
+    }
+
+    const query: any = { userId: userObjectId };
 
     // Apply time filters
     if (filters.timeFilter && filters.timeFilter !== TimeFilter.ALL) {
@@ -149,6 +209,10 @@ export class TradingJournalService {
     const sort: any = { [sortBy]: sortOrder };
 
     // Execute query
+    console.log('🔍 Final query:', JSON.stringify(query, null, 2));
+    console.log('🔍 Sort:', sort);
+    console.log('🔍 Skip:', skip, 'Limit:', limit);
+
     const [trades, total] = await Promise.all([
       this.tradeModel
         .find(query)
@@ -158,6 +222,31 @@ export class TradingJournalService {
         .lean(),
       this.tradeModel.countDocuments(query),
     ]);
+
+    console.log('🔍 Found trades:', trades.length, 'Total count:', total);
+    if (trades.length > 0) {
+      console.log('🔍 First trade:', trades[0]);
+    }
+
+    // Let's also check if there are ANY trades for this user regardless of filters
+    const allUserTrades = await this.tradeModel.find({ userId: new Types.ObjectId(userId) }).countDocuments();
+    console.log('🔍 Total trades for user (no filters):', allUserTrades);
+
+    // Check all trades in database
+    const allTradesInDB = await this.tradeModel.find({}).limit(5).lean();
+    console.log('🔍 Total trades in database:', await this.tradeModel.countDocuments({}));
+    if (allTradesInDB.length > 0) {
+      console.log('🔍 Sample trade from DB:', {
+        _id: allTradesInDB[0]._id,
+        userId: allTradesInDB[0].userId,
+        userIdType: typeof allTradesInDB[0].userId,
+        symbol: allTradesInDB[0].symbol,
+      });
+      console.log('🔍 Comparing userIds:');
+      console.log('   Query userId:', userObjectId.toString());
+      console.log('   DB userId:', allTradesInDB[0].userId.toString());
+      console.log('   Match?', userObjectId.toString() === allTradesInDB[0].userId.toString());
+    }
 
     return {
       trades,
@@ -203,6 +292,51 @@ export class TradingJournalService {
     return trade;
   }
 
+  async closeTrade(
+    userId: string,
+    tradeId: string,
+    closeTradeDto: CloseTradeDto,
+  ): Promise<Trade> {
+    // Find the trade and verify it belongs to the user
+    const trade = await this.tradeModel.findOne({
+      _id: new Types.ObjectId(tradeId),
+      userId: new Types.ObjectId(userId),
+    });
+
+    if (!trade) {
+      throw new NotFoundException('Trade not found');
+    }
+
+    if (!trade.isOpen) {
+      throw new BadRequestException('Trade is already closed');
+    }
+
+    // Update trade with exit data
+    trade.exitTime = new Date(closeTradeDto.exitTime);
+    trade.exitPrice = closeTradeDto.exitPrice;
+    trade.exitReasonType = closeTradeDto.exitReasonType;
+    trade.exitReasonNotes = closeTradeDto.exitReasonNotes;
+    trade.lessonsLearnedOnExit = closeTradeDto.lessonsLearnedOnExit;
+    trade.wouldRepeatTrade = closeTradeDto.wouldRepeatTrade;
+    trade.exitEmotionState = closeTradeDto.exitEmotionState;
+
+    // Options-specific exit data
+    if (closeTradeDto.exitPremium !== undefined) {
+      trade.exitPremium = closeTradeDto.exitPremium;
+    }
+    if (closeTradeDto.underlyingPriceAtExit !== undefined) {
+      trade.underlyingPriceAtExit = closeTradeDto.underlyingPriceAtExit;
+    }
+
+    // Mark as not reviewed (needs mentor attention)
+    trade.isReviewed = false;
+
+    // Save (pre-save hook will calculate P&L automatically)
+    const closedTrade = await trade.save();
+
+    return closedTrade;
+  }
+
   async deleteTrade(userId: string, tradeId: string): Promise<void> {
     const result = await this.tradeModel.deleteOne({
       _id: new Types.ObjectId(tradeId),
@@ -219,7 +353,14 @@ export class TradingJournalService {
 
   // Analytics Methods
   async getTradeStatistics(userId: string, filters?: FilterTradesDto) {
-    const query: any = { userId: new Types.ObjectId(userId), isOpen: false };
+    console.log('\n==========================================');
+    console.log('📊 getTradeStatistics called with userId:', userId);
+    console.log('📊 Filters:', JSON.stringify(filters, null, 2));
+
+    const userObjectId = new Types.ObjectId(userId);
+    console.log('📊 Converted to ObjectId:', userObjectId);
+
+    const query: any = { userId: userObjectId };
 
     // Apply time filter for statistics
     if (filters?.timeFilter && filters.timeFilter !== TimeFilter.ALL) {
@@ -249,31 +390,35 @@ export class TradingJournalService {
       query.tradeDate = { $gte: startDate.toDate() };
     }
 
+    console.log('📊 Statistics query:', JSON.stringify(query, null, 2));
+
     const stats = await this.tradeModel.aggregate([
       { $match: query },
       {
         $group: {
           _id: null,
           totalTrades: { $sum: 1 },
-          winners: { $sum: { $cond: [{ $gt: ['$netPnl', 0] }, 1, 0] } },
-          losers: { $sum: { $cond: [{ $lt: ['$netPnl', 0] }, 1, 0] } },
-          totalPnl: { $sum: '$netPnl' },
-          totalGross: { $sum: '$pnl' },
+          openTrades: { $sum: { $cond: [{ $eq: ['$isOpen', true] }, 1, 0] } },
+          closedTrades: { $sum: { $cond: [{ $eq: ['$isOpen', false] }, 1, 0] } },
+          winners: { $sum: { $cond: [{ $and: [{ $eq: ['$isOpen', false] }, { $gt: ['$netPnl', 0] }] }, 1, 0] } },
+          losers: { $sum: { $cond: [{ $and: [{ $eq: ['$isOpen', false] }, { $lt: ['$netPnl', 0] }] }, 1, 0] } },
+          totalPnl: { $sum: { $cond: [{ $eq: ['$isOpen', false] }, '$netPnl', 0] } },
+          totalGross: { $sum: { $cond: [{ $eq: ['$isOpen', false] }, '$pnl', 0] } },
           totalCommission: { $sum: '$commission' },
           avgWin: {
             $avg: {
-              $cond: [{ $gt: ['$netPnl', 0] }, '$netPnl', null],
+              $cond: [{ $and: [{ $eq: ['$isOpen', false] }, { $gt: ['$netPnl', 0] }] }, '$netPnl', null],
             },
           },
           avgLoss: {
             $avg: {
-              $cond: [{ $lt: ['$netPnl', 0] }, '$netPnl', null],
+              $cond: [{ $and: [{ $eq: ['$isOpen', false] }, { $lt: ['$netPnl', 0] }] }, '$netPnl', null],
             },
           },
-          largestWin: { $max: '$netPnl' },
-          largestLoss: { $min: '$netPnl' },
-          avgRMultiple: { $avg: '$rMultiple' },
-          avgHoldingTime: { $avg: '$holdingTime' },
+          largestWin: { $max: { $cond: [{ $eq: ['$isOpen', false] }, '$netPnl', null] } },
+          largestLoss: { $min: { $cond: [{ $eq: ['$isOpen', false] }, '$netPnl', null] } },
+          avgRMultiple: { $avg: { $cond: [{ $eq: ['$isOpen', false] }, '$rMultiple', null] } },
+          avgHoldingTime: { $avg: { $cond: [{ $eq: ['$isOpen', false] }, '$holdingTime', null] } },
           totalVolume: { $sum: { $multiply: ['$positionSize', '$entryPrice'] } },
         },
       },
@@ -281,6 +426,8 @@ export class TradingJournalService {
 
     const baseStats = stats[0] || {
       totalTrades: 0,
+      openTrades: 0,
+      closedTrades: 0,
       winners: 0,
       losers: 0,
       totalPnl: 0,
@@ -295,17 +442,17 @@ export class TradingJournalService {
       totalVolume: 0,
     };
 
-    // Calculate derived metrics
-    const winRate = baseStats.totalTrades > 0
-      ? (baseStats.winners / baseStats.totalTrades) * 100
+    // Calculate derived metrics (based on closed trades only)
+    const winRate = baseStats.closedTrades > 0
+      ? (baseStats.winners / baseStats.closedTrades) * 100
       : 0;
 
     const profitFactor = baseStats.avgLoss !== 0
       ? Math.abs(baseStats.avgWin / baseStats.avgLoss)
       : 0;
 
-    const expectancy = baseStats.totalTrades > 0
-      ? baseStats.totalPnl / baseStats.totalTrades
+    const expectancy = baseStats.closedTrades > 0
+      ? baseStats.totalPnl / baseStats.closedTrades
       : 0;
 
     // Get additional statistics by strategy
@@ -445,8 +592,40 @@ export class TradingJournalService {
     return this.findAllTrades(studentId, filters);
   }
 
-  async getStudentsWithJournals() {
-    const students = await this.tradeModel.aggregate([
+  async getStudentsWithJournals(eventId?: string) {
+    // First, get user IDs based on event filter if provided
+    let userIdsFilter = null;
+    if (eventId) {
+      // Find all users with TRADING_JOURNAL permission for this event
+      const { ModuleType } = await import('../module-permissions/module-permission.schema');
+      const { ModulePermissionsService } = await import('../module-permissions/module-permissions.service');
+      const modulePermissionModel = this.tradeModel.db.model('ModulePermission');
+
+      const permissions = await modulePermissionModel.find({
+        eventId,
+        moduleType: 'tradingJournal',
+        isActive: true,
+        hasAccess: true,
+      });
+
+      userIdsFilter = permissions.map(p => p.userId);
+
+      // If no users found for this event, return empty array
+      if (userIdsFilter.length === 0) {
+        return [];
+      }
+    }
+
+    const pipeline: any[] = [];
+
+    // Filter by user IDs if event filter is provided
+    if (userIdsFilter) {
+      pipeline.push({
+        $match: { userId: { $in: userIdsFilter } }
+      });
+    }
+
+    pipeline.push(
       {
         $group: {
           _id: '$userId',
@@ -454,6 +633,13 @@ export class TradingJournalService {
           lastTrade: { $max: '$tradeDate' },
           openTrades: {
             $sum: { $cond: [{ $eq: ['$isOpen', true] }, 1, 0] },
+          },
+          winners: {
+            $sum: { $cond: [{ $eq: ['$isWinner', true] }, 1, 0] },
+          },
+          totalPnl: { $sum: '$netPnl' },
+          needsReview: {
+            $sum: { $cond: [{ $eq: ['$isReviewed', false] }, 1, 0] },
           },
         },
       },
@@ -473,12 +659,23 @@ export class TradingJournalService {
           firstName: '$user.firstName',
           lastName: '$user.lastName',
           totalTrades: 1,
-          lastTrade: 1,
+          lastTradeDate: '$lastTrade',
           openTrades: 1,
+          winners: 1,
+          totalPnl: 1,
+          needsReview: 1,
+          winRate: {
+            $multiply: [
+              { $divide: ['$winners', '$totalTrades'] },
+              100
+            ]
+          },
         },
       },
       { $sort: { lastTrade: -1 } },
-    ]);
+    );
+
+    const students = await this.tradeModel.aggregate(pipeline);
 
     return students;
   }

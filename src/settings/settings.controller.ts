@@ -88,4 +88,20 @@ export class SettingsController {
   remove(@Param('key') key: string) {
     return this.settingsService.remove(key);
   }
+
+  @Get('trading/markets')
+  @Public()
+  async getEnabledMarkets() {
+    try {
+      const setting = await this.settingsService.getValue('trading_journal_enabled_markets');
+      return {
+        markets: setting || ['stocks', 'forex', 'crypto', 'futures', 'options'],
+      };
+    } catch (error) {
+      // Return all markets if setting doesn't exist
+      return {
+        markets: ['stocks', 'forex', 'crypto', 'futures', 'options'],
+      };
+    }
+  }
 }
