@@ -160,8 +160,12 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     localId?: string,
     error?: string,
   ): Promise<void> {
-    const globalApiUrl = this.configService.get<string>('GLOBAL_API_URL');
-    if (!globalApiUrl) return;
+    // Use process.env directly since GLOBAL_API_URL is not in the configuration object
+    const globalApiUrl = process.env.GLOBAL_API_URL;
+    if (!globalApiUrl) {
+      this.logger.warn('GLOBAL_API_URL not configured. Cannot report sync status.');
+      return;
+    }
 
     try {
       const axios = await import('axios');

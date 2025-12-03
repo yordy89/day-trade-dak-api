@@ -170,6 +170,12 @@ export class User extends Document {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
+// Index for efficient subscription lookups (prevents duplicate queries)
+UserSchema.index(
+  { '_id': 1, 'subscriptions.stripeSubscriptionId': 1 },
+  { sparse: true }
+);
+
 // Virtual populate for module permissions
 UserSchema.virtual('modulePermissions', {
   ref: 'ModulePermission',

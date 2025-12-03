@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { ConfigService } from '@nestjs/config';
+import Stripe from 'stripe';
 import { User } from '../../users/user.schema';
 import { UserService } from '../../users/users.service';
 import { SubscriptionHistory, SubscriptionAction } from '../../payments/stripe/subscription-history.schema';
@@ -10,6 +12,7 @@ import { ModulePermissionsService } from '../../module-permissions/module-permis
 @Injectable()
 export class AdminMaintenanceService {
   private readonly logger = new Logger(AdminMaintenanceService.name);
+  private stripe: Stripe;
 
   constructor(
     private readonly userService: UserService,
@@ -19,7 +22,53 @@ export class AdminMaintenanceService {
     private readonly subscriptionHistoryModel: Model<SubscriptionHistory>,
     @InjectModel(Transaction.name)
     private readonly transactionModel: Model<Transaction>,
-  ) {}
+    private configService: ConfigService,
+  ) {
+    this.stripe = new Stripe(
+      this.configService.get<string>('STRIPE_SECRET_KEY'),
+      { apiVersion: '2025-01-27.acacia' },
+    );
+  }
+
+  /**
+   * Safely cancel a Stripe subscription with comprehensive error handling.
+   */
+  private async safelyCancelStripeSubscription(
+    subscriptionId: string,
+  ): Promise<boolean> {
+    try {
+      const subscription =
+        await this.stripe.subscriptions.retrieve(subscriptionId);
+
+      if (subscription.status === 'canceled') {
+        this.logger.log(
+          `[Stripe] Subscription ${subscriptionId} already cancelled`,
+        );
+        return true;
+      }
+
+      await this.stripe.subscriptions.cancel(subscriptionId);
+      this.logger.log(`[Stripe] Cancelled subscription ${subscriptionId}`);
+      return true;
+    } catch (error: any) {
+      if (error.code === 'resource_missing') {
+        this.logger.warn(
+          `[Stripe] Subscription ${subscriptionId} not found in Stripe`,
+        );
+        return true; // OK - doesn't exist, nothing to cancel
+      }
+      if (error.message?.toLowerCase().includes('already cancel')) {
+        this.logger.log(
+          `[Stripe] Subscription ${subscriptionId} already cancelled`,
+        );
+        return true;
+      }
+      this.logger.error(
+        `[Stripe] Error cancelling ${subscriptionId}: ${error.message}`,
+      );
+      return false;
+    }
+  }
 
   /**
    * Manually cleanup expired subscriptions
@@ -94,7 +143,10 @@ export class AdminMaintenanceService {
       });
 
       if (expiredSubscriptions.length > 0) {
-        // Record expired subscriptions in history
+        // ✅ FIXED: Cancel Stripe subscriptions BEFORE removing from database
+        const stripeIdsToRemove: string[] = [];
+        let stripeCancelledCount = 0;
+
         for (const expiredSub of expiredSubscriptions) {
           // Skip subscriptions without a plan
           if (!expiredSub.plan) {
@@ -104,11 +156,22 @@ export class AdminMaintenanceService {
             continue;
           }
 
+          // Cancel in Stripe first to prevent future charges
+          if (expiredSub.stripeSubscriptionId) {
+            const cancelled = await this.safelyCancelStripeSubscription(expiredSub.stripeSubscriptionId);
+            if (cancelled) {
+              stripeIdsToRemove.push(expiredSub.stripeSubscriptionId);
+              stripeCancelledCount++;
+            }
+          }
+
+          // Record in history
           try {
             await this.subscriptionHistoryModel.create({
               userId: user._id.toString(),
               plan: expiredSub.plan,
               action: SubscriptionAction.EXPIRED,
+              stripeSubscriptionId: expiredSub.stripeSubscriptionId,
               price: 0,
               currency: 'usd',
               effectiveDate: now,
@@ -117,6 +180,7 @@ export class AdminMaintenanceService {
                 expiresAt: expiredSub.expiresAt,
                 currentPeriodEnd: expiredSub.currentPeriodEnd,
                 cleanedUpAt: now,
+                cancelledInStripe: !!expiredSub.stripeSubscriptionId,
               },
             });
           } catch (error) {
@@ -126,24 +190,28 @@ export class AdminMaintenanceService {
           }
         }
 
-        // Update user with only active subscriptions
-        user.subscriptions = activeSubscriptions;
-        await this.userService.updateUser(user._id.toString(), {
-          subscriptions: user.subscriptions,
-        });
+        // Update user - remove expired subscriptions from BOTH arrays atomically
+        await this.userModel.updateOne(
+          { _id: user._id },
+          {
+            $set: { subscriptions: activeSubscriptions },
+            $pull: { activeSubscriptions: { $in: stripeIdsToRemove } },
+          },
+        );
 
         totalExpiredRemoved += expiredSubscriptions.length;
         usersUpdated++;
-        
+
         details.push({
           userId: user._id,
           email: user.email,
           removedCount: expiredSubscriptions.length,
           removedPlans: expiredSubscriptions.map(s => s.plan),
+          stripeCancelled: stripeCancelledCount,
         });
 
         this.logger.log(
-          `⚠️ Removed ${expiredSubscriptions.length} expired subscriptions for user ${user.email}`,
+          `⚠️ Removed ${expiredSubscriptions.length} expired subscriptions for user ${user.email} (Stripe cancelled: ${stripeCancelledCount})`,
         );
       }
     }
@@ -325,6 +393,7 @@ export class AdminMaintenanceService {
 
   /**
    * Cleanup a single expired subscription for a specific user
+   * ✅ FIXED: Now cancels Stripe subscription before removing from database
    */
   async cleanupSingleSubscription(userId: string, plan: string): Promise<{
     success: boolean;
@@ -337,7 +406,7 @@ export class AdminMaintenanceService {
     try {
       // Get the user
       const user = await this.userModel.findById(userId).exec();
-      
+
       if (!user) {
         throw new Error(`User not found: ${userId}`);
       }
@@ -357,21 +426,31 @@ export class AdminMaintenanceService {
 
       const removedSubscription = user.subscriptions[subscriptionIndex];
 
+      // ✅ FIXED: Cancel in Stripe FIRST to prevent future charges
+      let stripeCancelled = false;
+      if (removedSubscription.stripeSubscriptionId) {
+        stripeCancelled = await this.safelyCancelStripeSubscription(
+          removedSubscription.stripeSubscriptionId,
+        );
+      }
+
       // Record in history before removing
       try {
         await this.subscriptionHistoryModel.create({
           userId: user._id.toString(),
           plan: removedSubscription.plan,
           action: SubscriptionAction.EXPIRED,
+          stripeSubscriptionId: removedSubscription.stripeSubscriptionId,
           price: 0,
           currency: 'usd',
           effectiveDate: now,
-          metadata: { 
+          metadata: {
             reason: 'Manual single cleanup - Subscription expired',
             expiresAt: removedSubscription.expiresAt,
             currentPeriodEnd: removedSubscription.currentPeriodEnd,
             cleanedUpAt: now,
             adminAction: true,
+            cancelledInStripe: stripeCancelled,
           },
         });
       } catch (error) {
@@ -380,26 +459,35 @@ export class AdminMaintenanceService {
         );
       }
 
-      // Remove the subscription
+      // Remove the subscription from array
       user.subscriptions.splice(subscriptionIndex, 1);
 
-      // Update the user
-      await this.userService.updateUser(user._id.toString(), {
-        subscriptions: user.subscriptions,
-      });
+      // Update user - remove from BOTH arrays atomically
+      const stripeIdsToRemove = removedSubscription.stripeSubscriptionId
+        ? [removedSubscription.stripeSubscriptionId]
+        : [];
+
+      await this.userModel.updateOne(
+        { _id: user._id },
+        {
+          $set: { subscriptions: user.subscriptions },
+          $pull: { activeSubscriptions: { $in: stripeIdsToRemove } },
+        },
+      );
 
       this.logger.log(
-        `✅ Successfully removed ${plan} subscription for user ${user.email}`,
+        `✅ Successfully removed ${plan} subscription for user ${user.email} (Stripe cancelled: ${stripeCancelled})`,
       );
 
       return {
         success: true,
-        message: `Successfully removed ${plan} subscription`,
+        message: `Successfully removed ${plan} subscription${stripeCancelled ? ' (cancelled in Stripe)' : ''}`,
         userUpdated: {
           userId: user._id,
           email: user.email,
           removedPlan: plan,
           remainingSubscriptions: user.subscriptions.length,
+          stripeCancelled,
         },
       };
     } catch (error) {

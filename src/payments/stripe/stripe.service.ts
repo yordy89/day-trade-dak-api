@@ -69,11 +69,144 @@ export class StripeService {
     );
   }
 
+  /**
+   * Validates subscription eligibility and cleans up expired subscriptions before checkout.
+   * - If ACTIVE subscription exists: Block with error
+   * - If EXPIRED subscription exists: Cancel in Stripe, remove from user, allow checkout
+   */
+  private async validateAndCleanupSubscription(
+    userId: string,
+    plan: SubscriptionPlan,
+  ): Promise<{ canProceed: boolean; reason?: string }> {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      return { canProceed: false, reason: 'User not found' };
+    }
+
+    const now = new Date();
+
+    // Find ALL subscriptions for this plan (could be duplicates)
+    const subscriptionsForPlan = user.subscriptions.filter(
+      (sub) => sub.plan === plan,
+    );
+
+    if (subscriptionsForPlan.length === 0) {
+      return { canProceed: true };
+    }
+
+    // Check if any subscription is still ACTIVE
+    const activeSubscription = subscriptionsForPlan.find((sub) => {
+      const expiresAt = sub.expiresAt ? new Date(sub.expiresAt) : null;
+      const currentPeriodEnd = sub.currentPeriodEnd
+        ? new Date(sub.currentPeriodEnd)
+        : null;
+      const isActive =
+        (!expiresAt || expiresAt > now) &&
+        (!currentPeriodEnd || currentPeriodEnd > now) &&
+        sub.status !== 'expired' &&
+        sub.status !== 'cancelled';
+      return isActive;
+    });
+
+    if (activeSubscription) {
+      // ACTIVE subscription exists - block checkout
+      this.logger.warn(
+        `[Validation] User ${userId} has active ${plan} subscription - blocking checkout`,
+      );
+      return {
+        canProceed: false,
+        reason: `You already have an active ${plan} subscription. Please manage your existing subscription from your account settings.`,
+      };
+    }
+
+    // All subscriptions are EXPIRED - clean them up
+    this.logger.log(
+      `[Cleanup] Found ${subscriptionsForPlan.length} expired ${plan} subscription(s) for user ${userId}`,
+    );
+
+    const stripeIdsToCancel: string[] = [];
+
+    for (const sub of subscriptionsForPlan) {
+      if (sub.stripeSubscriptionId) {
+        stripeIdsToCancel.push(sub.stripeSubscriptionId);
+        await this.safelyCancelStripeSubscription(sub.stripeSubscriptionId);
+      }
+    }
+
+    // Remove from BOTH arrays atomically
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        $pull: {
+          subscriptions: { plan: plan },
+          activeSubscriptions: { $in: stripeIdsToCancel },
+        },
+      },
+    );
+
+    this.logger.log(
+      `[Cleanup] Removed expired ${plan} subscription(s) for user ${userId}`,
+    );
+
+    return { canProceed: true };
+  }
+
+  /**
+   * Safely cancel a Stripe subscription with comprehensive error handling.
+   * Handles: not found (404), already cancelled, network errors
+   */
+  private async safelyCancelStripeSubscription(
+    subscriptionId: string,
+  ): Promise<void> {
+    try {
+      const subscription =
+        await this.stripe.subscriptions.retrieve(subscriptionId);
+
+      if (subscription.status === 'canceled') {
+        this.logger.log(
+          `[Stripe] Subscription ${subscriptionId} already cancelled`,
+        );
+        return;
+      }
+
+      await this.stripe.subscriptions.cancel(subscriptionId);
+      this.logger.log(`[Stripe] Cancelled subscription ${subscriptionId}`);
+    } catch (error: any) {
+      if (error.code === 'resource_missing') {
+        this.logger.warn(
+          `[Stripe] Subscription ${subscriptionId} not found in Stripe`,
+        );
+        return; // OK - doesn't exist, nothing to cancel
+      }
+      if (error.message?.toLowerCase().includes('already cancel')) {
+        this.logger.log(
+          `[Stripe] Subscription ${subscriptionId} already cancelled`,
+        );
+        return;
+      }
+      this.logger.error(
+        `[Stripe] Error cancelling ${subscriptionId}: ${error.message}`,
+      );
+      // Don't throw - continue with cleanup even if Stripe cancel fails
+    }
+  }
+
   // ✅ **Create Checkout Session**
   async createCheckoutSession(userId: string, priceId: string) {
     const price = await this.stripe.prices.retrieve(priceId);
     const isRecurring = price.recurring !== null;
     const subscriptionPlan = await this.mapPriceIdToPlan(priceId);
+
+    // Validate and cleanup before checkout (prevents duplicate subscriptions)
+    if (subscriptionPlan) {
+      const validation = await this.validateAndCleanupSubscription(
+        userId,
+        subscriptionPlan,
+      );
+      if (!validation.canProceed) {
+        throw new BadRequestException(validation.reason);
+      }
+    }
 
     // Get BNPL methods based on amount and currency
     const bnplMethods = this.getBNPLMethods(
@@ -663,6 +796,12 @@ export class StripeService {
       cancelUrl?: string;
     },
   ) {
+    // Validate and cleanup before checkout (prevents duplicate subscriptions)
+    const validation = await this.validateAndCleanupSubscription(userId, plan);
+    if (!validation.canProceed) {
+      throw new BadRequestException(validation.reason);
+    }
+
     // Validate subscription eligibility
     const eligibility =
       await this.pricingService.validateSubscriptionEligibility(userId, plan);
@@ -906,6 +1045,15 @@ export class StripeService {
     userId: string,
     paymentMethod: 'card' | 'klarna' | 'afterpay' = 'card',
   ) {
+    // Validate and cleanup before checkout (prevents duplicate subscriptions)
+    const validation = await this.validateAndCleanupSubscription(
+      userId,
+      SubscriptionPlan.CLASSES,
+    );
+    if (!validation.canProceed) {
+      throw new BadRequestException(validation.reason);
+    }
+
     // Get user details
     const user = await this.userService.findById(userId);
     if (!user) {
@@ -1780,11 +1928,6 @@ export class StripeService {
       metadata: session.metadata,
     });
 
-    // Update user subscription
-    await this.userService.updateUser(userId, {
-      $pull: { subscriptions: { plan } },
-    });
-
     // Get subscription details from Stripe if it's a recurring subscription
     let currentPeriodEnd = null;
     let subscriptionStatus = 'active';
@@ -1804,21 +1947,74 @@ export class StripeService {
       }
     }
 
-    await this.userService.updateUser(userId, {
-      $push: {
-        subscriptions: {
-          plan,
-          expiresAt: expirationDate,
-          stripeSubscriptionId: subscriptionId || null,
-          createdAt: new Date(),
-          currentPeriodEnd: currentPeriodEnd || expirationDate,
-          status: subscriptionStatus,
+    // ✅ FIXED: Atomic and idempotent subscription update (prevents duplicates)
+    const { Types } = await import('mongoose');
+    if (subscriptionId) {
+      // For recurring subscriptions - use stripeSubscriptionId as unique key
+      // First try to update existing subscription with same stripeSubscriptionId
+      const updateResult = await this.userModel.updateOne(
+        {
+          _id: new Types.ObjectId(userId),
+          'subscriptions.stripeSubscriptionId': subscriptionId,
         },
-      },
-      ...(subscriptionId
-        ? { $addToSet: { activeSubscriptions: subscriptionId } }
-        : {}),
-    });
+        {
+          $set: {
+            'subscriptions.$.plan': plan,
+            'subscriptions.$.expiresAt': expirationDate,
+            'subscriptions.$.currentPeriodEnd': currentPeriodEnd || expirationDate,
+            'subscriptions.$.status': subscriptionStatus,
+            'subscriptions.$.updatedAt': new Date(),
+          },
+          $addToSet: { activeSubscriptions: subscriptionId },
+        },
+      );
+
+      if (updateResult.matchedCount === 0) {
+        // Doesn't exist - add ONLY if stripeSubscriptionId not already present (prevents duplicates)
+        await this.userModel.updateOne(
+          {
+            _id: new Types.ObjectId(userId),
+            'subscriptions.stripeSubscriptionId': { $ne: subscriptionId },
+          },
+          {
+            $push: {
+              subscriptions: {
+                plan,
+                expiresAt: expirationDate,
+                stripeSubscriptionId: subscriptionId,
+                createdAt: new Date(),
+                currentPeriodEnd: currentPeriodEnd || expirationDate,
+                status: subscriptionStatus,
+              },
+            },
+            $addToSet: { activeSubscriptions: subscriptionId },
+          },
+        );
+      }
+    } else {
+      // For one-time purchases - use plan as unique key (replace existing)
+      await this.userModel.updateOne(
+        { _id: new Types.ObjectId(userId) },
+        {
+          $pull: { subscriptions: { plan: plan } },
+        },
+      );
+      await this.userModel.updateOne(
+        { _id: new Types.ObjectId(userId) },
+        {
+          $push: {
+            subscriptions: {
+              plan,
+              expiresAt: expirationDate,
+              stripeSubscriptionId: null,
+              createdAt: new Date(),
+              currentPeriodEnd: currentPeriodEnd || expirationDate,
+              status: subscriptionStatus,
+            },
+          },
+        },
+      );
+    }
 
     this.logger.log(
       `✅ User ${userId} subscribed to ${plan} (Expires: ${expirationDate || 'Never'})`,
@@ -2032,10 +2228,14 @@ export class StripeService {
         this.logger.log(`✅ Successfully updated subscription using positional operator`);
       } else if (updateResult.matchedCount === 0) {
         // Method 2: If no match found, the subscription might not exist, add it
+        // ✅ FIXED: Only add if stripeSubscriptionId not already present (prevents duplicates)
         this.logger.warn(`Subscription ${subscriptionId} not found, adding new subscription`);
-        
+
         const addResult = await this.userModel.updateOne(
-          { _id: user._id },
+          {
+            _id: user._id,
+            'subscriptions.stripeSubscriptionId': { $ne: subscriptionId }  // Only if not exists!
+          },
           {
             $push: {
               subscriptions: {
@@ -2055,6 +2255,8 @@ export class StripeService {
 
         if (addResult.modifiedCount > 0) {
           this.logger.log(`✅ Added new subscription successfully`);
+        } else {
+          this.logger.log(`Subscription ${subscriptionId} already exists, skipping add`);
         }
       } else {
         // Method 3: Fallback - Replace entire subscriptions array
@@ -2430,17 +2632,31 @@ export class StripeService {
       throw new NotFoundException('User not found');
     }
 
-    // ✅ Find the Stripe Subscription ID associated with the plan
-    const subscriptionId = user.activeSubscriptions.find(() =>
-      user.subscriptions.some(
-        (subscription) => subscription.plan === subscriptionPlan,
-      ),
+    // ✅ FIXED: Find subscription object first, then get its stripeSubscriptionId
+    const subscription = user.subscriptions.find(
+      (sub) => sub.plan === subscriptionPlan,
     );
 
+    if (!subscription) {
+      throw new NotFoundException(`No subscription found for plan: ${subscriptionPlan}`);
+    }
+
+    const subscriptionId = subscription.stripeSubscriptionId;
+
     if (!subscriptionId) {
-      throw new NotFoundException(
-        'No active subscription found for this plan.',
+      // Handle one-time purchases without Stripe ID - just update local data
+      this.logger.warn(
+        `Subscription ${subscriptionPlan} has no Stripe ID - updating local data only`,
       );
+
+      await this.userModel.updateOne(
+        { _id: user._id },
+        {
+          $pull: { subscriptions: { plan: subscriptionPlan } },
+        },
+      );
+
+      return await this.userService.findById(userId);
     }
 
     try {

@@ -313,11 +313,52 @@ export class SubscriptionSyncCron {
   }
 
   /**
+   * Safely cancel a Stripe subscription with comprehensive error handling.
+   */
+  private async safelyCancelStripeSubscription(
+    subscriptionId: string,
+  ): Promise<boolean> {
+    try {
+      const subscription =
+        await this.stripe.subscriptions.retrieve(subscriptionId);
+
+      if (subscription.status === 'canceled') {
+        this.logger.log(
+          `[Stripe] Subscription ${subscriptionId} already cancelled`,
+        );
+        return true;
+      }
+
+      await this.stripe.subscriptions.cancel(subscriptionId);
+      this.logger.log(`[Stripe] Cancelled subscription ${subscriptionId}`);
+      return true;
+    } catch (error: any) {
+      if (error.code === 'resource_missing') {
+        this.logger.warn(
+          `[Stripe] Subscription ${subscriptionId} not found in Stripe`,
+        );
+        return true; // OK - doesn't exist, nothing to cancel
+      }
+      if (error.message?.toLowerCase().includes('already cancel')) {
+        this.logger.log(
+          `[Stripe] Subscription ${subscriptionId} already cancelled`,
+        );
+        return true;
+      }
+      this.logger.error(
+        `[Stripe] Error cancelling ${subscriptionId}: ${error.message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
    * Check and fix subscriptions that should be expired
+   * ✅ FIXED: Now cancels Stripe subscriptions before marking as expired
    */
   private async checkAndFixExpiredSubscriptions() {
     const now = new Date();
-    
+
     try {
       // Find users with potentially expired subscriptions
       const users = await this.userModel.find({
@@ -331,45 +372,60 @@ export class SubscriptionSyncCron {
 
       for (const user of users) {
         let hasChanges = false;
-        const updatedSubscriptions = user.subscriptions.map(sub => {
+        const stripeIdsToRemove: string[] = [];
+
+        const updatedSubscriptions = [];
+
+        for (const sub of user.subscriptions) {
           // Check if subscription is expired
-          const isExpired = (sub.expiresAt && sub.expiresAt < now) || 
+          const isExpired = (sub.expiresAt && sub.expiresAt < now) ||
                           (sub.currentPeriodEnd && sub.currentPeriodEnd < now);
 
           if (isExpired && sub.status === 'active') {
             hasChanges = true;
             this.logger.log(`⏰ Marking subscription as expired for ${user.email} - ${sub.plan}`);
-            
-            return {
+
+            // ✅ FIXED: Cancel in Stripe before marking as expired
+            if (sub.stripeSubscriptionId) {
+              await this.safelyCancelStripeSubscription(sub.stripeSubscriptionId);
+              stripeIdsToRemove.push(sub.stripeSubscriptionId);
+            }
+
+            updatedSubscriptions.push({
               plan: sub.plan,
               stripeSubscriptionId: sub.stripeSubscriptionId,
               currentPeriodEnd: sub.currentPeriodEnd,
               expiresAt: sub.expiresAt,
               status: 'expired',
               createdAt: sub.createdAt
-            };
+            });
+          } else {
+            updatedSubscriptions.push({
+              plan: sub.plan,
+              stripeSubscriptionId: sub.stripeSubscriptionId,
+              currentPeriodEnd: sub.currentPeriodEnd,
+              expiresAt: sub.expiresAt,
+              status: sub.status,
+              createdAt: sub.createdAt
+            });
           }
-          
-          return {
-            plan: sub.plan,
-            stripeSubscriptionId: sub.stripeSubscriptionId,
-            currentPeriodEnd: sub.currentPeriodEnd,
-            expiresAt: sub.expiresAt,
-            status: sub.status,
-            createdAt: sub.createdAt
-          };
-        });
+        }
 
         if (hasChanges) {
           await this.userModel.updateOne(
             { _id: user._id },
-            { 
-              $set: { 
+            {
+              $set: {
                 subscriptions: updatedSubscriptions,
                 updatedAt: new Date()
-              }
+              },
+              $pull: { activeSubscriptions: { $in: stripeIdsToRemove } }
             }
           );
+
+          if (stripeIdsToRemove.length > 0) {
+            this.logger.log(`  → Cancelled ${stripeIdsToRemove.length} Stripe subscription(s)`);
+          }
         }
       }
 
