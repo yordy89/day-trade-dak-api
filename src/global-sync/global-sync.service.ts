@@ -295,6 +295,10 @@ export class GlobalSyncService {
         emailEventType = 'seminar';
       }
 
+      // Always use US Eastern Time for US region emails
+      // The event date is stored in UTC, so we convert to Eastern Time for display
+      const regionTimezone = 'America/New_York';
+
       await this.emailService.sendEventRegistrationEmail(payload.email, {
         firstName: payload.firstName,
         eventName: event.name || event.title,
@@ -302,6 +306,7 @@ export class GlobalSyncService {
         eventDate: event.date,
         eventStartDate: event.startDate,
         eventEndDate: event.endDate,
+        eventTimezone: regionTimezone,
         eventLocation: event.location,
         eventDescription: event.description,
         ticketNumber: savedRegistration.registrationNumber,
