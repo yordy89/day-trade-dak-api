@@ -540,6 +540,209 @@ const defaultEventRegistrationTemplate = (
   });
 };
 
+// Seminar-specific email template (for online masterclasses/seminars)
+const seminarRegistrationTemplate = (data: EventRegistrationData): string => {
+  const {
+    firstName,
+    eventName,
+    eventDate,
+    eventTime,
+    eventLocation,
+    ticketNumber,
+    isOnline,
+    meetingLink,
+  } = data;
+
+  const formattedDate = eventDate ? formatDate(eventDate) : null;
+  const formattedTime = eventDate ? formatTime(eventDate) : eventTime;
+  const isOnlineEvent = isOnline || eventLocation?.toLowerCase().includes('online') || !eventLocation;
+
+  const content = `
+    <div style="text-align: center; margin-bottom: 30px;">
+      <div style="display: inline-block; width: 80px; height: 80px; background-color: #3b82f615; border-radius: 50%; text-align: center; line-height: 80px; margin-bottom: 20px;">
+        <span style="font-size: 40px;">👥</span>
+      </div>
+      <h2 style="margin: 0 0 10px 0; color: #212636; font-size: 28px; font-weight: 600;">
+        ¡Registro confirmado!
+      </h2>
+      <p style="margin: 0; color: #3b82f6; font-size: 18px; font-weight: 600;">
+        Tu lugar está reservado para el evento
+      </p>
+    </div>
+
+    <p style="margin: 0 0 20px 0; color: #4b5563; font-size: 16px; line-height: 24px;">
+      Hola ${firstName},
+    </p>
+
+    <p style="margin: 0 0 30px 0; color: #4b5563; font-size: 16px; line-height: 24px;">
+      ¡Excelente noticia! Tu registro para <strong style="color: #212636;">${eventName}</strong> ha sido confirmado exitosamente.
+    </p>
+
+    <div style="background: linear-gradient(135deg, #3b82f615 0%, #8b5cf615 100%); border-radius: 12px; padding: 24px; margin: 0 0 30px 0; border-left: 4px solid #3b82f6;">
+      <p style="margin: 0; color: #4b5563; font-size: 16px; line-height: 24px;">
+        Has asegurado tu plaza para la masterclass exclusiva:
+      </p>
+      <h3 style="margin: 10px 0 0 0; color: #212636; font-size: 22px; font-weight: 700;">
+        ${eventName}
+      </h3>
+    </div>
+
+    <div style="background-color: #1f2937; border-radius: 12px; padding: 24px; margin: 0 0 30px 0; color: white;">
+      <h3 style="margin: 0 0 20px 0; color: #3b82f6; font-size: 18px; font-weight: 600;">
+        📋 Detalles del Evento
+      </h3>
+
+      <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 15px;">
+        <tr>
+          <td style="padding: 12px 0; color: #9ca3af; vertical-align: middle;">
+            <span style="font-size: 18px; margin-right: 8px;">📆</span> Fecha:
+          </td>
+          <td style="padding: 12px 0; color: white; font-weight: 600; text-align: right;">
+            ${formattedDate || 'Por confirmar'}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 12px 0; color: #9ca3af; vertical-align: middle; border-top: 1px solid #374151;">
+            <span style="font-size: 18px; margin-right: 8px;">⏰</span> Hora:
+          </td>
+          <td style="padding: 12px 0; color: white; font-weight: 600; text-align: right; border-top: 1px solid #374151;">
+            ${formattedTime || 'Por confirmar'} (Hora España)
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 12px 0; color: #9ca3af; vertical-align: middle; border-top: 1px solid #374151;">
+            <span style="font-size: 18px; margin-right: 8px;">📍</span> Modalidad:
+          </td>
+          <td style="padding: 12px 0; color: #3b82f6; font-weight: 600; text-align: right; border-top: 1px solid #374151;">
+            ${isOnlineEvent ? '🌐 Online en Vivo' : eventLocation}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 12px 0; color: #9ca3af; vertical-align: middle; border-top: 1px solid #374151;">
+            <span style="font-size: 18px; margin-right: 8px;">🎓</span> Instructor:
+          </td>
+          <td style="padding: 12px 0; color: #22c55e; font-weight: 600; text-align: right; border-top: 1px solid #374151;">
+            Mijail Medina
+          </td>
+        </tr>
+        ${ticketNumber ? `
+        <tr>
+          <td style="padding: 12px 0; color: #9ca3af; vertical-align: middle; border-top: 1px solid #374151;">
+            <span style="font-size: 18px; margin-right: 8px;">🎫</span> Ticket:
+          </td>
+          <td style="padding: 12px 0; color: #9ca3af; font-family: monospace; text-align: right; border-top: 1px solid #374151;">
+            ${ticketNumber}
+          </td>
+        </tr>
+        ` : ''}
+      </table>
+    </div>
+
+    <h3 style="margin: 30px 0 15px 0; color: #212636; font-size: 18px; font-weight: 600;">
+      🎯 En esta sesión aprenderás:
+    </h3>
+
+    <div style="margin: 0 0 30px 0;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="padding: 10px 0; vertical-align: top; width: 30px;">
+            <span style="display: inline-block; width: 24px; height: 24px; background-color: #3b82f6; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">✓</span>
+          </td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
+            <strong style="color: #212636;">Fundamentos del método de opciones S&P500</strong> - La metodología que utilizamos en DayTradeDAK
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 0; vertical-align: top; width: 30px;">
+            <span style="display: inline-block; width: 24px; height: 24px; background-color: #3b82f6; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">✓</span>
+          </td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
+            <strong style="color: #212636;">Operativa diaria en directo</strong> - Junto a Mijail Medina, trader profesional
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 0; vertical-align: top; width: 30px;">
+            <span style="display: inline-block; width: 24px; height: 24px; background-color: #3b82f6; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">✓</span>
+          </td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
+            <strong style="color: #212636;">Metodología diferenciada</strong> - Qué nos distingue de las estrategias genéricas
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 0; vertical-align: top; width: 30px;">
+            <span style="display: inline-block; width: 24px; height: 24px; background-color: #3b82f6; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">✓</span>
+          </td>
+          <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
+            <strong style="color: #212636;">Información del curso oficial</strong> - Oferta de lanzamiento exclusiva
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background-color: #f0fdf4; border-radius: 12px; padding: 24px; margin: 0 0 30px 0; border-left: 4px solid #22c55e;">
+      <p style="margin: 0 0 5px 0; color: #166534; font-size: 16px; font-weight: 600;">
+        🎁 BONUS INCLUIDO
+      </p>
+      <p style="margin: 0; color: #15803d; font-size: 15px; line-height: 24px;">
+        Tendrás <strong>acceso gratuito a la clase en vivo del día siguiente</strong> para ver la metodología aplicada en tiempo real con operaciones reales del mercado.
+      </p>
+    </div>
+
+    <div style="background-color: #f0fdf4; border-radius: 12px; padding: 24px; margin: 0 0 30px 0; text-align: center;">
+      <p style="margin: 0 0 15px 0; color: #166534; font-size: 16px; font-weight: 600;">
+        📝 Próximos pasos
+      </p>
+      <ol style="margin: 0; padding-left: 20px; color: #15803d; font-size: 14px; line-height: 24px; text-align: left; display: inline-block;">
+        <li>Guarda la fecha en tu calendario</li>
+        <li>Prepara libreta para tomar notas</li>
+        <li>Te enviaremos el enlace de acceso antes del evento</li>
+        <li>Conéctate 5 minutos antes para asegurar tu lugar</li>
+      </ol>
+    </div>
+
+    ${emailDivider()}
+
+    <div style="text-align: center;">
+      <p style="margin: 0 0 10px 0; color: #6b7280; font-size: 14px;">
+        ¿Tienes preguntas? Contáctanos:
+      </p>
+      <p style="margin: 0; color: #6b7280; font-size: 14px;">
+        <a href="mailto:support@daytradedak.com" style="color: #3b82f6; text-decoration: none; font-weight: 600;">support@daytradedak.com</a>
+      </p>
+    </div>
+
+    <p style="margin: 30px 0 0 0; color: #4b5563; font-size: 16px; line-height: 24px; text-align: center;">
+      ¡Nos vemos en la masterclass!<br>
+      <strong style="color: #212636;">El equipo de DayTradeDak España</strong>
+    </p>
+
+    <div style="margin-top: 30px; padding: 20px; background-color: #f3f4f6; border-radius: 8px; text-align: center;">
+      <p style="margin: 0; color: #6b7280; font-size: 12px;">
+        Este correo es tu confirmación de registro. Por favor, guárdalo.<br>
+        ${ticketNumber ? `Número de ticket: <strong>${ticketNumber}</strong>` : ''}
+      </p>
+    </div>
+  `;
+
+  return baseEmailTemplate({
+    preheader: `¡Confirmado! Tu plaza para ${eventName} está reservada`,
+    content,
+  });
+};
+
+// Helper to detect if event is an online masterclass/seminar
+const isOnlineMasterclass = (data: EventRegistrationData): boolean => {
+  const isOnline = data.isOnline ||
+    data.eventLocation?.toLowerCase().includes('online') ||
+    !data.eventLocation;
+
+  const isMasterclassName = data.eventName?.toLowerCase().includes('masterclass') ||
+    data.eventName?.toLowerCase().includes('opciones s&p') ||
+    data.eventName?.toLowerCase().includes('acceso a operativa');
+
+  return isOnline && isMasterclassName;
+};
+
 // Main export - routes to appropriate template based on event type
 export const eventRegistrationTemplate = (
   data: EventRegistrationData,
@@ -549,6 +752,17 @@ export const eventRegistrationTemplate = (
     return webinarRegistrationTemplate(data);
   }
 
-  // Use default template for other event types
+  // Use seminar template for seminar events (online masterclasses)
+  if (data.eventType === 'seminar') {
+    return seminarRegistrationTemplate(data);
+  }
+
+  // Also use seminar template for community_event if it's an online masterclass
+  // This handles events that may be miscategorized but are actually online masterclasses
+  if (data.eventType === 'community_event' && isOnlineMasterclass(data)) {
+    return seminarRegistrationTemplate(data);
+  }
+
+  // Use default template for other event types (in-person events)
   return defaultEventRegistrationTemplate(data);
 };

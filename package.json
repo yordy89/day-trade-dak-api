@@ -31,7 +31,11 @@
     "configure:s3-cors": "node scripts/configure-s3-cors.js",
     "use:standard": "cp src/main.ts.backup src/main.ts 2>/dev/null || echo 'No backup found. Main.ts is already standard.'",
     "script:fix-subscriptions": "ts-node src/scripts/fix-subscription-dates.ts",
-    "script:fix-stripe-index": "ts-node src/scripts/fix-subscription-dates.ts"
+    "script:fix-stripe-index": "ts-node src/scripts/fix-subscription-dates.ts",
+    "script:fix-duplicates": "ts-node -r tsconfig-paths/register scripts/fix-duplicate-subscriptions.ts",
+    "script:fix-duplicates:dry": "ts-node -r tsconfig-paths/register scripts/fix-duplicate-subscriptions.ts --dry-run",
+    "script:remove-bots": "ts-node -r tsconfig-paths/register scripts/remove-bot-accounts.ts",
+    "script:remove-bots:dry": "ts-node -r tsconfig-paths/register scripts/remove-bot-accounts.ts --dry-run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.744.0",
