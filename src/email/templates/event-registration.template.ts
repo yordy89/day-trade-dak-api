@@ -34,13 +34,23 @@ export interface EventRegistrationData {
   };
 }
 
+/**
+ * Safely parse and format a date without timezone conversion issues.
+ * Extracts just the date part and formats it to avoid UTC->local conversion.
+ */
 const formatDate = (date: Date): string => {
+  // Convert to ISO string and extract just the date part to avoid timezone issues
+  const isoString = date instanceof Date ? date.toISOString() : String(date);
+  const dateOnly = isoString.split('T')[0];
+  // Create a new date at noon to avoid timezone edge cases
+  const safeDate = new Date(dateOnly + 'T12:00:00');
+
   return new Intl.DateTimeFormat('es-ES', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-  }).format(date);
+  }).format(safeDate);
 };
 
 const formatTime = (date: Date): string => {
@@ -52,8 +62,11 @@ const formatTime = (date: Date): string => {
 };
 
 const formatDateRange = (startDate: Date, endDate: Date): string => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  // Convert to safe dates to avoid timezone issues
+  const startIso = startDate instanceof Date ? startDate.toISOString() : String(startDate);
+  const endIso = endDate instanceof Date ? endDate.toISOString() : String(endDate);
+  const start = new Date(startIso.split('T')[0] + 'T12:00:00');
+  const end = new Date(endIso.split('T')[0] + 'T12:00:00');
 
   const startDay = start.getDate();
   const endDay = end.getDate();
@@ -79,7 +92,10 @@ const formatDateRange = (startDate: Date, endDate: Date): string => {
 };
 
 const getFirstDayName = (date: Date): string => {
-  const dayName = date.toLocaleDateString('es-ES', { weekday: 'long' });
+  // Convert to safe date to avoid timezone issues
+  const isoString = date instanceof Date ? date.toISOString() : String(date);
+  const safeDate = new Date(isoString.split('T')[0] + 'T12:00:00');
+  const dayName = safeDate.toLocaleDateString('es-ES', { weekday: 'long' });
   return dayName.charAt(0).toUpperCase() + dayName.slice(1);
 };
 
@@ -606,7 +622,7 @@ const seminarRegistrationTemplate = (data: EventRegistrationData): string => {
             <span style="font-size: 18px; margin-right: 8px;">⏰</span> Hora:
           </td>
           <td style="padding: 12px 0; color: white; font-weight: 600; text-align: right; border-top: 1px solid #374151;">
-            ${formattedTime || 'Por confirmar'} (Hora España)
+            ${formattedTime || 'Por confirmar'} (Hora del Este)
           </td>
         </tr>
         <tr>
@@ -713,7 +729,7 @@ const seminarRegistrationTemplate = (data: EventRegistrationData): string => {
 
     <p style="margin: 30px 0 0 0; color: #4b5563; font-size: 16px; line-height: 24px; text-align: center;">
       ¡Nos vemos en la masterclass!<br>
-      <strong style="color: #212636;">El equipo de DayTradeDak España</strong>
+      <strong style="color: #212636;">El equipo de DayTradeDak</strong>
     </p>
 
     <div style="margin-top: 30px; padding: 20px; background-color: #f3f4f6; border-radius: 8px; text-align: center;">

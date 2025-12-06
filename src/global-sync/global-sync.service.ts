@@ -284,11 +284,15 @@ export class GlobalSyncService {
     // Send confirmation email
     try {
       // Map event type to email template type
-      let emailEventType: 'master_course' | 'community_event' | 'vip_event' = 'community_event';
+      let emailEventType: 'master_course' | 'community_event' | 'vip_event' | 'webinar' | 'seminar' = 'community_event';
       if (event.type === 'master_course') {
         emailEventType = 'master_course';
       } else if (event.type === 'vip_event') {
         emailEventType = 'vip_event';
+      } else if (event.type === 'webinar') {
+        emailEventType = 'webinar';
+      } else if (event.type === 'seminar') {
+        emailEventType = 'seminar';
       }
 
       await this.emailService.sendEventRegistrationEmail(payload.email, {
