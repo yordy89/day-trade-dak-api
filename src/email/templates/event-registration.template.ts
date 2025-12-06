@@ -42,15 +42,19 @@ const formatDate = (date: Date): string => {
   // Convert to ISO string and extract just the date part to avoid timezone issues
   const isoString = date instanceof Date ? date.toISOString() : String(date);
   const dateOnly = isoString.split('T')[0];
-  // Create a new date at noon to avoid timezone edge cases
-  const safeDate = new Date(dateOnly + 'T12:00:00');
+  // Parse the date parts manually to avoid any timezone interpretation
+  const [year, month, day] = dateOnly.split('-').map(Number);
 
-  return new Intl.DateTimeFormat('es-ES', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(safeDate);
+  // Use UTC methods to format the date to avoid timezone shifts
+  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+                  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const weekdays = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+  // Create date at UTC noon to get correct day of week
+  const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const dayOfWeek = utcDate.getUTCDay();
+
+  return `${weekdays[dayOfWeek]}, ${day} de ${months[month - 1]} de ${year}`;
 };
 
 const formatTime = (date: Date): string => {
@@ -62,41 +66,43 @@ const formatTime = (date: Date): string => {
 };
 
 const formatDateRange = (startDate: Date, endDate: Date): string => {
-  // Convert to safe dates to avoid timezone issues
+  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+                  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const weekdayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+  // Extract date parts from ISO strings to avoid timezone issues
   const startIso = startDate instanceof Date ? startDate.toISOString() : String(startDate);
   const endIso = endDate instanceof Date ? endDate.toISOString() : String(endDate);
-  const start = new Date(startIso.split('T')[0] + 'T12:00:00');
-  const end = new Date(endIso.split('T')[0] + 'T12:00:00');
 
-  const startDay = start.getDate();
-  const endDay = end.getDate();
-  const month = start.toLocaleDateString('es-ES', { month: 'long' });
-  const year = start.getFullYear();
+  const [startYear, startMonth, startDay] = startIso.split('T')[0].split('-').map(Number);
+  const [endYear, endMonth, endDay] = endIso.split('T')[0].split('-').map(Number);
 
-  // Get day names
+  // Get day names using UTC
   const days = [];
-  const current = new Date(start);
-  while (current <= end) {
-    const dayName = current.toLocaleDateString('es-ES', { weekday: 'long' });
-    days.push(dayName.charAt(0).toUpperCase() + dayName.slice(1));
-    current.setDate(current.getDate() + 1);
+  for (let d = startDay; d <= endDay; d++) {
+    const utcDate = new Date(Date.UTC(startYear, startMonth - 1, d, 12, 0, 0));
+    days.push(weekdayNames[utcDate.getUTCDay()]);
   }
 
-  // Format: "Miércoles - Jueves - Viernes. 13, 14, 15 de noviembre, 2025"
+  // Build day numbers array
   const dayNumbers = [];
-  for (let i = 0; i < days.length; i++) {
-    dayNumbers.push(startDay + i);
+  for (let d = startDay; d <= endDay; d++) {
+    dayNumbers.push(d);
   }
 
-  return `${days.join(' - ')}. ${dayNumbers.join(', ')} de ${month}, ${year}`;
+  return `${days.join(' - ')}. ${dayNumbers.join(', ')} de ${months[startMonth - 1]}, ${startYear}`;
 };
 
 const getFirstDayName = (date: Date): string => {
-  // Convert to safe date to avoid timezone issues
+  const weekdayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+  // Extract date parts from ISO string to avoid timezone issues
   const isoString = date instanceof Date ? date.toISOString() : String(date);
-  const safeDate = new Date(isoString.split('T')[0] + 'T12:00:00');
-  const dayName = safeDate.toLocaleDateString('es-ES', { weekday: 'long' });
-  return dayName.charAt(0).toUpperCase() + dayName.slice(1);
+  const [year, month, day] = isoString.split('T')[0].split('-').map(Number);
+
+  // Use UTC to get correct day of week
+  const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  return weekdayNames[utcDate.getUTCDay()];
 };
 
 const formatCurrency = (amount: number, currency: string): string => {
