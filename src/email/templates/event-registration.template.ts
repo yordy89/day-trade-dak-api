@@ -13,6 +13,7 @@ export interface EventRegistrationData {
   eventStartDate?: Date;
   eventEndDate?: Date;
   eventTime?: string;
+  eventTimezone?: string; // IANA timezone string (e.g., 'America/New_York')
   eventLocation?: string;
   eventDescription?: string;
   ticketNumber?: string;
@@ -33,6 +34,29 @@ export interface EventRegistrationData {
     [key: string]: any;
   };
 }
+
+// Region-specific timezone defaults
+const REGION_TIMEZONES: Record<string, string> = {
+  'us': 'America/New_York',
+  'es': 'Europe/Madrid',
+  'mx': 'America/Mexico_City',
+  'co': 'America/Bogota',
+};
+
+// Timezone labels in Spanish
+const TIMEZONE_LABELS: Record<string, string> = {
+  'America/New_York': 'Hora del Este',
+  'America/Chicago': 'Hora Central',
+  'America/Denver': 'Hora de la Montaña',
+  'America/Los_Angeles': 'Hora del Pacífico',
+  'Europe/Madrid': 'Hora España',
+  'Europe/London': 'Hora Reino Unido',
+  'America/Mexico_City': 'Hora México',
+  'America/Bogota': 'Hora Colombia',
+  'America/Lima': 'Hora Perú',
+  'America/Santiago': 'Hora Chile',
+  'America/Argentina/Buenos_Aires': 'Hora Argentina',
+};
 
 /**
  * Safely parse and format a date without timezone conversion issues.
@@ -57,12 +81,27 @@ const formatDate = (date: Date): string => {
   return `${weekdays[dayOfWeek]}, ${day} de ${months[month - 1]} de ${year}`;
 };
 
-const formatTime = (date: Date): string => {
+/**
+ * Format time in a specific timezone
+ * @param date - The UTC date
+ * @param timezone - IANA timezone string (e.g., 'America/New_York')
+ */
+const formatTime = (date: Date, timezone?: string): string => {
+  const tz = timezone || 'America/New_York';
   return new Intl.DateTimeFormat('es-ES', {
+    timeZone: tz,
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true,
+    hour12: false,
   }).format(date);
+};
+
+/**
+ * Get the timezone label for display
+ */
+const getTimezoneLabel = (timezone?: string): string => {
+  const tz = timezone || 'America/New_York';
+  return TIMEZONE_LABELS[tz] || tz;
 };
 
 const formatDateRange = (startDate: Date, endDate: Date): string => {
@@ -169,13 +208,15 @@ const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
     eventName,
     eventDate,
     eventTime,
+    eventTimezone,
     eventLocation,
     ticketNumber,
     meetingLink,
   } = data;
 
   const formattedDate = eventDate ? formatDate(eventDate) : null;
-  const formattedTime = eventDate ? formatTime(eventDate) : eventTime;
+  const formattedTime = eventDate ? formatTime(eventDate, eventTimezone) : eventTime;
+  const timezoneLabel = getTimezoneLabel(eventTimezone);
 
   const content = `
     <div style="text-align: center; margin-bottom: 30px;">
@@ -218,7 +259,7 @@ const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
             <span style="font-size: 18px; margin-right: 8px;">⏰</span> Hora:
           </td>
           <td style="padding: 12px 0; color: white; font-weight: 600; text-align: right; border-top: 1px solid #374151;">
-            ${formattedTime || '5:00 PM'} (Hora del Este)
+            ${formattedTime || '17:00'} (${timezoneLabel})
           </td>
         </tr>
         <tr>
@@ -569,6 +610,7 @@ const seminarRegistrationTemplate = (data: EventRegistrationData): string => {
     eventName,
     eventDate,
     eventTime,
+    eventTimezone,
     eventLocation,
     ticketNumber,
     isOnline,
@@ -576,7 +618,8 @@ const seminarRegistrationTemplate = (data: EventRegistrationData): string => {
   } = data;
 
   const formattedDate = eventDate ? formatDate(eventDate) : null;
-  const formattedTime = eventDate ? formatTime(eventDate) : eventTime;
+  const formattedTime = eventDate ? formatTime(eventDate, eventTimezone) : eventTime;
+  const timezoneLabel = getTimezoneLabel(eventTimezone);
   const isOnlineEvent = isOnline || eventLocation?.toLowerCase().includes('online') || !eventLocation;
 
   const content = `
@@ -628,7 +671,7 @@ const seminarRegistrationTemplate = (data: EventRegistrationData): string => {
             <span style="font-size: 18px; margin-right: 8px;">⏰</span> Hora:
           </td>
           <td style="padding: 12px 0; color: white; font-weight: 600; text-align: right; border-top: 1px solid #374151;">
-            ${formattedTime || 'Por confirmar'} (Hora del Este)
+            ${formattedTime || 'Por confirmar'} (${timezoneLabel})
           </td>
         </tr>
         <tr>
