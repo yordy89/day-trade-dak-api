@@ -8,20 +8,39 @@ import {
   Put,
   Req,
   Param,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { RecaptchaService } from './recaptcha.service';
 import { CreateUserDto } from 'src/users/user.dto';
 import { JwtAuthGuard } from 'src/guards/jwt-auth-guard';
 import { Public } from 'src/decorators/public.decorator';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly recaptchaService: RecaptchaService,
+  ) {}
 
   @Public()
   @Post('signup')
   async signup(@Body() data: CreateUserDto) {
-    return this.authService.signup(data);
+    // Verify reCAPTCHA token
+    const isValidRecaptcha = await this.recaptchaService.verifyToken(
+      data.recaptchaToken,
+      'signup',
+    );
+
+    if (!isValidRecaptcha) {
+      throw new BadRequestException(
+        'Verificación de seguridad fallida. Por favor, intenta de nuevo.',
+      );
+    }
+
+    // Remove recaptchaToken from data before passing to auth service
+    const { recaptchaToken, ...signupData } = data;
+    return this.authService.signup(signupData);
   }
 
   @Public()

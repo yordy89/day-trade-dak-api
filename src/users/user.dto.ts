@@ -36,6 +36,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsBoolean()
   acceptedMediaUsageTerms?: boolean;
+
+  @IsOptional()
+  @IsString()
+  recaptchaToken?: string;
 }
 
 export class UpdateUserDto {
