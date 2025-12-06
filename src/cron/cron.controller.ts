@@ -39,9 +39,10 @@ export class CronController {
   }
 
   /**
-   * Get cron job status and statistics
+   * Get cron job status and statistics (admin only)
    */
   @Get('status')
+  @UseGuards(JwtAuthGuard)
   getCronStatus() {
     const now = new Date();
     
@@ -126,9 +127,10 @@ export class CronController {
   }
 
   /**
-   * Test cron connectivity and configuration
+   * Test cron connectivity and configuration (admin only)
    */
   @Get('test')
+  @UseGuards(JwtAuthGuard)
   testCron() {
     return {
       message: 'Cron module is active and responding',

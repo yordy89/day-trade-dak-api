@@ -151,9 +151,14 @@ export class MeetingCronService {
         result.totalDeleted =
           result.deletedByStatus + result.deletedByTime + result.deletedDailyLive;
 
-        // 4. Create new daily meeting for today at 8:45 AM
-        const scheduledAt = new Date(today);
+        // 4. Create new daily meeting for today at 8:45 AM New York time
+        // Convert 8:45 AM New York to UTC
+        const scheduledAt = new Date(today.toLocaleString('en-US', { timeZone: 'America/New_York' }));
         scheduledAt.setHours(8, 45, 0, 0);
+
+        // Convert back to UTC for storage
+        const nyOffset = this.getNewYorkOffset(scheduledAt);
+        const scheduledAtUTC = new Date(scheduledAt.getTime() + nyOffset * 60 * 1000);
 
         // Get the host - try to find an admin user if no default host is configured
         let hostId = this.defaultHostId;
@@ -175,7 +180,7 @@ export class MeetingCronService {
           // Create Zoom meeting
           const zoomMeeting = await this.zoomApiService.createMeeting({
             topic: 'Analysis de Trading en Vivo',
-            scheduledAt,
+            scheduledAt: scheduledAtUTC,
             duration: 240,
             recordAutomatically: true,
             enableChat: true,
@@ -208,7 +213,7 @@ export class MeetingCronService {
             zoomJoinUrl: zoomMeeting.joinUrl,
             zoomStartUrl: zoomMeeting.startUrl,
             zoomPassword: zoomMeeting.password,
-            scheduledAt,
+            scheduledAt: scheduledAtUTC,
             duration: 240,
             host: hostId,
             status: 'scheduled',
@@ -227,7 +232,7 @@ export class MeetingCronService {
           const meeting = await this.meetingModel.create(meetingData);
 
           this.logger.log(
-            `Created daily Zoom meeting for ${scheduledAt.toISOString()} with meeting ID: ${zoomMeeting.zoomMeetingId}`,
+            `Created daily Zoom meeting for ${scheduledAtUTC.toISOString()} (8:45 AM New York time) with meeting ID: ${zoomMeeting.zoomMeetingId}`,
           );
 
           result.meetingCreated = true;
@@ -281,5 +286,17 @@ export class MeetingCronService {
       'Saturday',
     ];
     return days[dayNumber];
+  }
+
+  /**
+   * Get the offset in minutes from UTC for New York timezone
+   * Handles both EST (-300) and EDT (-240) automatically
+   */
+  private getNewYorkOffset(date: Date): number {
+    const nyDateStr = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+    const utcDateStr = date.toLocaleString('en-US', { timeZone: 'UTC' });
+    const nyDate = new Date(nyDateStr);
+    const utcDate = new Date(utcDateStr);
+    return (utcDate.getTime() - nyDate.getTime()) / (1000 * 60);
   }
 }
