@@ -80,111 +80,137 @@ export class CronService {
   }
 
   // ✅ Remove expired subscriptions every midnight
+  // OPTIMIZED: Uses cursor-based iteration to avoid loading all users into memory
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async removeExpiredSubscriptions() {
     const now = new Date();
     this.logger.log('🔄 Running cleanup for expired subscriptions at ' + now.toISOString());
 
-    const users = await this.userService.findAll();
+    // Use cursor to iterate through users without loading all into memory
+    // Only fetch users who have subscriptions that might be expired
+    const cursor = this.userModel.find({
+      'subscriptions.expiresAt': { $lte: now }
+    }).cursor();
 
-    for (const user of users) {
-      const expiredSubscriptions = user.subscriptions.filter(
-        (sub) => sub.expiresAt && sub.expiresAt <= now,
-      );
+    let processedCount = 0;
+    let expiredCount = 0;
 
-      const activeSubscriptions = user.subscriptions.filter(
-        (sub) => !sub.expiresAt || sub.expiresAt > now,
-      );
+    for await (const user of cursor) {
+      try {
+        const expiredSubscriptions = user.subscriptions.filter(
+          (sub) => sub.expiresAt && sub.expiresAt <= now,
+        );
 
-      if (activeSubscriptions.length !== user.subscriptions.length) {
-        // ✅ FIXED: Cancel Stripe subscriptions BEFORE removing from database
-        const stripeIdsToRemove: string[] = [];
-        for (const expiredSub of expiredSubscriptions) {
-          // Cancel in Stripe first to prevent future charges
-          if (expiredSub.stripeSubscriptionId) {
-            await this.safelyCancelStripeSubscription(expiredSub.stripeSubscriptionId);
-            stripeIdsToRemove.push(expiredSub.stripeSubscriptionId);
+        const activeSubscriptions = user.subscriptions.filter(
+          (sub) => !sub.expiresAt || sub.expiresAt > now,
+        );
+
+        if (expiredSubscriptions.length > 0) {
+          const stripeIdsToRemove: string[] = [];
+
+          for (const expiredSub of expiredSubscriptions) {
+            if (expiredSub.stripeSubscriptionId) {
+              await this.safelyCancelStripeSubscription(expiredSub.stripeSubscriptionId);
+              stripeIdsToRemove.push(expiredSub.stripeSubscriptionId);
+            }
+
+            await this.subscriptionHistoryModel.create({
+              userId: user._id,
+              plan: expiredSub.plan,
+              action: SubscriptionAction.EXPIRED,
+              stripeSubscriptionId: expiredSub.stripeSubscriptionId,
+              price: 0,
+              currency: 'usd',
+              effectiveDate: now,
+              metadata: {
+                reason: 'Subscription expired',
+                cancelledInStripe: !!expiredSub.stripeSubscriptionId,
+              },
+            });
           }
 
-          // Record expired subscription in history
-          await this.subscriptionHistoryModel.create({
-            userId: user._id,
-            plan: expiredSub.plan,
-            action: SubscriptionAction.EXPIRED,
-            stripeSubscriptionId: expiredSub.stripeSubscriptionId,
-            price: 0,
-            currency: 'usd',
-            effectiveDate: now,
-            metadata: {
-              reason: 'Subscription expired',
-              cancelledInStripe: !!expiredSub.stripeSubscriptionId,
+          await this.userModel.updateOne(
+            { _id: user._id },
+            {
+              $set: { subscriptions: activeSubscriptions },
+              $pull: { activeSubscriptions: { $in: stripeIdsToRemove } },
             },
-          });
+          );
+
+          expiredCount += expiredSubscriptions.length;
+          this.logger.log(
+            `⚠️ Removed ${expiredSubscriptions.length} expired subscriptions for user ${user._id}`,
+          );
         }
-
-        // Update user - remove expired subscriptions from BOTH arrays atomically
-        await this.userModel.updateOne(
-          { _id: user._id },
-          {
-            $set: { subscriptions: activeSubscriptions },
-            $pull: { activeSubscriptions: { $in: stripeIdsToRemove } },
-          },
-        );
-
-        this.logger.log(
-          `⚠️ Removed ${expiredSubscriptions.length} expired subscriptions for user ${user._id} (Stripe cancelled: ${stripeIdsToRemove.length})`,
-        );
+        processedCount++;
+      } catch (error) {
+        this.logger.error(`Error processing user ${user._id}: ${error.message}`);
       }
     }
+
+    this.logger.log(`✅ Processed ${processedCount} users, expired ${expiredCount} subscriptions`);
   }
 
   // ✅ Send renewal reminders for weekly manual subscriptions
+  // OPTIMIZED: Uses targeted query instead of loading all users
   @Cron('0 10 * * *') // Run at 10 AM every day
   async sendWeeklyRenewalReminders() {
     this.logger.log('📧 Checking for weekly subscription renewal reminders...');
 
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(23, 59, 59, 999);
+    tomorrow.setHours(0, 0, 0, 0);
 
     const dayAfterTomorrow = new Date();
     dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
     dayAfterTomorrow.setHours(0, 0, 0, 0);
 
-    // Find users with weekly manual subscriptions expiring tomorrow
-    const users = await this.userService.findAll();
+    // Use cursor to find only users with expiring weekly subscriptions
+    const cursor = this.userModel.find({
+      'subscriptions.plan': SubscriptionPlan.LIVE_WEEKLY_MANUAL,
+      'subscriptions.expiresAt': { $gte: tomorrow, $lt: dayAfterTomorrow }
+    }).cursor();
 
-    for (const user of users) {
-      const expiringWeeklySubscriptions = user.subscriptions.filter(
-        (sub) =>
-          sub.plan === SubscriptionPlan.LIVE_WEEKLY_MANUAL &&
-          sub.expiresAt &&
-          sub.expiresAt >= tomorrow &&
-          sub.expiresAt < dayAfterTomorrow,
-      );
+    let sentCount = 0;
 
-      if (expiringWeeklySubscriptions.length > 0) {
-        const expirationDate = expiringWeeklySubscriptions[0].expiresAt;
+    for await (const user of cursor) {
+      try {
+        const expiringWeeklySubscriptions = user.subscriptions.filter(
+          (sub) =>
+            sub.plan === SubscriptionPlan.LIVE_WEEKLY_MANUAL &&
+            sub.expiresAt &&
+            sub.expiresAt >= tomorrow &&
+            sub.expiresAt < dayAfterTomorrow,
+        );
 
-        if (expirationDate) {
-          const daysRemaining = Math.ceil(
-            (expirationDate.getTime() - new Date().getTime()) /
-              (1000 * 60 * 60 * 24),
-          );
+        if (expiringWeeklySubscriptions.length > 0) {
+          const expirationDate = expiringWeeklySubscriptions[0].expiresAt;
 
-          await this.emailService.sendSubscriptionExpiringEmail(user.email, {
-            firstName: user.firstName,
-            planName: 'Live Semanal',
-            expirationDate,
-            daysRemaining: Math.max(1, daysRemaining), // Ensure at least 1 day
-          });
+          if (expirationDate) {
+            const daysRemaining = Math.ceil(
+              (expirationDate.getTime() - new Date().getTime()) /
+                (1000 * 60 * 60 * 24),
+            );
 
-          this.logger.log(
-            `📧 Sent renewal reminder to ${user.email} for expiring weekly subscription`,
-          );
+            await this.emailService.sendSubscriptionExpiringEmail(user.email, {
+              firstName: user.firstName,
+              planName: 'Live Semanal',
+              expirationDate,
+              daysRemaining: Math.max(1, daysRemaining),
+            });
+
+            sentCount++;
+            this.logger.log(
+              `📧 Sent renewal reminder to ${user.email} for expiring weekly subscription`,
+            );
+          }
         }
+      } catch (error) {
+        this.logger.error(`Error sending reminder to ${user.email}: ${error.message}`);
       }
     }
+
+    this.logger.log(`✅ Sent ${sentCount} renewal reminders`);
   }
 
   // ✅ Process failed recurring payments
