@@ -52,7 +52,7 @@ export class EventPaymentTracker {
   status: PaymentStatus;
 
   // Stripe integration
-  @Prop({ index: true })
+  @Prop()
   stripePaymentIntentId?: string;
 
   @Prop()
@@ -184,10 +184,10 @@ export class EventPaymentTracker {
 export const EventPaymentTrackerSchema = SchemaFactory.createForClass(EventPaymentTracker);
 
 // Add indexes for better query performance
+EventPaymentTrackerSchema.index({ stripePaymentIntentId: 1 });
 EventPaymentTrackerSchema.index({ registrationId: 1, status: 1 });
 EventPaymentTrackerSchema.index({ eventId: 1, status: 1 });
 EventPaymentTrackerSchema.index({ email: 1, eventId: 1 });
-EventPaymentTrackerSchema.index({ stripePaymentIntentId: 1 });
 EventPaymentTrackerSchema.index({ status: 1, createdAt: -1 });
 EventPaymentTrackerSchema.index({ paymentType: 1, status: 1 });
 EventPaymentTrackerSchema.index({ installmentPlanId: 1 });

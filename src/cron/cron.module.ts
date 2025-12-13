@@ -44,6 +44,6 @@ import { EventModule } from 'src/event/event.module';
   ],
   controllers: [CronController],
   providers: [CronService, SubscriptionSyncCron, AnnouncementCronService],
-  exports: [SubscriptionSyncCron],
+  exports: [CronService, SubscriptionSyncCron],
 })
 export class CronModule {}

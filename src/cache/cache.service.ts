@@ -23,16 +23,24 @@ export class CacheService implements OnModuleDestroy {
         password: this.configService.get('REDIS_PASSWORD'),
         db: this.configService.get('REDIS_DB', 0),
         retryStrategy: (times) => {
-          const delay = Math.min(times * 50, 2000);
+          if (times > 3) {
+            this.logger.warn(
+              `Redis connection failed after ${times} attempts, continuing without Redis`,
+              'CacheService',
+            );
+            return null; // Stop retrying after 3 attempts
+          }
+          const delay = Math.min(times * 1000, 3000);
           this.logger.warn(
             `Redis connection retry #${times}, delay: ${delay}ms`,
             'CacheService',
           );
           return delay;
         },
-        maxRetriesPerRequest: 3,
-        enableReadyCheck: true,
+        maxRetriesPerRequest: null, // Don't block on individual requests
+        enableReadyCheck: false, // Don't block waiting for ready
         connectTimeout: 10000,
+        lazyConnect: true, // Don't block on connection during initialization
       });
 
       this.redis.on('connect', () => {

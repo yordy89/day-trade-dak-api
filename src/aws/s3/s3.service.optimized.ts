@@ -245,9 +245,20 @@ export class S3ServiceOptimized {
           configPath = key;
       }
 
+      // Define default fallback values for each folder key
+      const defaultFolders: Record<string, string> = {
+        'AWS_S3_PSICOTRADING_VIDEO_FOLDER': 'hsl-daytradedak-videos/PsicoTrading',
+        'AWS_S3_CLASS_VIDEO_FOLDER': 'hsl-daytradedak-videos/Classes',
+        'AWS_S3_MENTORSHIP_FOLDER': 'hsl-daytradedak-videos/Mentorship',
+        'AWS_S3_STOCK_VIDEO_FOLDER': 'hsl-daytradedak-videos/Stock',
+        'AWS_S3_CURSO_1_FOLDER': 'hsl-daytradedak-videos/Curso1',
+        'AWS_S3_CLASS_COURSE_CLASS': 'hsl-daytradedak-videos/CourseClasses',
+      };
+
       const prefix =
         this.configService.get<string>(configPath) ||
-        this.configService.get<string>(key);
+        this.configService.get<string>(key) ||
+        defaultFolders[key];
 
       if (!prefix) {
         this.customLogger.error(
