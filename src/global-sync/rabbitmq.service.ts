@@ -73,11 +73,13 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
       await this.channel.assertExchange('daytradedak.events', 'topic', { durable: true });
       await this.channel.assertExchange('daytradedak.courses', 'topic', { durable: true });
       await this.channel.assertExchange('daytradedak.registrations', 'topic', { durable: true });
+      await this.channel.assertExchange('daytradedak.meetings', 'topic', { durable: true });
 
       // Set up queues for this region
       await this.setupQueue('us.events.queue', 'daytradedak.events', ['event.created', 'event.updated', 'event.cancelled', 'event.deleted']);
       await this.setupQueue('us.courses.queue', 'daytradedak.courses', ['course.published', 'course.updated', 'course.archived']);
       await this.setupQueue('us.registrations.queue', 'daytradedak.registrations', ['registration.created', 'registration.updated']);
+      await this.setupQueue('us.meetings.queue', 'daytradedak.meetings', ['meeting.created', 'meeting.updated', 'meeting.cancelled', 'meeting.deleted']);
 
       this.isConnected = true;
       this.logger.log('Successfully connected to RabbitMQ and set up queues');
@@ -168,7 +170,7 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
   // Method to report sync status back to Global API
   async reportSyncStatus(
     globalId: string,
-    resourceType: 'event' | 'course' | 'registration',
+    resourceType: 'event' | 'course' | 'registration' | 'meeting',
     status: 'synced' | 'failed',
     localId?: string,
     error?: string,

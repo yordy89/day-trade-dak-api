@@ -1,8 +1,9 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { RabbitMQService, GlobalMessage } from './rabbitmq.service';
-import { GlobalSyncService, EventPayload, RegistrationPayload } from './global-sync.service';
+import { GlobalSyncService, EventPayload, RegistrationPayload, MeetingPayload } from './global-sync.service';
 import { EventDocument } from '../event/schemas/event.schema';
 import { EventRegistrationDocument } from '../event/schemas/eventRegistration.schema';
+import { MeetingDocument } from '../schemas/meeting.schema';
 
 @Injectable()
 export class GlobalSyncConsumer implements OnModuleInit {
@@ -32,6 +33,12 @@ export class GlobalSyncConsumer implements OnModuleInit {
     // Registration handlers
     this.rabbitMQService.registerHandler('registration.created', this.handleRegistrationCreated.bind(this));
     this.rabbitMQService.registerHandler('registration.updated', this.handleRegistrationUpdated.bind(this));
+
+    // Meeting handlers
+    this.rabbitMQService.registerHandler('meeting.created', this.handleMeetingCreated.bind(this));
+    this.rabbitMQService.registerHandler('meeting.updated', this.handleMeetingUpdated.bind(this));
+    this.rabbitMQService.registerHandler('meeting.cancelled', this.handleMeetingCancelled.bind(this));
+    this.rabbitMQService.registerHandler('meeting.deleted', this.handleMeetingDeleted.bind(this));
 
     this.logger.log('All message handlers registered');
   }
@@ -200,6 +207,95 @@ export class GlobalSyncConsumer implements OnModuleInit {
         undefined,
         error.message,
       );
+    }
+  }
+
+  // Meeting Handlers
+  private async handleMeetingCreated(message: GlobalMessage<MeetingPayload>): Promise<void> {
+    this.logger.log(`Handling meeting.created: ${message.payload.globalId}`);
+
+    try {
+      const meeting = await this.globalSyncService.createMeetingFromGlobal(
+        message.payload,
+        message.version,
+      );
+
+      await this.rabbitMQService.reportSyncStatus(
+        message.payload.globalId,
+        'meeting',
+        'synced',
+        meeting._id?.toString(),
+      );
+    } catch (error) {
+      this.logger.error(`Failed to create meeting from global: ${error.message}`);
+      await this.rabbitMQService.reportSyncStatus(
+        message.payload.globalId,
+        'meeting',
+        'failed',
+        undefined,
+        error.message,
+      );
+    }
+  }
+
+  private async handleMeetingUpdated(message: GlobalMessage<MeetingPayload>): Promise<void> {
+    this.logger.log(`Handling meeting.updated: ${message.payload.globalId}`);
+
+    try {
+      const meeting = await this.globalSyncService.updateMeetingFromGlobal(
+        message.payload.globalId,
+        message.payload,
+        message.version,
+      );
+
+      await this.rabbitMQService.reportSyncStatus(
+        message.payload.globalId,
+        'meeting',
+        'synced',
+        meeting._id?.toString(),
+      );
+    } catch (error) {
+      this.logger.error(`Failed to update meeting from global: ${error.message}`);
+      await this.rabbitMQService.reportSyncStatus(
+        message.payload.globalId,
+        'meeting',
+        'failed',
+        undefined,
+        error.message,
+      );
+    }
+  }
+
+  private async handleMeetingCancelled(message: GlobalMessage<MeetingPayload>): Promise<void> {
+    this.logger.log(`Handling meeting.cancelled: ${message.payload.globalId}`);
+
+    try {
+      await this.globalSyncService.cancelMeetingFromGlobal(message.payload.globalId);
+
+      await this.rabbitMQService.reportSyncStatus(
+        message.payload.globalId,
+        'meeting',
+        'synced',
+      );
+    } catch (error) {
+      this.logger.error(`Failed to cancel meeting from global: ${error.message}`);
+      await this.rabbitMQService.reportSyncStatus(
+        message.payload.globalId,
+        'meeting',
+        'failed',
+        undefined,
+        error.message,
+      );
+    }
+  }
+
+  private async handleMeetingDeleted(message: GlobalMessage<{ globalId: string }>): Promise<void> {
+    this.logger.log(`Handling meeting.deleted: ${message.payload.globalId}`);
+
+    try {
+      await this.globalSyncService.deleteMeetingFromGlobal(message.payload.globalId);
+    } catch (error) {
+      this.logger.error(`Failed to delete meeting from global: ${error.message}`);
     }
   }
 }
