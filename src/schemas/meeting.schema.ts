@@ -132,6 +132,19 @@ export class Meeting {
   @Prop({ default: Date.now })
   updatedAt: Date;
 
+  // Global sync fields - for meetings synced from Global API
+  @Prop()
+  globalId?: string; // Reference to global meeting ID
+
+  @Prop({ default: false })
+  isGloballyManaged?: boolean; // If true, this meeting was created by Global API
+
+  @Prop()
+  globalVersion?: number; // Version number for optimistic concurrency
+
+  @Prop()
+  lastSyncedAt?: Date; // When this meeting was last synced from Global
+
   // New subscription-based access control fields
   @Prop({ type: [String], default: [] })
   allowedSubscriptions?: string[]; // Array of subscription plan IDs that can access this meeting
@@ -168,3 +181,6 @@ export const MeetingSchema = SchemaFactory.createForClass(Meeting);
 // Add index for subscription-based queries
 MeetingSchema.index({ allowedSubscriptions: 1 });
 MeetingSchema.index({ meetingType: 1, status: 1 });
+
+// Add index for global sync queries
+MeetingSchema.index({ globalId: 1 }, { sparse: true });

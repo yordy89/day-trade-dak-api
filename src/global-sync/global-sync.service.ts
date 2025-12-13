@@ -3,8 +3,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Event, EventDocument } from '../event/schemas/event.schema';
 import { EventRegistration, EventRegistrationDocument } from '../event/schemas/eventRegistration.schema';
+import { Meeting, MeetingDocument } from '../schemas/meeting.schema';
 import { Types } from 'mongoose';
 import { EmailService } from '../email/email.service';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface EventPayload {
   globalId: string;
@@ -73,6 +75,44 @@ export interface RegistrationPayload {
   currency?: string;
 }
 
+export interface MeetingPayload {
+  globalId: string;
+  title: string;
+  description?: string;
+  scheduledAt: string;
+  duration: number;
+  status: string;
+  meetingType: string;
+  provider: string;
+  zoomMeetingId?: string;
+  zoomJoinUrl?: string;
+  zoomStartUrl?: string;
+  zoomPassword?: string;
+  livekitRoomName?: string;
+  livekitRoomSid?: string;
+  livekitMetadata?: {
+    recordingEnabled?: boolean;
+    maxParticipants?: number;
+    roomType?: string;
+  };
+  maxParticipants?: number;
+  enableRecording?: boolean;
+  enableChat?: boolean;
+  enableScreenShare?: boolean;
+  enableWaitingRoom?: boolean;
+  allowedSubscriptions?: string[];
+  restrictedToSubscriptions?: boolean;
+  targetRegions: string[];
+  regionalMetadata?: {
+    regionCode: string;
+    timezone: string;
+    scheduledAtLocal: string;
+    locale: string;
+    localTitle?: string;
+    localDescription?: string;
+  }[];
+}
+
 @Injectable()
 export class GlobalSyncService {
   private readonly logger = new Logger(GlobalSyncService.name);
@@ -83,6 +123,8 @@ export class GlobalSyncService {
     private readonly eventModel: Model<EventDocument>,
     @InjectModel(EventRegistration.name)
     private readonly registrationModel: Model<EventRegistrationDocument>,
+    @InjectModel(Meeting.name)
+    private readonly meetingModel: Model<MeetingDocument>,
     private readonly emailService: EmailService,
   ) {}
 
@@ -377,5 +419,166 @@ export class GlobalSyncService {
 
   async findRegistrationByGlobalId(globalRegistrationId: string): Promise<EventRegistration | null> {
     return this.registrationModel.findOne({ globalRegistrationId });
+  }
+
+  // Meeting sync methods
+  private generateMeetingId(): string {
+    return uuidv4().replace(/-/g, '').substring(0, 16);
+  }
+
+  async createMeetingFromGlobal(payload: MeetingPayload, version: number): Promise<MeetingDocument> {
+    // Check if we already have this meeting
+    const existing = await this.meetingModel.findOne({ globalId: payload.globalId });
+
+    if (existing) {
+      // Check version to avoid duplicate processing
+      if (existing.globalVersion >= version) {
+        this.logger.log(`Meeting ${payload.globalId} already at version ${existing.globalVersion}, skipping`);
+        return existing;
+      }
+      // Update instead
+      return this.updateMeetingFromGlobal(payload.globalId, payload, version);
+    }
+
+    // Get regional metadata for this region
+    const regionalMeta = payload.regionalMetadata?.find(r => r.regionCode === this.regionCode);
+
+    const meetingData: any = {
+      globalId: payload.globalId,
+      globalVersion: version,
+      isGloballyManaged: true,
+      lastSyncedAt: new Date(),
+      meetingId: this.generateMeetingId(),
+      title: regionalMeta?.localTitle || payload.title,
+      description: regionalMeta?.localDescription || payload.description,
+      scheduledAt: new Date(payload.scheduledAt),
+      duration: payload.duration,
+      status: payload.status,
+      meetingType: payload.meetingType,
+      provider: payload.provider || 'zoom',
+      maxParticipants: payload.maxParticipants || 100,
+      enableRecording: payload.enableRecording || false,
+      enableChat: payload.enableChat !== false,
+      enableScreenShare: payload.enableScreenShare !== false,
+      enableWaitingRoom: payload.enableWaitingRoom || false,
+      allowedSubscriptions: payload.allowedSubscriptions || [],
+      restrictedToSubscriptions: payload.restrictedToSubscriptions || false,
+      isPublic: false,
+      roomUrl: payload.zoomJoinUrl || '',
+    };
+
+    // Add Zoom fields if present
+    if (payload.zoomMeetingId) {
+      meetingData.zoomMeetingId = payload.zoomMeetingId;
+      meetingData.zoomJoinUrl = payload.zoomJoinUrl;
+      meetingData.zoomStartUrl = payload.zoomStartUrl;
+      meetingData.zoomPassword = payload.zoomPassword;
+    }
+
+    // Add LiveKit fields if present
+    if (payload.livekitRoomName) {
+      meetingData.livekitRoomName = payload.livekitRoomName;
+      meetingData.livekitRoomSid = payload.livekitRoomSid;
+      meetingData.livekitMetadata = payload.livekitMetadata;
+    }
+
+    const meeting = new this.meetingModel(meetingData);
+    const savedMeeting = await meeting.save();
+
+    this.logger.log(`Created local meeting from global: ${savedMeeting.title} (globalId: ${payload.globalId})`);
+    return savedMeeting;
+  }
+
+  async updateMeetingFromGlobal(globalId: string, payload: MeetingPayload, version: number): Promise<MeetingDocument> {
+    const existing = await this.meetingModel.findOne({ globalId });
+
+    if (!existing) {
+      this.logger.warn(`Meeting with globalId ${globalId} not found, creating new`);
+      return this.createMeetingFromGlobal(payload, version);
+    }
+
+    // Check version
+    if (existing.globalVersion >= version) {
+      this.logger.log(`Meeting ${globalId} already at version ${existing.globalVersion}, skipping update`);
+      return existing;
+    }
+
+    // Get regional metadata for this region
+    const regionalMeta = payload.regionalMetadata?.find(r => r.regionCode === this.regionCode);
+
+    const updateData: any = {
+      globalVersion: version,
+      lastSyncedAt: new Date(),
+      title: regionalMeta?.localTitle || payload.title,
+      description: regionalMeta?.localDescription || payload.description,
+      scheduledAt: new Date(payload.scheduledAt),
+      duration: payload.duration,
+      status: payload.status,
+      meetingType: payload.meetingType,
+      maxParticipants: payload.maxParticipants || 100,
+      enableRecording: payload.enableRecording || false,
+      enableChat: payload.enableChat !== false,
+      enableScreenShare: payload.enableScreenShare !== false,
+      enableWaitingRoom: payload.enableWaitingRoom || false,
+      allowedSubscriptions: payload.allowedSubscriptions || [],
+      restrictedToSubscriptions: payload.restrictedToSubscriptions || false,
+    };
+
+    // Update Zoom fields if present
+    if (payload.zoomMeetingId) {
+      updateData.zoomMeetingId = payload.zoomMeetingId;
+      updateData.zoomJoinUrl = payload.zoomJoinUrl;
+      updateData.zoomStartUrl = payload.zoomStartUrl;
+      updateData.zoomPassword = payload.zoomPassword;
+      updateData.roomUrl = payload.zoomJoinUrl;
+    }
+
+    // Update LiveKit fields if present
+    if (payload.livekitRoomName) {
+      updateData.livekitRoomName = payload.livekitRoomName;
+      updateData.livekitRoomSid = payload.livekitRoomSid;
+      updateData.livekitMetadata = payload.livekitMetadata;
+    }
+
+    const updatedMeeting = await this.meetingModel.findOneAndUpdate(
+      { globalId },
+      updateData,
+      { new: true },
+    );
+
+    this.logger.log(`Updated local meeting from global: ${updatedMeeting.title} (globalId: ${globalId}) v${version}`);
+    return updatedMeeting;
+  }
+
+  async cancelMeetingFromGlobal(globalId: string): Promise<Meeting | null> {
+    const meeting = await this.meetingModel.findOne({ globalId });
+
+    if (!meeting) {
+      this.logger.warn(`Meeting with globalId ${globalId} not found for cancellation`);
+      return null;
+    }
+
+    meeting.status = 'cancelled';
+    meeting.lastSyncedAt = new Date();
+
+    await meeting.save();
+    this.logger.log(`Cancelled local meeting: ${meeting.title} (globalId: ${globalId})`);
+    return meeting;
+  }
+
+  async deleteMeetingFromGlobal(globalId: string): Promise<boolean> {
+    const result = await this.meetingModel.deleteOne({ globalId });
+
+    if (result.deletedCount > 0) {
+      this.logger.log(`Deleted local meeting with globalId: ${globalId}`);
+      return true;
+    }
+
+    this.logger.warn(`Meeting with globalId ${globalId} not found for deletion`);
+    return false;
+  }
+
+  async findMeetingByGlobalId(globalId: string): Promise<Meeting | null> {
+    return this.meetingModel.findOne({ globalId });
   }
 }
