@@ -72,7 +72,6 @@ export class FinancingPlan {
 
 export const FinancingPlanSchema = SchemaFactory.createForClass(FinancingPlan);
 
-// Add indexes
-FinancingPlanSchema.index({ planId: 1 });
+// Add indexes (planId already has unique: true in @Prop which creates an index)
 FinancingPlanSchema.index({ isActive: 1, sortOrder: 1 });
 FinancingPlanSchema.index({ minAmount: 1, maxAmount: 1 });

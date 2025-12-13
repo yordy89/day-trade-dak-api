@@ -34,7 +34,10 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     const rabbitMqUrl = process.env.RABBITMQ_URL;
     if (rabbitMqUrl) {
       this.logger.log('RABBITMQ_URL found, initiating connection...');
-      await this.connect();
+      // Don't await - let connection happen in background to avoid blocking app startup
+      this.connect().catch((err) => {
+        this.logger.error(`RabbitMQ initial connection failed: ${err.message}`);
+      });
     } else {
       this.logger.warn('RABBITMQ_URL not configured. Global sync disabled.');
     }
@@ -53,7 +56,17 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
       }
 
       this.logger.log(`Connecting to RabbitMQ...`);
-      this.connection = await amqplib.connect(rabbitMqUrl);
+
+      // Add connection timeout to prevent indefinite blocking
+      const connectionTimeout = 10000; // 10 seconds
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('RabbitMQ connection timeout')), connectionTimeout);
+      });
+
+      this.connection = await Promise.race([
+        amqplib.connect(rabbitMqUrl),
+        timeoutPromise,
+      ]);
       this.channel = await this.connection.createChannel();
 
       // Set up exchanges

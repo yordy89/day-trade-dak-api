@@ -53,6 +53,7 @@ import { EmailMarketingModule } from './email-marketing/email-marketing.module';
 import { AnnouncementModule } from './announcement/announcement.module';
 import { TradingJournalModule } from './trading-journal/trading-journal.module';
 import { GlobalSyncModule } from './global-sync/global-sync.module';
+import { InternalCronModule } from './internal-cron/internal-cron.module';
 
 @Module({
   controllers: [TestUploadController],
@@ -85,6 +86,19 @@ import { GlobalSyncModule } from './global-sync/global-sync.module';
           host: config.get('redis.host', 'localhost'),
           port: config.get('redis.port', 6379),
           password: config.get('redis.password'),
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+          connectTimeout: 10000,
+          lazyConnect: true,
+          retryStrategy: (times: number) => {
+            if (times > 3) {
+              console.warn(
+                `Redis connection failed after ${times} attempts, continuing without Redis`,
+              );
+              return null;
+            }
+            return Math.min(times * 1000, 3000);
+          },
         },
       }),
     }),
@@ -131,6 +145,7 @@ import { GlobalSyncModule } from './global-sync/global-sync.module';
     AnnouncementModule,
     TradingJournalModule,
     GlobalSyncModule,
+    InternalCronModule,
   ],
   providers: [
     {

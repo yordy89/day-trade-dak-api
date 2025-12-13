@@ -68,6 +68,5 @@ export class Affiliate {
 export const AffiliateSchema = SchemaFactory.createForClass(Affiliate);
 
 // Create indexes for faster lookups
-AffiliateSchema.index({ affiliateCode: 1 });
-AffiliateSchema.index({ email: 1 });
+// Note: affiliateCode and email already have unique: true in @Prop which creates indexes
 AffiliateSchema.index({ isActive: 1 });

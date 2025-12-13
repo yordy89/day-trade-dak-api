@@ -14,8 +14,17 @@ import { CustomLoggerService } from './logger/logger.service';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
+  // Immediate startup logging for ECS debugging
+  console.log('[BOOTSTRAP] Application starting...');
+  console.log(`[BOOTSTRAP] Node version: ${process.version}`);
+  console.log(`[BOOTSTRAP] Platform: ${process.platform}, Arch: ${process.arch}`);
+  console.log(`[BOOTSTRAP] PID: ${process.pid}`);
+  console.log(`[BOOTSTRAP] Working directory: ${process.cwd()}`);
+  console.log(`[BOOTSTRAP] NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+
   // Load environment variables
   dotenv.config({ path: '.env' });
+  console.log('[BOOTSTRAP] Environment variables loaded');
 
   // Validate critical environment variables
   const requiredEnvVars = [
@@ -26,6 +35,7 @@ async function bootstrap() {
     'AWS_S3_BUCKET_NAME',
   ];
 
+  console.log('[BOOTSTRAP] Checking required environment variables...');
   for (const envVar of requiredEnvVars) {
     if (!process.env[envVar]) {
       console.error(
@@ -33,12 +43,15 @@ async function bootstrap() {
       );
       process.exit(1);
     }
+    console.log(`[BOOTSTRAP] ✓ ${envVar} is set`);
   }
 
   // Create the NestJS application with Winston logger
+  console.log('[BOOTSTRAP] Creating NestJS application...');
   const app = await NestFactory.create(AppModule, {
     logger: WinstonModule.createLogger(winstonConfig),
   });
+  console.log('[BOOTSTRAP] NestJS application created successfully');
 
   // Get custom logger service
   const customLogger = app.get(CustomLoggerService);
