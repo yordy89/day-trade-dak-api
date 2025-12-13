@@ -579,14 +579,15 @@ export class AdminMeetingsService {
     // Get counts before cleanup
     const beforeCount = await this.meetingModel.countDocuments();
 
-    // Manually trigger the cron job for testing
+    // Manually trigger the cron job for cleanup only
+    // NOTE: Meeting creation is now handled by Global API
     const cleanupResult =
-      await this.meetingCronService.dailyMeetingCleanupAndCreate();
+      await this.meetingCronService.dailyMeetingCleanup();
 
     // Get counts after cleanup
     const afterCount = await this.meetingModel.countDocuments();
 
-    // Check if daily meeting exists in DB
+    // Check if daily meeting exists in DB (created by Global API)
     const dailyMeeting = await this.meetingModel
       .findOne({
         meetingType: 'daily_live',
@@ -596,17 +597,12 @@ export class AdminMeetingsService {
     return {
       cleanupDetails: cleanupResult,
       deletedMeetingsCount: cleanupResult.totalDeleted,
-      dailyMeetingCreated: cleanupResult.meetingCreated,
-      dailyMeetingId: cleanupResult.createdMeeting?._id || dailyMeeting?._id,
-      dailyMeetingScheduledAt:
-        cleanupResult.createdMeeting?.scheduledAt || dailyMeeting?.scheduledAt,
       meetingsBeforeCleanup: beforeCount,
       meetingsAfterCleanup: afterCount,
       actualDailyMeetingInDB: !!dailyMeeting,
-      tomorrow: new Date(new Date().setDate(new Date().getDate() + 1)),
-      tomorrowDayOfWeek: new Date(
-        new Date().setDate(new Date().getDate() + 1),
-      ).getDay(),
+      dailyMeetingId: dailyMeeting?._id,
+      dailyMeetingScheduledAt: dailyMeeting?.scheduledAt,
+      note: 'Meeting creation is now handled by Global API',
     };
   }
 }
