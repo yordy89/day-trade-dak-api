@@ -28,6 +28,7 @@ export class InternalCronController {
         'user-deletion',
         'expired-announcements',
         'scheduled-announcements',
+        'meeting-cleanup',
       ],
     };
   }
@@ -126,5 +127,13 @@ export class InternalCronController {
     this.logger.log('Triggered: scheduled-announcements');
     const result = await this.internalCronService.handleScheduledAnnouncements();
     return { job: 'scheduled-announcements', result };
+  }
+
+  @Post('meeting-cleanup')
+  @HttpCode(200)
+  async meetingCleanup() {
+    this.logger.log('Triggered: meeting-cleanup (creation handled by Global API)');
+    const result = await this.internalCronService.dailyMeetingCleanup();
+    return { job: 'meeting-cleanup', result };
   }
 }

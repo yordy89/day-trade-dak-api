@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { CronService } from '../cron/cron.service';
 import { SubscriptionSyncCron } from '../cron/subscription-sync.cron';
 import { AnnouncementService } from '../announcement/announcement.service';
+import { MeetingCronService } from '../services/meeting-cron.service';
 
 @Injectable()
 export class InternalCronService {
@@ -11,6 +12,7 @@ export class InternalCronService {
     private readonly cronService: CronService,
     private readonly subscriptionSyncCron: SubscriptionSyncCron,
     private readonly announcementService: AnnouncementService,
+    private readonly meetingCronService: MeetingCronService,
   ) {}
 
   async removeExpiredSubscriptions() {
@@ -141,6 +143,17 @@ export class InternalCronService {
       return { success: true };
     } catch (error) {
       this.logger.error('Error in handleScheduledAnnouncements:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async dailyMeetingCleanup() {
+    this.logger.log('Running dailyMeetingCleanup via internal cron (creation handled by Global API)');
+    try {
+      const result = await this.meetingCronService.dailyMeetingCleanup();
+      return { success: true, result };
+    } catch (error) {
+      this.logger.error('Error in dailyMeetingCleanup:', error);
       return { success: false, error: error.message };
     }
   }
