@@ -48,6 +48,6 @@ import { ZoomWebhooksModule } from '../zoom-webhooks/zoom-webhooks.module';
     MeetingCronService,
     MeetingStatusPollingService,
   ],
-  exports: [MeetingsService, MeetingAccessTokensService],
+  exports: [MeetingsService, MeetingAccessTokensService, MeetingCronService],
 })
 export class MeetingsModule {}
