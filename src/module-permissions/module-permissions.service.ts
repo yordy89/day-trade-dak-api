@@ -17,6 +17,10 @@ import {
   GrantEventPermissionsDto,
   GrantEventPermissionsResponseDto
 } from './dto/grant-event-permissions.dto';
+import {
+  RevokeEventPermissionsDto,
+  RevokeEventPermissionsResponseDto
+} from './dto/revoke-event-permissions.dto';
 import { User, UserDocument } from '../users/user.schema';
 import { CustomLoggerService } from '../logger/logger.service';
 import { EmailService } from '../email/email.service';
@@ -623,5 +627,108 @@ export class ModulePermissionsService {
       .populate('userId', 'firstName lastName email')
       .populate('grantedBy', 'firstName lastName email')
       .sort({ createdAt: -1 });
+  }
+
+  async bulkRevoke(
+    userIds: string[],
+    moduleTypes: ModuleType[],
+    options: {
+      revokedBy: string;
+      reason?: string;
+    },
+  ): Promise<{
+    revoked: number;
+    usersAffected: number;
+    affectedUsers: Array<{ userId: string; email: string; modulesRevoked: ModuleType[] }>;
+    errors: Array<{ userId: string; error: string }>;
+  }> {
+    const result = {
+      revoked: 0,
+      usersAffected: 0,
+      affectedUsers: [] as Array<{ userId: string; email: string; modulesRevoked: ModuleType[] }>,
+      errors: [] as Array<{ userId: string; error: string }>,
+    };
+
+    const affectedUsersMap = new Map<string, { email: string; modulesRevoked: ModuleType[] }>();
+
+    for (const userId of userIds) {
+      try {
+        // Get user email for response
+        const user = await this.userModel.findById(userId);
+        if (!user) {
+          result.errors.push({ userId, error: 'User not found' });
+          continue;
+        }
+
+        const modulesRevoked: ModuleType[] = [];
+
+        for (const moduleType of moduleTypes) {
+          // Soft delete - set isActive and hasAccess to false
+          const updateResult = await this.modulePermissionModel.updateOne(
+            { userId, moduleType, isActive: true },
+            {
+              $set: {
+                isActive: false,
+                hasAccess: false,
+                updatedAt: new Date(),
+              },
+            },
+          );
+
+          if (updateResult.modifiedCount > 0) {
+            result.revoked++;
+            modulesRevoked.push(moduleType);
+          }
+        }
+
+        if (modulesRevoked.length > 0) {
+          affectedUsersMap.set(userId, {
+            email: user.email,
+            modulesRevoked,
+          });
+        }
+      } catch (error) {
+        result.errors.push({ userId, error: error.message });
+        this.logger.error(
+          `Failed to revoke permissions for user ${userId}: ${error.message}`,
+          'ModulePermissionsService',
+        );
+      }
+    }
+
+    // Convert map to array
+    for (const [userId, data] of affectedUsersMap) {
+      result.affectedUsers.push({
+        userId,
+        email: data.email,
+        modulesRevoked: data.modulesRevoked,
+      });
+    }
+
+    result.usersAffected = affectedUsersMap.size;
+
+    this.logger.log(
+      `Bulk revoked ${result.revoked} permissions from ${result.usersAffected} users. Modules: ${moduleTypes.join(', ')}`,
+      'ModulePermissionsService',
+    );
+
+    return result;
+  }
+
+  async revokeEventPermissions(
+    dto: RevokeEventPermissionsDto,
+    revokedBy: string,
+  ): Promise<RevokeEventPermissionsResponseDto> {
+    const result = await this.bulkRevoke(dto.userIds, dto.moduleTypes, {
+      revokedBy,
+      reason: dto.reason,
+    });
+
+    return {
+      permissionsRevoked: result.revoked,
+      usersAffected: result.usersAffected,
+      affectedUsers: result.affectedUsers,
+      errors: result.errors,
+    };
   }
 }

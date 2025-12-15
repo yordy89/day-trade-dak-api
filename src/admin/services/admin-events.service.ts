@@ -335,8 +335,8 @@ export class AdminEventsService {
     const [registrations, total] = await Promise.all([
       this.registrationModel
         .find(query)
-        // Don't populate userId - use the registration's own data
-        // .populate('userId', 'firstName lastName email phoneNumber')
+        // Populate userId to get the actual user's _id for module permissions lookup
+        .populate('userId', '_id firstName lastName email phoneNumber')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)

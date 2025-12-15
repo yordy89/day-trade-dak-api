@@ -24,6 +24,7 @@ import { ModulePermissionsService } from './module-permissions.service';
 import { CreateModulePermissionDto } from './dto/create-module-permission.dto';
 import { UpdateModulePermissionDto } from './dto/update-module-permission.dto';
 import { GrantEventPermissionsDto } from './dto/grant-event-permissions.dto';
+import { RevokeEventPermissionsDto } from './dto/revoke-event-permissions.dto';
 import { ModuleType } from './module-permission.schema';
 import { RequestWithUser } from '../types/request-with-user.interface';
 
@@ -177,6 +178,48 @@ export class ModulePermissionsController {
     @Req() req: RequestWithUser,
   ) {
     return this.modulePermissionsService.grantEventPermissions(
+      dto,
+      req.user._id.toString(),
+    );
+  }
+
+  @Post('bulk-revoke')
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Revoke module access from multiple users' })
+  @ApiResponse({ status: 200, description: 'Bulk revoke completed' })
+  async bulkRevoke(
+    @Body()
+    body: {
+      userIds: string[];
+      moduleTypes: ModuleType[];
+      reason?: string;
+    },
+    @Req() req: RequestWithUser,
+  ) {
+    return this.modulePermissionsService.bulkRevoke(
+      body.userIds,
+      body.moduleTypes,
+      {
+        revokedBy: req.user._id.toString(),
+        reason: body.reason,
+      },
+    );
+  }
+
+  @Post('revoke-event-permissions')
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Revoke module permissions from event participants',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Permissions revoked successfully',
+  })
+  async revokeEventPermissions(
+    @Body() dto: RevokeEventPermissionsDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.modulePermissionsService.revokeEventPermissions(
       dto,
       req.user._id.toString(),
     );
