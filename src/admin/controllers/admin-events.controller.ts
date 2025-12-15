@@ -331,15 +331,20 @@ export class AdminEventsController {
             paymentMode: reg.paymentMode,
           });
 
+          // Handle both populated userId (object) and raw ObjectId
+          const populatedUser = reg.userId && typeof reg.userId === 'object' ? reg.userId : null;
+          const rawUserId = reg.userId && typeof reg.userId !== 'object' ? reg.userId : null;
+
           return {
           _id: reg._id,
           eventId: reg.eventId,
           user: {
-            _id: reg.userId || reg._id,
-            firstName: reg.firstName,
-            lastName: reg.lastName,
-            email: reg.email,
-            phone: reg.phone || reg.phoneNumber,
+            // Use populated user's _id, or raw userId string, or null if no user linked
+            _id: populatedUser?._id?.toString() || rawUserId?.toString() || null,
+            firstName: populatedUser?.firstName || reg.firstName,
+            lastName: populatedUser?.lastName || reg.lastName,
+            email: populatedUser?.email || reg.email,
+            phone: populatedUser?.phoneNumber || reg.phone || reg.phoneNumber,
           },
           firstName: reg.firstName,
           lastName: reg.lastName,

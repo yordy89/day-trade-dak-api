@@ -23,8 +23,8 @@ export class Meeting {
   @Prop({ required: true, min: 15, max: 480 })
   duration: number;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  host: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
+  host?: Types.ObjectId;
 
   @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
   participants: Types.ObjectId[];
