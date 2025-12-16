@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Event, EventDocument } from '../event/schemas/event.schema';
 import { EventRegistration, EventRegistrationDocument } from '../event/schemas/eventRegistration.schema';
 import { Meeting, MeetingDocument } from '../schemas/meeting.schema';
+import { User, UserDocument } from '../users/user.schema';
 import { Types } from 'mongoose';
 import { EmailService } from '../email/email.service';
 import { v4 as uuidv4 } from 'uuid';
@@ -84,6 +85,7 @@ export interface MeetingPayload {
   status: string;
   meetingType: string;
   provider: string;
+  hostEmail?: string;
   zoomMeetingId?: string;
   zoomJoinUrl?: string;
   zoomStartUrl?: string;
@@ -125,6 +127,8 @@ export class GlobalSyncService {
     private readonly registrationModel: Model<EventRegistrationDocument>,
     @InjectModel(Meeting.name)
     private readonly meetingModel: Model<MeetingDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly emailService: EmailService,
   ) {}
 
@@ -443,6 +447,18 @@ export class GlobalSyncService {
     // Get regional metadata for this region
     const regionalMeta = payload.regionalMetadata?.find(r => r.regionCode === this.regionCode);
 
+    // Find host user by email if provided
+    let hostId: Types.ObjectId | undefined;
+    if (payload.hostEmail) {
+      const hostUser = await this.userModel.findOne({ email: payload.hostEmail.toLowerCase() });
+      if (hostUser) {
+        hostId = hostUser._id as Types.ObjectId;
+        this.logger.log(`Found host user ${hostUser.email} for meeting ${payload.globalId}`);
+      } else {
+        this.logger.warn(`Host user with email ${payload.hostEmail} not found in region ${this.regionCode}`);
+      }
+    }
+
     const meetingData: any = {
       globalId: payload.globalId,
       globalVersion: version,
@@ -465,6 +481,7 @@ export class GlobalSyncService {
       restrictedToSubscriptions: payload.restrictedToSubscriptions || false,
       isPublic: false,
       roomUrl: payload.zoomJoinUrl || '',
+      host: hostId,
     };
 
     // Add Zoom fields if present
@@ -506,6 +523,15 @@ export class GlobalSyncService {
     // Get regional metadata for this region
     const regionalMeta = payload.regionalMetadata?.find(r => r.regionCode === this.regionCode);
 
+    // Find host user by email if provided
+    let hostId: Types.ObjectId | undefined;
+    if (payload.hostEmail) {
+      const hostUser = await this.userModel.findOne({ email: payload.hostEmail.toLowerCase() });
+      if (hostUser) {
+        hostId = hostUser._id as Types.ObjectId;
+      }
+    }
+
     const updateData: any = {
       globalVersion: version,
       lastSyncedAt: new Date(),
@@ -523,6 +549,11 @@ export class GlobalSyncService {
       allowedSubscriptions: payload.allowedSubscriptions || [],
       restrictedToSubscriptions: payload.restrictedToSubscriptions || false,
     };
+
+    // Update host if found
+    if (hostId) {
+      updateData.host = hostId;
+    }
 
     // Update Zoom fields if present
     if (payload.zoomMeetingId) {
