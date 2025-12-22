@@ -603,46 +603,57 @@ export class EventPartialPaymentService {
       console.log('🔍 Searching by eventId:', dto.eventId);
     }
 
+    // If filtering by eventType, first get all events of that type
+    // NOTE: eventId is stored as a string, not ObjectId, so populate doesn't work
+    let eventIdsOfType: string[] = [];
+    if (dto.eventType && !dto.eventId) {
+      const eventsOfType = await this.eventModel.find({ type: dto.eventType }).select('_id');
+      eventIdsOfType = eventsOfType.map(e => e._id.toString());
+      console.log('🔍 Found', eventIdsOfType.length, 'events of type:', dto.eventType);
+
+      if (eventIdsOfType.length > 0) {
+        query.eventId = { $in: eventIdsOfType };
+      } else {
+        // No events of this type exist, return empty
+        console.log('🔍 No events of type', dto.eventType, 'found');
+        return [];
+      }
+    }
+
     console.log('🔍 Query:', query);
 
     const registrations = await this.eventRegistrationModel
       .find(query)
-      .populate('eventId')
       .sort({ createdAt: -1 });
 
-    console.log('🔍 Found registrations (before type filter):', registrations.length);
+    console.log('🔍 Found registrations:', registrations.length);
 
-    // Filter by event type if provided (after populate)
-    let filteredRegistrations = registrations;
-    if (dto.eventType && !dto.eventId) {
-      // Only filter by type if we didn't already filter by eventId
-      filteredRegistrations = registrations.filter(
-        (reg) => {
-          const eventType = (reg.eventId as any)?.type;
-          console.log('🔍 Registration event type:', eventType, 'Looking for:', dto.eventType);
-          return eventType === dto.eventType;
-        }
-      );
-      console.log('🔍 After type filter:', filteredRegistrations.length);
-    }
+    // Fetch event details for each registration
+    const eventIds = [...new Set(registrations.map(reg => reg.eventId))];
+    const events = await this.eventModel.find({ _id: { $in: eventIds } });
+    const eventMap = new Map(events.map(e => [e._id.toString(), e]));
 
-    const result = filteredRegistrations.map((reg) => ({
-      id: reg._id,
-      registrationNumber: reg.registrationNumber,
-      email: reg.email,
-      firstName: reg.firstName,
-      lastName: reg.lastName,
-      phoneNumber: reg.phoneNumber,
-      eventName: (reg.eventId as any)?.name,
-      eventDate: (reg.eventId as any)?.date,
-      totalAmount: reg.totalAmount,
-      totalPaid: reg.totalPaid,
-      remainingBalance: reg.remainingBalance,
-      isFullyPaid: reg.isFullyPaid,
-      paymentMode: reg.paymentMode,
-      paymentStatus: reg.paymentStatus,
-      createdAt: (reg as any).createdAt,
-    }));
+    const result = registrations.map((reg) => {
+      const event = eventMap.get(reg.eventId);
+      return {
+        id: reg._id,
+        registrationNumber: reg.registrationNumber,
+        email: reg.email,
+        firstName: reg.firstName,
+        lastName: reg.lastName,
+        phoneNumber: reg.phoneNumber,
+        eventId: reg.eventId,
+        eventName: event?.name,
+        eventDate: event?.date,
+        totalAmount: reg.totalAmount,
+        totalPaid: reg.totalPaid,
+        remainingBalance: reg.remainingBalance,
+        isFullyPaid: reg.isFullyPaid,
+        paymentMode: reg.paymentMode,
+        paymentStatus: reg.paymentStatus,
+        createdAt: (reg as any).createdAt,
+      };
+    });
 
     console.log('🔍 Returning results:', result.length, 'registrations');
     return result;

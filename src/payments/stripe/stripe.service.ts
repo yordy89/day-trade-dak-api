@@ -499,8 +499,9 @@ export class StripeService {
     //   }
     // }
 
-    // Check event capacity
-    if (event.capacity > 0 && event.currentRegistrations >= event.capacity) {
+    // Check event capacity - skip for additional payments on existing registrations
+    // If registrationId is provided, this is an additional payment, not a new registration
+    if (!registrationId && event.capacity > 0 && event.currentRegistrations >= event.capacity) {
       throw new BadRequestException('Event is at full capacity');
     }
 
