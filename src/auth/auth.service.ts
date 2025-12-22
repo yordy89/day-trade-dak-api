@@ -12,6 +12,7 @@ import { plainToInstance } from 'class-transformer';
 import { CreateUserInput, UserEntity } from 'src/users/user.dto';
 import { UserService } from 'src/users/users.service';
 import { EmailService } from 'src/email/email.service';
+import { N8nWebhookService } from 'src/webhooks/n8n-webhook.service';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +20,7 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
+    private readonly n8nWebhookService: N8nWebhookService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -75,6 +77,22 @@ export class AuthService {
       // Log error but don't fail the signup process
       console.error('Failed to send welcome email:', error);
     }
+
+    // Notify n8n (non-blocking, fire-and-forget)
+    this.n8nWebhookService.notifyUserRegistration({
+      event: 'user.registered',
+      timestamp: new Date().toISOString(),
+      region: 'us',
+      user: {
+        firstName: plainUser.firstName,
+        lastName: plainUser.lastName,
+        email: plainUser.email,
+        phone: plainUser.phone,
+      },
+      metadata: {
+        acceptedMediaUsageTerms: user.acceptedMediaUsageTerms,
+      },
+    });
 
     return plainToInstance(UserEntity, plainUser);
   }
