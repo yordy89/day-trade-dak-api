@@ -12,7 +12,10 @@ import {
   HttpStatus,
   HttpCode,
   Header,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -325,5 +328,114 @@ export class TradingJournalController {
     @Query() filters: FilterTradesDto,
   ) {
     return this.tradingJournalService.getTradeStatistics(studentId, filters);
+  }
+
+  // Export Endpoints
+  @Get('export')
+  @UseGuards(ModuleAccessGuard)
+  @RequireModule(ModuleType.TRADING_JOURNAL)
+  @ApiOperation({ summary: 'Export trades to CSV' })
+  @ApiResponse({ status: 200, description: 'CSV file exported successfully' })
+  async exportTrades(
+    @Request() req,
+    @Query() filters: FilterTradesDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const trades = await this.tradingJournalService.findAllTrades(req.user._id.toString(), {
+      ...filters,
+      limit: 10000, // Get all trades for export
+    });
+
+    const csv = this.generateCSV(trades.trades);
+    const filename = `trades_export_${new Date().toISOString().split('T')[0]}.csv`;
+
+    res.set({
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return csv;
+  }
+
+  @Get('admin/student/:studentId/export')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: 'Export student trades to CSV (Admin only)' })
+  @ApiParam({ name: 'studentId', description: 'Student user ID' })
+  @ApiResponse({ status: 200, description: 'CSV file exported successfully' })
+  async exportStudentTrades(
+    @Param('studentId') studentId: string,
+    @Query() filters: FilterTradesDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const trades = await this.tradingJournalService.getAllStudentTrades(studentId, {
+      ...filters,
+      limit: 10000, // Get all trades for export
+    });
+
+    const csv = this.generateCSV(trades.trades);
+    const filename = `student_trades_export_${studentId}_${new Date().toISOString().split('T')[0]}.csv`;
+
+    res.set({
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    return csv;
+  }
+
+  // Helper method to generate CSV
+  private generateCSV(trades: any[]): string {
+    if (!trades || trades.length === 0) {
+      return 'No trades found';
+    }
+
+    const headers = [
+      'Date',
+      'Symbol',
+      'Market',
+      'Direction',
+      'Option Type',
+      'Entry Price',
+      'Exit Price',
+      'Position Size',
+      'P&L',
+      'Net P&L',
+      'Commission',
+      'R-Multiple',
+      'Win Rate',
+      'Setup',
+      'Strategy',
+      'Status',
+      'Entry Time',
+      'Exit Time',
+    ];
+
+    const rows = trades.map(trade => [
+      trade.tradeDate ? new Date(trade.tradeDate).toLocaleDateString() : '',
+      trade.symbol || '',
+      trade.market || '',
+      trade.direction || '',
+      trade.optionType || '',
+      trade.entryPrice || '',
+      trade.exitPrice || '',
+      trade.positionSize || '',
+      trade.pnl || '',
+      trade.netPnl || '',
+      trade.commission || '',
+      trade.rMultiple ? trade.rMultiple.toFixed(2) : '',
+      trade.isWinner ? 'Win' : 'Loss',
+      trade.setup || '',
+      trade.strategy || '',
+      trade.isOpen ? 'Open' : (trade.isReviewed ? 'Reviewed' : 'Pending Review'),
+      trade.entryTime ? new Date(trade.entryTime).toLocaleString() : '',
+      trade.exitTime ? new Date(trade.exitTime).toLocaleString() : '',
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    return csvContent;
   }
 }

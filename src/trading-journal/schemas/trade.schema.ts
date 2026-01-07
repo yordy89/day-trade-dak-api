@@ -16,6 +16,16 @@ export enum TradeDirection {
   SHORT = 'short',
 }
 
+// For options: CALL = bullish on stock, PUT = bearish on stock
+export enum OptionType {
+  CALL = 'call',
+  PUT = 'put',
+}
+
+// For options: direction field means
+// LONG = Buy to Open (you bought the option, you OWN it)
+// SHORT = Sell to Open (you wrote/sold the option, you OWE it)
+
 export enum EmotionType {
   CONFIDENT = 'confident',
   ANXIOUS = 'anxious',
@@ -73,6 +83,16 @@ export class Trade {
   @Prop({ enum: TradeDirection, required: true })
   direction: TradeDirection;
 
+  // Options-specific fields
+  @Prop({ enum: OptionType })
+  optionType?: OptionType; // CALL or PUT
+
+  @Prop()
+  strikePrice?: number;
+
+  @Prop()
+  expirationDate?: Date;
+
   // Exit Details
   @Prop()
   exitTime?: Date;
@@ -107,24 +127,24 @@ export class Trade {
   exitEmotionState?: EmotionType;
 
   // Risk Management
-  @Prop({ required: true })
-  stopLoss: number;
+  @Prop()
+  stopLoss?: number;
 
   @Prop()
   takeProfit?: number;
 
-  @Prop({ required: true })
-  riskAmount: number;
+  @Prop()
+  riskAmount?: number;
 
-  @Prop({ required: true })
-  riskPercentage: number;
+  @Prop()
+  riskPercentage?: number;
 
   @Prop()
   rMultiple?: number;
 
   // Trade Analysis
-  @Prop({ required: true })
-  setup: string;
+  @Prop()
+  setup?: string;
 
   @Prop()
   strategy?: string;
@@ -132,8 +152,8 @@ export class Trade {
   @Prop()
   timeframe?: string;
 
-  @Prop({ min: 1, max: 10, required: true })
-  confidence: number;
+  @Prop({ min: 1, max: 10 })
+  confidence?: number;
 
   // Results
   @Prop()
@@ -226,11 +246,25 @@ TradeSchema.virtual('calculatedHoldingTime').get(function() {
 TradeSchema.pre('save', function(next) {
   // Calculate P/L if trade is closed
   if (this.exitPrice && this.entryPrice && this.positionSize) {
-    const priceDiff = this.direction === TradeDirection.LONG
-      ? this.exitPrice - this.entryPrice
-      : this.entryPrice - this.exitPrice;
+    // For OPTIONS: P&L is ALWAYS (exit - entry) because:
+    // - You BUY an option (pay premium) and SELL to close (receive premium)
+    // - Profit = What you received - What you paid = exit - entry
+    // - This is true for BOTH calls and puts!
+    //
+    // For STOCKS: Use direction to determine P&L
+    // - Long: profit when price goes up (exit - entry)
+    // - Short: profit when price goes down (entry - exit)
+    const isOptions = this.market === MarketType.OPTIONS;
+    const priceDiff = isOptions
+      ? this.exitPrice - this.entryPrice  // Options: always exit - entry
+      : (this.direction === TradeDirection.LONG
+          ? this.exitPrice - this.entryPrice
+          : this.entryPrice - this.exitPrice);
 
-    this.pnl = priceDiff * this.positionSize;
+    // For options, positionSize is number of contracts, each contract = 100 shares
+    const contractMultiplier = isOptions ? 100 : 1;
+
+    this.pnl = priceDiff * this.positionSize * contractMultiplier;
     this.netPnl = this.pnl - this.commission;
     this.pnlPercentage = (priceDiff / this.entryPrice) * 100;
     this.isWinner = this.netPnl > 0;

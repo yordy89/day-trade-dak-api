@@ -13,7 +13,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MarketType, TradeDirection, EmotionType } from '../schemas/trade.schema';
+import { MarketType, TradeDirection, EmotionType, OptionType } from '../schemas/trade.schema';
 
 export class CreateTradeDto {
   @ApiProperty({ description: 'Date of the trade' })
@@ -45,9 +45,27 @@ export class CreateTradeDto {
   @Min(0)
   positionSize: number;
 
-  @ApiProperty({ enum: TradeDirection, description: 'Trade direction' })
+  @ApiProperty({ enum: TradeDirection, description: 'Trade direction (for options: long=Buy to Open, short=Sell to Open)' })
   @IsEnum(TradeDirection)
   direction: TradeDirection;
+
+  // Options-specific fields
+  @ApiPropertyOptional({ enum: OptionType, description: 'Option type (CALL or PUT)' })
+  @IsOptional()
+  @IsEnum(OptionType)
+  optionType?: OptionType;
+
+  @ApiPropertyOptional({ description: 'Strike price for options' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  strikePrice?: number;
+
+  @ApiPropertyOptional({ description: 'Expiration date for options' })
+  @IsOptional()
+  @IsDate()
+  @Type(() => Date)
+  expirationDate?: Date;
 
   // Exit Details (optional for open trades)
   @ApiPropertyOptional({ description: 'Exit time' })
@@ -69,31 +87,35 @@ export class CreateTradeDto {
   exitReason?: string;
 
   // Risk Management
-  @ApiProperty({ description: 'Stop loss price', example: 148.00 })
+  @ApiPropertyOptional({ description: 'Stop loss price', example: 148.00 })
+  @IsOptional()
   @IsNumber()
-  stopLoss: number;
+  stopLoss?: number;
 
   @ApiPropertyOptional({ description: 'Take profit price', example: 155.00 })
   @IsOptional()
   @IsNumber()
   takeProfit?: number;
 
-  @ApiProperty({ description: 'Risk amount in currency', example: 250 })
+  @ApiPropertyOptional({ description: 'Risk amount in currency', example: 250 })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  riskAmount: number;
+  riskAmount?: number;
 
-  @ApiProperty({ description: 'Risk percentage of account', example: 1.5 })
+  @ApiPropertyOptional({ description: 'Risk percentage of account', example: 1.5 })
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
-  riskPercentage: number;
+  riskPercentage?: number;
 
   // Trade Analysis
-  @ApiProperty({ description: 'Trade setup used', example: 'Breakout' })
+  @ApiPropertyOptional({ description: 'Trade setup used', example: 'Breakout' })
+  @IsOptional()
   @IsString()
   @MaxLength(100)
-  setup: string;
+  setup?: string;
 
   @ApiProperty({ description: 'Trading strategy (optional)', example: 'Momentum Trading', required: false })
   @IsOptional()
@@ -107,11 +129,12 @@ export class CreateTradeDto {
   @MaxLength(20)
   timeframe?: string;
 
-  @ApiProperty({ description: 'Confidence level', minimum: 1, maximum: 10, example: 8 })
+  @ApiPropertyOptional({ description: 'Confidence level', minimum: 1, maximum: 10, example: 8 })
+  @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(10)
-  confidence: number;
+  confidence?: number;
 
   // Commission
   @ApiPropertyOptional({ description: 'Commission paid', default: 0, example: 5 })

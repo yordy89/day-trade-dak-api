@@ -473,24 +473,137 @@ export class TradingJournalService {
     ]);
 
     // Get statistics by market
-    const marketStats = await this.tradeModel.aggregate([
-      { $match: query },
+    const marketStatsRaw = await this.tradeModel.aggregate([
+      { $match: { ...query, isOpen: false } },
       {
         $group: {
           _id: '$market',
           trades: { $sum: 1 },
           pnl: { $sum: '$netPnl' },
+          winRate: {
+            $avg: { $cond: [{ $gt: ['$netPnl', 0] }, 100, 0] },
+          },
         },
       },
     ]);
 
+    // Transform to match frontend expected format
+    const performanceByMarket = marketStatsRaw.map(stat => ({
+      market: stat._id,
+      trades: stat.trades,
+      pnl: stat.pnl,
+      winRate: stat.winRate || 0,
+    }));
+
+    // Get statistics by option type (CALL/PUT)
+    const optionTypeStats = await this.tradeModel.aggregate([
+      { $match: { ...query, market: 'options', optionType: { $exists: true } } },
+      {
+        $group: {
+          _id: '$optionType',
+          trades: { $sum: 1 },
+          pnl: { $sum: '$netPnl' },
+          winRate: {
+            $avg: { $cond: [{ $gt: ['$netPnl', 0] }, 100, 0] },
+          },
+        },
+      },
+      { $sort: { pnl: -1 } },
+    ]);
+
+    // Fix largestLoss: only count actual losses (negative P&L)
+    const fixedLargestLoss = baseStats.largestLoss !== null && baseStats.largestLoss < 0
+      ? baseStats.largestLoss
+      : 0;
+
+    // Get best trades (top 5 winners)
+    const bestTrades = await this.tradeModel
+      .find({ ...query, isOpen: false, netPnl: { $gt: 0 } })
+      .sort({ netPnl: -1 })
+      .limit(5)
+      .lean();
+
+    // Get worst trades (top 5 losers)
+    const worstTrades = await this.tradeModel
+      .find({ ...query, isOpen: false, netPnl: { $lt: 0 } })
+      .sort({ netPnl: 1 })
+      .limit(5)
+      .lean();
+
+    // Calculate average holding time from closed trades
+    // First, get all closed trades with entry and exit times
+    const closedTradesForHolding = await this.tradeModel
+      .find({
+        ...query,
+        isOpen: false,
+        exitTime: { $exists: true, $ne: null },
+        entryTime: { $exists: true, $ne: null },
+      })
+      .select('entryTime exitTime holdingTime')
+      .lean();
+
+    let calculatedAvgHoldingTime = 0;
+    if (closedTradesForHolding.length > 0) {
+      let totalMinutes = 0;
+      let validTrades = 0;
+
+      for (const trade of closedTradesForHolding) {
+        // Use pre-calculated holdingTime if available, otherwise calculate
+        if (trade.holdingTime && trade.holdingTime > 0) {
+          totalMinutes += trade.holdingTime;
+          validTrades++;
+        } else if (trade.exitTime && trade.entryTime) {
+          const exitDate = new Date(trade.exitTime);
+          const entryDate = new Date(trade.entryTime);
+          const diffMs = exitDate.getTime() - entryDate.getTime();
+          const diffMinutes = diffMs / 60000;
+          if (diffMinutes > 0) {
+            totalMinutes += diffMinutes;
+            validTrades++;
+          }
+        }
+      }
+
+      if (validTrades > 0) {
+        calculatedAvgHoldingTime = totalMinutes / validTrades;
+      }
+    }
+
+    // Calculate max drawdown from cumulative P&L
+    const tradesForDrawdown = await this.tradeModel
+      .find({ ...query, isOpen: false })
+      .sort({ tradeDate: 1, exitTime: 1 })
+      .select('netPnl tradeDate')
+      .lean();
+
+    let maxDrawdown = 0;
+    let peak = 0;
+    let cumulative = 0;
+
+    for (const trade of tradesForDrawdown) {
+      cumulative += trade.netPnl || 0;
+      if (cumulative > peak) {
+        peak = cumulative;
+      }
+      const drawdown = peak - cumulative;
+      if (drawdown > maxDrawdown) {
+        maxDrawdown = drawdown;
+      }
+    }
+
     return {
       ...baseStats,
+      largestLoss: fixedLargestLoss,
+      avgHoldingTime: calculatedAvgHoldingTime,
       winRate,
       profitFactor,
       expectancy,
       strategyStats,
-      marketStats,
+      performanceByMarket,
+      optionTypeStats,
+      bestTrades,
+      worstTrades,
+      maxDrawdown,
     };
   }
 
@@ -593,39 +706,123 @@ export class TradingJournalService {
   }
 
   async getStudentsWithJournals(eventId?: string) {
-    // First, get user IDs based on event filter if provided
-    let userIdsFilter = null;
+    // If eventId is provided, get ALL registered users for that event
+    // and show them with their trade stats (if any)
     if (eventId) {
-      // Find all users with TRADING_JOURNAL permission for this event
-      const { ModuleType } = await import('../module-permissions/module-permission.schema');
-      const { ModulePermissionsService } = await import('../module-permissions/module-permissions.service');
-      const modulePermissionModel = this.tradeModel.db.model('ModulePermission');
+      const eventRegistrationModel = this.tradeModel.db.model('EventRegistration');
+      const userModel = this.tradeModel.db.model('User');
 
-      const permissions = await modulePermissionModel.find({
-        eventId,
-        moduleType: 'tradingJournal',
-        isActive: true,
-        hasAccess: true,
-      });
+      // Get all registrations for this event
+      const registrations = await eventRegistrationModel.find({
+        eventId: eventId,
+      }).lean();
 
-      userIdsFilter = permissions.map(p => p.userId);
-
-      // If no users found for this event, return empty array
-      if (userIdsFilter.length === 0) {
+      if (registrations.length === 0) {
         return [];
       }
-    }
 
-    const pipeline: any[] = [];
+      // Get emails from registrations (email is stored directly in registration)
+      const emails = [...new Set(
+        registrations
+          .map((r: any) => r.email?.toLowerCase())
+          .filter((email: string) => email)
+      )];
 
-    // Filter by user IDs if event filter is provided
-    if (userIdsFilter) {
-      pipeline.push({
-        $match: { userId: { $in: userIdsFilter } }
+      // Find users by email
+      const users = await userModel.find({
+        email: { $in: emails }
+      }).select('_id email firstName lastName').lean();
+
+      if (users.length === 0) {
+        // If no users found, return registrations without user accounts
+        // (they registered but haven't created an account yet)
+        return registrations.map((r: any) => ({
+          _id: null,
+          email: r.email,
+          firstName: r.firstName,
+          lastName: r.lastName,
+          totalTrades: 0,
+          lastTradeDate: null,
+          openTrades: 0,
+          winners: 0,
+          totalPnl: 0,
+          needsReview: 0,
+          winRate: 0,
+          hasAccount: false,
+        }));
+      }
+
+      // Get user IDs for trade stats lookup
+      const userIds = users.map((u: any) => u._id.toString());
+
+      // Get trade stats for all these users in one aggregation
+      const tradeStats = await this.tradeModel.aggregate([
+        { $match: { userId: { $in: userIds } } },
+        {
+          $group: {
+            _id: '$userId',
+            totalTrades: { $sum: 1 },
+            lastTrade: { $max: '$tradeDate' },
+            openTrades: {
+              $sum: { $cond: [{ $eq: ['$isOpen', true] }, 1, 0] },
+            },
+            winners: {
+              $sum: { $cond: [{ $eq: ['$isWinner', true] }, 1, 0] },
+            },
+            totalPnl: { $sum: '$netPnl' },
+            needsReview: {
+              $sum: { $cond: [{ $eq: ['$isReviewed', false] }, 1, 0] },
+            },
+          },
+        },
+      ]);
+
+      // Create a map of trade stats by userId
+      const statsMap = new Map(
+        tradeStats.map((s: any) => [s._id.toString(), s])
+      );
+
+      // Create a map of users by email for quick lookup
+      const usersByEmail = new Map(
+        users.map((u: any) => [u.email.toLowerCase(), u])
+      );
+
+      // Combine registrations with user data and stats
+      const students = registrations.map((reg: any) => {
+        const user = usersByEmail.get(reg.email?.toLowerCase());
+        const stats = user ? statsMap.get(user._id.toString()) : null;
+        const totalTrades = stats?.totalTrades || 0;
+        const winners = stats?.winners || 0;
+
+        return {
+          _id: user?._id || null,
+          email: reg.email,
+          firstName: user?.firstName || reg.firstName,
+          lastName: user?.lastName || reg.lastName,
+          totalTrades,
+          lastTradeDate: stats?.lastTrade || null,
+          openTrades: stats?.openTrades || 0,
+          winners,
+          totalPnl: stats?.totalPnl || 0,
+          needsReview: stats?.needsReview || 0,
+          winRate: totalTrades > 0 ? (winners / totalTrades) * 100 : 0,
+          hasAccount: !!user,
+        };
+      });
+
+      // Sort by last trade date (users with trades first, then alphabetically)
+      return students.sort((a: any, b: any) => {
+        if (a.lastTradeDate && b.lastTradeDate) {
+          return new Date(b.lastTradeDate).getTime() - new Date(a.lastTradeDate).getTime();
+        }
+        if (a.lastTradeDate) return -1;
+        if (b.lastTradeDate) return 1;
+        return (a.firstName || '').localeCompare(b.firstName || '');
       });
     }
 
-    pipeline.push(
+    // No eventId - return only users who have trades (original behavior)
+    const pipeline: any[] = [
       {
         $group: {
           _id: '$userId',
@@ -673,7 +870,7 @@ export class TradingJournalService {
         },
       },
       { $sort: { lastTrade: -1 } },
-    );
+    ];
 
     const students = await this.tradeModel.aggregate(pipeline);
 
