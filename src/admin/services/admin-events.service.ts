@@ -10,6 +10,7 @@ import {
   EventRegistration,
   EventRegistrationDocument,
 } from '../../event/schemas/eventRegistration.schema';
+import { User, UserDocument } from '../../users/user.schema';
 import { CreateAdminEventDto } from '../dto/create-admin-event.dto';
 import { UpdateAdminEventDto } from '../dto/update-admin-event.dto';
 import { EventFiltersDto } from '../dto/event-filters.dto';
@@ -25,6 +26,8 @@ export class AdminEventsService {
     @InjectModel(Event.name) private eventModel: Model<EventDocument>,
     @InjectModel(EventRegistration.name)
     private registrationModel: Model<EventRegistrationDocument>,
+    @InjectModel(User.name)
+    private userModel: Model<UserDocument>,
     private readonly cache: CacheService,
   ) {}
 
@@ -332,7 +335,7 @@ export class AdminEventsService {
 
     const skip = (page - 1) * limit;
 
-    const [registrations, total] = await Promise.all([
+    let [registrations, total] = await Promise.all([
       this.registrationModel
         .find(query)
         // Populate userId to get the actual user's _id for module permissions lookup
@@ -343,6 +346,34 @@ export class AdminEventsService {
         .lean(),
       this.registrationModel.countDocuments(query),
     ]);
+
+    // Auto-link registrations without userId to existing users by email
+    const unlinkedRegistrations = registrations.filter((reg: any) => !reg.userId);
+    if (unlinkedRegistrations.length > 0) {
+      const emails = unlinkedRegistrations.map((reg: any) => reg.email).filter(Boolean);
+      const users = await this.userModel.find({ email: { $in: emails } }).lean();
+      const emailToUser = new Map(users.map(u => [u.email, u]));
+
+      // Update registrations in DB and in-memory
+      const updatePromises: Promise<any>[] = [];
+      for (const reg of unlinkedRegistrations) {
+        const user = emailToUser.get((reg as any).email);
+        if (user) {
+          updatePromises.push(
+            this.registrationModel.updateOne(
+              { _id: reg._id },
+              { $set: { userId: user._id } },
+            ),
+          );
+          // Also update in-memory for this response
+          (reg as any).userId = user;
+        }
+      }
+      if (updatePromises.length > 0) {
+        await Promise.all(updatePromises);
+        console.log(`🔵 SERVICE - Auto-linked ${updatePromises.length} registrations to users`);
+      }
+    }
 
     console.log('🔵 SERVICE - Raw registration from DB:', registrations[0]);
 
@@ -359,8 +390,9 @@ export class AdminEventsService {
 
       return {
       _id: reg._id,
-      // Don't use userId - use the registration's actual data
-      userId: reg.userId, // Keep the userId reference but don't populate it
+      // Include populated user for module permissions lookup
+      userId: reg.userId,
+      user: reg.userId, // Frontend expects 'user' field for module permissions
       eventId: reg.eventId,
       ticketType: reg.isVip ? 'vip' : 'general',
       paymentStatus:

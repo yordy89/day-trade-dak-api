@@ -22,6 +22,7 @@ import {
   RevokeEventPermissionsResponseDto
 } from './dto/revoke-event-permissions.dto';
 import { User, UserDocument } from '../users/user.schema';
+import { EventRegistration, EventRegistrationDocument } from '../event/schemas/eventRegistration.schema';
 import { CustomLoggerService } from '../logger/logger.service';
 import { EmailService } from '../email/email.service';
 import * as bcrypt from 'bcrypt';
@@ -33,6 +34,8 @@ export class ModulePermissionsService {
     private modulePermissionModel: Model<ModulePermissionDocument>,
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
+    @InjectModel(EventRegistration.name)
+    private eventRegistrationModel: Model<EventRegistrationDocument>,
     private readonly logger: CustomLoggerService,
     private readonly emailService: EmailService,
   ) {}
@@ -492,6 +495,31 @@ export class ModulePermissionsService {
           userId = user._id.toString();
           response.usersUpdated++;
         }
+
+        // Link user to any event registrations with matching email that don't have userId
+        // This ensures the registration shows the linked user after permissions are granted
+        if (dto.eventId) {
+          await this.eventRegistrationModel.updateMany(
+            {
+              eventId: dto.eventId,
+              email: participant.email,
+              userId: { $exists: false },
+            },
+            {
+              $set: { userId: user._id },
+            },
+          );
+        }
+        // Also update registrations without eventId filter (by email only)
+        await this.eventRegistrationModel.updateMany(
+          {
+            email: participant.email,
+            userId: null,
+          },
+          {
+            $set: { userId: user._id },
+          },
+        );
 
         // Grant permissions for each module type
         for (const moduleType of dto.moduleTypes) {
