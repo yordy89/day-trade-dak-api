@@ -18,6 +18,7 @@ import { AuthModule } from 'src/auth/auth.module';
 import { EventModule } from 'src/event/event.module';
 import { EmailModule } from 'src/email/email.module';
 import { AffiliateModule } from 'src/affiliate/affiliate.module';
+import { ModulePermissionsModule } from 'src/module-permissions/module-permissions.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { AffiliateModule } from 'src/affiliate/affiliate.module';
     forwardRef(() => EventModule),
     forwardRef(() => AffiliateModule),
     EmailModule,
+    ModulePermissionsModule,
   ],
   controllers: [
     StripeController,

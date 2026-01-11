@@ -9,6 +9,8 @@ import {
   SubscriptionPlanDocument,
   ConditionalPricingRule,
 } from 'src/subscriptions/subscription-plan.schema';
+import { ModulePermissionsService } from 'src/module-permissions/module-permissions.service';
+import { ModuleType } from 'src/module-permissions/module-permission.schema';
 
 export interface PricingRule {
   plan: SubscriptionPlan;
@@ -45,6 +47,7 @@ export class PricingService implements OnModuleInit {
     private userService: UserService,
     @InjectModel(SubscriptionPlanSchema.name)
     private subscriptionPlanModel: Model<SubscriptionPlanDocument>,
+    private modulePermissionsService: ModulePermissionsService,
   ) {}
 
   async onModuleInit() {
@@ -274,7 +277,7 @@ export class PricingService implements OnModuleInit {
       };
     }
 
-    // Check Master Classes - requires Live subscription OR Live meeting access permission
+    // Check Master Classes - requires Live subscription OR Live meeting access permission OR Master Classes Purchase permission
     if (targetPlan === SubscriptionPlan.MASTER_CLASES) {
       // Check 1: Has active Live subscription
       const hasLiveSubscription = user.subscriptions.some(
@@ -287,11 +290,17 @@ export class PricingService implements OnModuleInit {
       // Check 2: Has Live meeting access permission (admin flag)
       const hasLiveMeetingAccess = user.allowLiveMeetingAccess === true;
 
+      // Check 3: Has Master Classes Purchase permission (granted via module permissions)
+      const hasMasterClassesPurchasePermission = await this.modulePermissionsService.hasModuleAccess(
+        userId,
+        ModuleType.MASTER_CLASSES_PURCHASE,
+      );
+
       // User needs at least one of these to purchase Master Classes
-      if (!hasLiveSubscription && !hasLiveMeetingAccess) {
+      if (!hasLiveSubscription && !hasLiveMeetingAccess && !hasMasterClassesPurchasePermission) {
         return {
           eligible: false,
-          reason: 'Master Classes requires an active Live subscription or Live access permission. Please subscribe to Live Weekly first or contact support for access.',
+          reason: 'Master Classes requires an active Live subscription, Live access permission, or Master Classes Purchase permission. Please subscribe to Live Weekly first or contact support for access.',
         };
       }
     }

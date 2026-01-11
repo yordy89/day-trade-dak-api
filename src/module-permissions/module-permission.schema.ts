@@ -16,6 +16,7 @@ export enum ModuleType {
   STOCKS = 'stocks',
   SUPPORT_VIDEOS = 'supportVideos',
   TRADING_JOURNAL = 'tradingJournal',
+  MASTER_CLASSES_PURCHASE = 'masterClassesPurchase',
 }
 
 @Schema({ timestamps: true })

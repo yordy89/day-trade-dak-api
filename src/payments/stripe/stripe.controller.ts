@@ -220,6 +220,19 @@ export class StripeController {
     );
   }
 
+  // **Check eligibility for a specific plan**
+  @UseGuards(JwtAuthGuard)
+  @Get('check-eligibility/:plan')
+  async checkPlanEligibility(
+    @Req() req: RequestWithUser,
+    @Param('plan') plan: SubscriptionPlan,
+  ) {
+    return this.pricingService.validateSubscriptionEligibility(
+      req.user._id.toString(),
+      plan,
+    );
+  }
+
   // **Create enhanced checkout session**
   @UseGuards(JwtAuthGuard)
   @Post('checkout/enhanced')
