@@ -212,6 +212,19 @@ export class AdminEventsService {
       }
     }
 
+    // If creating with featuredInCRM=true, unmark other events of the same type
+    if (createEventDto.featuredInCRM === true && createEventDto.type) {
+      await this.eventModel.updateMany(
+        {
+          type: createEventDto.type,
+          featuredInCRM: true,
+        },
+        {
+          $set: { featuredInCRM: false },
+        },
+      );
+    }
+
     const event = new this.eventModel(createEventDto);
     return event.save();
   }
@@ -226,6 +239,28 @@ export class AdminEventsService {
         new Date(updateEventDto.startDate) > new Date(updateEventDto.endDate)
       ) {
         throw new BadRequestException('Start date must be before end date');
+      }
+    }
+
+    // If setting featuredInCRM to true, first unmark other events of the same type
+    if (updateEventDto.featuredInCRM === true) {
+      // Get the event to determine its type
+      const existingEvent = await this.eventModel.findById(id);
+      if (existingEvent) {
+        // Use the new type if provided, otherwise use existing type
+        const eventType = updateEventDto.type || existingEvent.type;
+
+        // Unmark all other events of the same type
+        await this.eventModel.updateMany(
+          {
+            type: eventType,
+            featuredInCRM: true,
+            _id: { $ne: id },
+          },
+          {
+            $set: { featuredInCRM: false },
+          },
+        );
       }
     }
 

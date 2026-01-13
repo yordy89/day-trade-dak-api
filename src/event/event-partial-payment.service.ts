@@ -859,6 +859,8 @@ export class EventPartialPaymentService {
         amount: registration.totalAmount,
         currency: 'USD',
         eventDate: event?.date,
+        eventStartDate: event?.startDate ? new Date(event.startDate) : undefined,
+        eventEndDate: event?.endDate ? new Date(event.endDate) : undefined,
         eventLocation: event?.location,
         additionalInfo: {
           phoneNumber: registration.phoneNumber,

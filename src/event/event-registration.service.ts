@@ -82,6 +82,8 @@ export class EventRegistrationsService {
             eventName: event.name || 'Evento DayTradeDak',
             eventType: emailEventType,
             eventDate: event.date ? new Date(event.date) : undefined,
+            eventStartDate: event.startDate ? new Date(event.startDate) : undefined,
+            eventEndDate: event.endDate ? new Date(event.endDate) : undefined,
             eventLocation: event.location,
             eventDescription: event.description,
             isPaid: createEventRegistrationDto.paymentStatus === 'paid' || createEventRegistrationDto.paymentStatus === 'free',

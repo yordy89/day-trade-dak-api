@@ -180,6 +180,11 @@ export class EmailService {
 
       // Use specific template for master course
       if (data.eventType === 'master_course') {
+        // Extract year from event dates for dynamic subject line
+        const eventYear = data.eventStartDate
+          ? new Date(data.eventStartDate).getFullYear()
+          : new Date().getFullYear();
+
         const masterCourseData: MasterCourseRegistrationData = {
           firstName: data.firstName,
           email: to,
@@ -192,9 +197,14 @@ export class EmailService {
             tradingExperience: data.additionalInfo?.tradingExperience,
             expectations: data.additionalInfo?.expectations,
           },
+          // Pass event dates from the database
+          eventName: data.eventName,
+          eventStartDate: data.eventStartDate,
+          eventEndDate: data.eventEndDate,
+          eventLocation: data.eventLocation,
         };
         html = masterCourseRegistrationTemplate(masterCourseData);
-        subject = '🎓 ¡Bienvenido al Master Trading Course 2025!';
+        subject = `🎓 ¡Bienvenido al Master Trading Course ${eventYear}!`;
       } else {
         // Use standard event registration template for community events and others
         html = eventRegistrationTemplate(data);

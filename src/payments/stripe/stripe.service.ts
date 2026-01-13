@@ -1564,13 +1564,17 @@ export class StripeService {
       // Send email notification
       if (this.emailService) {
         try {
-          // For master course, send specific data without event dates
+          // For master course, send with dynamic event dates from database
           if (eventType === 'master_course') {
             await this.emailService.sendEventRegistrationEmail(email, {
               firstName,
-              eventName: 'Master Trading Course 2025',
+              eventName: event?.name || event?.title || 'Master Trading Course',
               eventType: 'master_course',
-              eventLocation: 'Tampa, Florida',
+              eventLocation: event?.location || 'Tampa, Florida',
+              // Pass dates from the database event
+              eventStartDate: event?.startDate ? new Date(event.startDate) : undefined,
+              eventEndDate: event?.endDate ? new Date(event.endDate) : undefined,
+              eventDate: event?.date ? new Date(event.date) : undefined,
               ticketNumber: registration?._id?.toString() || session.id,
               isPaid: registrationType === 'paid',
               amount: session.amount_total

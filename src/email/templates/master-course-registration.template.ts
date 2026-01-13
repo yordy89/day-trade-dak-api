@@ -17,6 +17,12 @@ export interface MasterCourseRegistrationData {
     tradingExperience?: string;
     expectations?: string;
   };
+  // Event date fields - dynamic from database
+  eventName?: string;
+  eventStartDate?: Date;
+  eventEndDate?: Date;
+  eventLocation?: string;
+  firstSessionDate?: Date; // First online session date (before in-person)
 }
 
 const formatCurrency = (amount: number, currency: string): string => {
@@ -25,6 +31,61 @@ const formatCurrency = (amount: number, currency: string): string => {
     currency: currency.toUpperCase(),
     minimumFractionDigits: 2,
   }).format(amount);
+};
+
+// Format date in Spanish
+const formatDateSpanish = (date: Date | undefined): string => {
+  if (!date) return 'Por confirmar';
+  const d = new Date(date);
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  return `${d.getDate()} de ${months[d.getMonth()]}, ${d.getFullYear()}`;
+};
+
+// Format date range in Spanish (e.g., "4-6 de Abril, 2026")
+const formatDateRangeSpanish = (startDate: Date | undefined, endDate: Date | undefined): string => {
+  if (!startDate) return 'Por confirmar';
+  const start = new Date(startDate);
+  const end = endDate ? new Date(endDate) : start;
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
+  // If same month
+  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
+    return `${start.getDate()}-${end.getDate()} de ${months[start.getMonth()]}, ${start.getFullYear()}`;
+  }
+  // Different months
+  return `${start.getDate()} de ${months[start.getMonth()]} - ${end.getDate()} de ${months[end.getMonth()]}, ${end.getFullYear()}`;
+};
+
+// Get month and year in Spanish (e.g., "Abril 2026")
+const getMonthYearSpanish = (date: Date | undefined): string => {
+  if (!date) return '';
+  const d = new Date(date);
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  return `${months[d.getMonth()]} ${d.getFullYear()}`;
+};
+
+// Get year from date
+const getYear = (date: Date | undefined): string => {
+  if (!date) return new Date().getFullYear().toString();
+  return new Date(date).getFullYear().toString();
+};
+
+// Calculate first session date (2 days before start)
+const getFirstSessionDate = (startDate: Date | undefined, firstSession: Date | undefined): Date | undefined => {
+  if (firstSession) return firstSession;
+  if (!startDate) return undefined;
+  const d = new Date(startDate);
+  d.setDate(d.getDate() - 2);
+  return d;
 };
 
 export const masterCourseRegistrationTemplate = (
@@ -39,10 +100,25 @@ export const masterCourseRegistrationTemplate = (
     currency,
     paymentMethod,
     additionalInfo,
+    eventName,
+    eventStartDate,
+    eventEndDate,
+    eventLocation,
+    firstSessionDate,
   } = data;
 
   const formattedAmount =
     amount && currency ? formatCurrency(amount, currency) : null;
+
+  // Dynamic date values
+  const courseYear = getYear(eventStartDate);
+  const courseName = eventName || `Master Trading Course ${courseYear}`;
+  const dateRange = formatDateRangeSpanish(eventStartDate, eventEndDate);
+  const monthYear = getMonthYearSpanish(eventStartDate);
+  const location = eventLocation || 'Tampa, Florida';
+  const firstSession = getFirstSessionDate(eventStartDate, firstSessionDate);
+  const firstSessionFormatted = formatDateSpanish(firstSession);
+  const endDateFormatted = formatDateSpanish(eventEndDate);
 
   const content = `
     <div style="text-align: center; margin-bottom: 30px;">
@@ -50,7 +126,7 @@ export const masterCourseRegistrationTemplate = (
         <span style="font-size: 40px;">🎓</span>
       </div>
       <h2 style="margin: 0 0 10px 0; color: #212636; font-size: 28px; font-weight: 700;">
-        ¡Bienvenido al Master Trading Course 2025!
+        ¡Bienvenido al ${courseName}!
       </h2>
       <p style="margin: 0; color: #6b7280; font-size: 16px;">
         Tu transformación hacia el trading profesional comienza ahora
@@ -62,7 +138,7 @@ export const masterCourseRegistrationTemplate = (
     </p>
 
     <p style="margin: 0 0 30px 0; color: #4b5563; font-size: 16px; line-height: 24px;">
-      <strong style="color: #16a34a;">¡Felicitaciones!</strong> Tu inscripción al <strong style="color: #212636;">Master Trading Course 2025</strong> ha sido confirmada exitosamente. 
+      <strong style="color: #16a34a;">¡Felicitaciones!</strong> Tu inscripción al <strong style="color: #212636;">${courseName}</strong> ha sido confirmada exitosamente.
       Has tomado la mejor decisión para tu futuro financiero. Durante los próximos 3 meses, te transformarás en un trader profesional con las herramientas y conocimientos necesarios para operar de manera consistente y rentable.
     </p>
 
@@ -71,7 +147,7 @@ export const masterCourseRegistrationTemplate = (
       <h3 style="margin: 0 0 20px 0; color: #16a34a; font-size: 20px; font-weight: 600;">
         📚 Tu Programa de Trading Profesional
       </h3>
-      
+
       <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 14px;">
         <tr>
           <td style="padding: 12px 0; color: #059669; font-weight: 600;" colspan="2">
@@ -84,7 +160,7 @@ export const masterCourseRegistrationTemplate = (
         </tr>
         <tr>
           <td style="padding: 8px 0; color: #6b7280;">Fechas Presencial:</td>
-          <td style="padding: 8px 0; color: #212636; font-weight: 600; text-align: right;">24-26 de Enero, 2026</td>
+          <td style="padding: 8px 0; color: #212636; font-weight: 600; text-align: right;">${dateRange}</td>
         </tr>
         <tr>
           <td style="padding: 8px 0; color: #6b7280;">Formato:</td>
@@ -92,7 +168,7 @@ export const masterCourseRegistrationTemplate = (
         </tr>
         <tr>
           <td style="padding: 8px 0; color: #6b7280;">Ubicación presencial:</td>
-          <td style="padding: 8px 0; color: #212636; text-align: right;">Tampa, Florida</td>
+          <td style="padding: 8px 0; color: #212636; text-align: right;">${location}</td>
         </tr>
         ${
           isPaid && formattedAmount
@@ -129,7 +205,7 @@ export const masterCourseRegistrationTemplate = (
     <!-- Fase 1 -->
     <div style="background-color: #f0fdf4; border-radius: 8px; padding: 20px; margin: 0 0 15px 0; border-left: 3px solid #16a34a;">
       <h4 style="margin: 0 0 10px 0; color: #16a34a; font-size: 16px; font-weight: 600;">
-        Fase 1: Aprendizaje Online (Antes del Presencial, Enero 2026)
+        Fase 1: Aprendizaje Online (Antes del Presencial${monthYear ? `, ${monthYear}` : ''})
       </h4>
       <p style="margin: 0 0 10px 0; color: #4b5563; font-size: 14px;">
         <strong>15 días antes del presencial • 8 lecciones en video + 4 mentorías vía Zoom</strong>
@@ -147,11 +223,11 @@ export const masterCourseRegistrationTemplate = (
     <!-- Fase 2 -->
     <div style="background-color: #eff6ff; border-radius: 8px; padding: 20px; margin: 0 0 15px 0; border-left: 3px solid #3b82f6;">
       <h4 style="margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: 600;">
-        Fase 2: Entrenamiento Presencial en Tampa (3 Días Intensivos)
+        Fase 2: Entrenamiento Presencial en ${location.split(',')[0]} (3 Días Intensivos)
       </h4>
       <p style="margin: 0 0 10px 0; color: #4b5563; font-size: 14px;">
-        <strong>24-26 de Enero, 2026 (Viernes, Sábado y Domingo)</strong><br>
-        <span style="color: #3b82f6; font-weight: 600;">📍 Tampa, Florida</span>
+        <strong>${dateRange} (Viernes, Sábado y Domingo)</strong><br>
+        <span style="color: #3b82f6; font-weight: 600;">📍 ${location}</span>
       </p>
       <ul style="margin: 0; padding-left: 20px; color: #6b7280; font-size: 14px; line-height: 22px;">
         <li><strong>Día 1:</strong> Estrategia y análisis en tiempo real</li>
@@ -170,7 +246,7 @@ export const masterCourseRegistrationTemplate = (
     <!-- Fase 3 -->
     <div style="background-color: #fef3c7; border-radius: 8px; padding: 20px; margin: 0 0 30px 0; border-left: 3px solid #f59e0b;">
       <h4 style="margin: 0 0 10px 0; color: #f59e0b; font-size: 16px; font-weight: 600;">
-        Fase 3: Práctica Supervisada (Después del Presencial, 2026)
+        Fase 3: Práctica Supervisada (Después del Presencial, ${courseYear})
       </h4>
       <p style="margin: 0 0 10px 0; color: #4b5563; font-size: 14px;">
         <strong>2 Meses - 100% Online • Mes 1: Cuenta Demo | Mes 2: Cuenta Real</strong>
@@ -190,7 +266,7 @@ export const masterCourseRegistrationTemplate = (
       <h3 style="margin: 0 0 20px 0; color: #212636; font-size: 18px; font-weight: 600;">
         ✅ Lo Que Incluye Tu Inscripción
       </h3>
-      
+
       <div style="display: flex; flex-wrap: wrap; gap: 15px;">
         <div style="flex: 1 1 45%; min-width: 200px;">
           <p style="margin: 0 0 8px 0;">
@@ -201,7 +277,7 @@ export const masterCourseRegistrationTemplate = (
             Contenido estructurado y práctico
           </p>
         </div>
-        
+
         <div style="flex: 1 1 45%; min-width: 200px;">
           <p style="margin: 0 0 8px 0;">
             <span style="color: #16a34a; font-size: 20px;">📊</span>
@@ -211,7 +287,7 @@ export const masterCourseRegistrationTemplate = (
             Opera con capital real junto a profesionales
           </p>
         </div>
-        
+
         <div style="flex: 1 1 45%; min-width: 200px;">
           <p style="margin: 0 0 8px 0;">
             <span style="color: #16a34a; font-size: 20px;">👥</span>
@@ -221,7 +297,7 @@ export const masterCourseRegistrationTemplate = (
             4 preparatorias + 8 técnicas + 8 psicotrading
           </p>
         </div>
-        
+
         <div style="flex: 1 1 45%; min-width: 200px;">
           <p style="margin: 0 0 8px 0;">
             <span style="color: #16a34a; font-size: 20px;">🏆</span>
@@ -231,7 +307,7 @@ export const masterCourseRegistrationTemplate = (
             Certificado de Trading Profesional al completar
           </p>
         </div>
-        
+
         <div style="flex: 1 1 45%; min-width: 200px;">
           <p style="margin: 0 0 8px 0;">
             <span style="color: #16a34a; font-size: 20px;">💬</span>
@@ -258,7 +334,7 @@ export const masterCourseRegistrationTemplate = (
           En las próximas 24 horas recibirás un email con tus credenciales de acceso
         </p>
       </div>
-      
+
       <div style="padding: 15px; border-bottom: 1px solid #e5e7eb;">
         <p style="margin: 0; color: #16a34a; font-weight: 600;">
           <span style="font-size: 20px;">2️⃣</span> Únete al grupo de WhatsApp
@@ -267,7 +343,7 @@ export const masterCourseRegistrationTemplate = (
           Recibirás el link de invitación en un email separado
         </p>
       </div>
-      
+
       <div style="padding: 15px; border-bottom: 1px solid #e5e7eb;">
         <p style="margin: 0; color: #16a34a; font-weight: 600;">
           <span style="font-size: 20px;">3️⃣</span> Prepara tu equipo
@@ -276,13 +352,13 @@ export const masterCourseRegistrationTemplate = (
           Asegúrate de tener una computadora con buena conexión a internet
         </p>
       </div>
-      
+
       <div style="padding: 15px;">
         <p style="margin: 0; color: #16a34a; font-weight: 600;">
           <span style="font-size: 20px;">4️⃣</span> Marca tu calendario
         </p>
         <p style="margin: 5px 0 0 28px; color: #6b7280; font-size: 14px;">
-          Primera sesión en vivo: <strong>22 de Enero, 2026 a las 7:00 PM EST</strong>
+          Primera sesión en vivo: <strong>${firstSessionFormatted} a las 7:00 PM EST</strong>
         </p>
       </div>
     </div>
@@ -294,15 +370,15 @@ export const masterCourseRegistrationTemplate = (
       </h4>
       <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 14px;">
         <tr>
-          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>22 de Enero, 2026:</strong></td>
+          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>${firstSessionFormatted}:</strong></td>
           <td style="padding: 8px 0; color: #78350f;">Inicio del curso - Primera sesión online a las 7:00 PM EST</td>
         </tr>
         <tr>
-          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>24-26 de Enero, 2026:</strong></td>
-          <td style="padding: 8px 0; color: #78350f;">Entrenamiento presencial intensivo en Tampa, Florida</td>
+          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>${dateRange}:</strong></td>
+          <td style="padding: 8px 0; color: #78350f;">Entrenamiento presencial intensivo en ${location}</td>
         </tr>
         <tr>
-          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>26 de Enero, 2026:</strong></td>
+          <td style="padding: 8px 0; color: #78350f; vertical-align: top;"><strong>${endDateFormatted}:</strong></td>
           <td style="padding: 8px 0; color: #78350f;">Graduación y entrega de certificación oficial</td>
         </tr>
       </table>
@@ -318,7 +394,7 @@ export const masterCourseRegistrationTemplate = (
       <p style="margin: 0 0 20px 0; color: #6b7280; font-size: 14px;">
         Tu mentor está aquí para apoyarte en cada paso del camino
       </p>
-      
+
       <div style="text-align: center;">
         <a href="https://wa.me/17863551346" target="_blank" style="display: inline-block; padding: 14px 32px; font-size: 16px; font-weight: 600; color: #ffffff; background-color: #25d366; text-decoration: none; border-radius: 6px; margin-bottom: 10px;">
           💬 WhatsApp: +1 786 355 1346
@@ -351,7 +427,7 @@ export const masterCourseRegistrationTemplate = (
   `;
 
   return baseEmailTemplate({
-    preheader: `¡Bienvenido al Master Trading Course 2025! Tu transformación comienza ahora`,
+    preheader: `¡Bienvenido al ${courseName}! Tu transformación comienza ahora`,
     content,
   });
 };
