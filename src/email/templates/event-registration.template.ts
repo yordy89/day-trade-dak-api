@@ -236,7 +236,7 @@ const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
         Has asegurado tu cupo para el webinar exclusivo:
       </p>
       <h3 style="margin: 10px 0 0 0; color: #212636; font-size: 22px; font-weight: 700;">
-        Acceso Blindado: La Metodología Silenciosa que el 95% de los Traders Desconoce
+        ${eventName}
       </h3>
     </div>
 
@@ -291,7 +291,7 @@ const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
     </div>
 
     <h3 style="margin: 30px 0 15px 0; color: #212636; font-size: 18px; font-weight: 600;">
-      🎯 Lo que aprenderás en este webinar exclusivo:
+      🎯 Lo que cubriremos en este webinar:
     </h3>
 
     <div style="margin: 0 0 30px 0;">
@@ -301,7 +301,7 @@ const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
             <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">1</span>
           </td>
           <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
-            <strong style="color: #212636;">Los mitos del trading</strong> - Desmantelaremos las falsas "soluciones rápidas"
+            <strong style="color: #212636;">Bienvenida y Encuesta Inicial</strong> - Conoceremos tu nivel de experiencia y aclararemos nuestra misión
           </td>
         </tr>
         <tr>
@@ -309,7 +309,7 @@ const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
             <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">2</span>
           </td>
           <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
-            <strong style="color: #212636;">El problema del trader típico</strong> - Por qué la falta de estructura causa estancamiento
+            <strong style="color: #212636;">El Desafío y la Nueva Realidad</strong> - Importancia de la gestión de capital y cómo proteger tus ganancias
           </td>
         </tr>
         <tr>
@@ -317,7 +317,7 @@ const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
             <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">3</span>
           </td>
           <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
-            <strong style="color: #212636;">El filtro de precisión</strong> - Enfócate solo en operaciones de alto impacto
+            <strong style="color: #212636;">Metodología y Demostración Práctica</strong> - Tips útiles que puedes aplicar en tus operaciones
           </td>
         </tr>
         <tr>
@@ -325,7 +325,7 @@ const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
             <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">4</span>
           </td>
           <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
-            <strong style="color: #212636;">Pilares de la metodología profesional</strong> - Análisis flexible vs estrategias rígidas
+            <strong style="color: #212636;">Testimonios de Estudiantes</strong> - Experiencias reales y resultados obtenidos
           </td>
         </tr>
         <tr>
@@ -333,7 +333,7 @@ const webinarRegistrationTemplate = (data: EventRegistrationData): string => {
             <span style="display: inline-block; width: 24px; height: 24px; background-color: #22c55e; border-radius: 50%; color: white; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold;">5</span>
           </td>
           <td style="padding: 10px 0; padding-left: 12px; color: #4b5563; font-size: 15px;">
-            <strong style="color: #212636;">Estudio de caso real</strong> - Gráficos limpios y metodología en práctica
+            <strong style="color: #212636;">Cierre y Próximos Pasos</strong> - Resumen de puntos clave y cómo profundizar con la mentoría
           </td>
         </tr>
       </table>
