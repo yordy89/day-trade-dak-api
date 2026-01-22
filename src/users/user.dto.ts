@@ -38,6 +38,10 @@ export class CreateUserDto {
   acceptedMediaUsageTerms?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  acceptedCommunityGuidelines?: boolean;
+
+  @IsOptional()
   @IsString()
   recaptchaToken?: string;
 }
@@ -95,6 +99,8 @@ export interface CreateUserInput {
   role?: Role;
   acceptedMediaUsageTerms?: boolean;
   mediaUsageTermsAcceptedAt?: Date;
+  acceptedCommunityGuidelines?: boolean;
+  communityGuidelinesAcceptedAt?: Date;
 }
 
 export enum TradingPhases {

@@ -110,6 +110,12 @@ export class User extends Document {
   @Prop()
   mediaUsageTermsAcceptedAt?: Date;
 
+  @Prop({ default: false })
+  acceptedCommunityGuidelines?: boolean;
+
+  @Prop()
+  communityGuidelinesAcceptedAt?: Date;
+
   // Email marketing preferences
   @Prop({ 
     type: {

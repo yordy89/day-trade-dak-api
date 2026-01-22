@@ -50,7 +50,7 @@ export class AuthService {
     };
   }
 
-  async signup(user: CreateUserInput & { acceptedMediaUsageTerms?: boolean }) {
+  async signup(user: CreateUserInput & { acceptedMediaUsageTerms?: boolean; acceptedCommunityGuidelines?: boolean }) {
     const userExists = await this.userService.findByEmail(user.email);
     if (userExists) {
       throw new ConflictException('User already exists');
@@ -63,6 +63,9 @@ export class AuthService {
       // Store media usage terms acceptance if provided
       acceptedMediaUsageTerms: user.acceptedMediaUsageTerms || false,
       mediaUsageTermsAcceptedAt: user.acceptedMediaUsageTerms ? new Date() : undefined,
+      // Store community guidelines acceptance if provided
+      acceptedCommunityGuidelines: user.acceptedCommunityGuidelines || false,
+      communityGuidelinesAcceptedAt: user.acceptedCommunityGuidelines ? new Date() : undefined,
     });
 
     const plainUser = userCreated.toObject();
@@ -91,6 +94,7 @@ export class AuthService {
       },
       metadata: {
         acceptedMediaUsageTerms: user.acceptedMediaUsageTerms,
+        acceptedCommunityGuidelines: user.acceptedCommunityGuidelines,
       },
     });
 
