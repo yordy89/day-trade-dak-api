@@ -752,12 +752,12 @@ export class TradingJournalService {
         }));
       }
 
-      // Get user IDs for trade stats lookup
-      const userIds = users.map((u: any) => u._id.toString());
+      // Get user IDs for trade stats lookup (as ObjectIds for aggregation)
+      const userObjectIds = users.map((u: any) => new Types.ObjectId(u._id));
 
       // Get trade stats for all these users in one aggregation
       const tradeStats = await this.tradeModel.aggregate([
-        { $match: { userId: { $in: userIds } } },
+        { $match: { userId: { $in: userObjectIds } } },
         {
           $group: {
             _id: '$userId',
@@ -777,7 +777,7 @@ export class TradingJournalService {
         },
       ]);
 
-      // Create a map of trade stats by userId
+      // Create a map of trade stats by userId (convert ObjectId to string for consistent lookup)
       const statsMap = new Map(
         tradeStats.map((s: any) => [s._id.toString(), s])
       );
