@@ -54,6 +54,7 @@ import { AnnouncementModule } from './announcement/announcement.module';
 import { TradingJournalModule } from './trading-journal/trading-journal.module';
 import { GlobalSyncModule } from './global-sync/global-sync.module';
 import { InternalCronModule } from './internal-cron/internal-cron.module';
+import { ChatbotModule } from './chatbot/chatbot.module';
 
 @Module({
   controllers: [TestUploadController],
@@ -146,6 +147,7 @@ import { InternalCronModule } from './internal-cron/internal-cron.module';
     TradingJournalModule,
     GlobalSyncModule,
     InternalCronModule,
+    ChatbotModule,
   ],
   providers: [
     {

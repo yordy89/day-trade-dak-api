@@ -591,6 +591,23 @@ export class TradingJournalService {
       }
     }
 
+    // Get statistics by symbol (TSLA, MSFT, AAPL, etc.)
+    const symbolStats = await this.tradeModel.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: '$symbol',
+          trades: { $sum: 1 },
+          pnl: { $sum: '$netPnl' },
+          winRate: {
+            $avg: { $cond: [{ $gt: ['$netPnl', 0] }, 100, 0] },
+          },
+        },
+      },
+      { $sort: { pnl: -1 } },
+      { $limit: 10 },
+    ]);
+
     return {
       ...baseStats,
       largestLoss: fixedLargestLoss,
@@ -604,6 +621,7 @@ export class TradingJournalService {
       bestTrades,
       worstTrades,
       maxDrawdown,
+      symbolStats,
     };
   }
 

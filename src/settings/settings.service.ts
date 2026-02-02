@@ -475,6 +475,20 @@ export class SettingsService {
         },
         defaultValue: false,
       },
+      {
+        key: 'chatbot_enabled',
+        value: true,
+        type: SettingType.BOOLEAN,
+        category: SettingCategory.FEATURES,
+        metadata: {
+          label: 'AI Chatbot',
+          description: 'Enable or disable the AI chatbot assistant widget across the CRM. When disabled, the chat bubble will not appear for any users.',
+          visible: true,
+          editable: true,
+          order: 2,
+        },
+        defaultValue: true,
+      },
     ];
 
     for (const defaultSetting of defaultSettings) {
