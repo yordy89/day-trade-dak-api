@@ -26,16 +26,18 @@ export class SubscriptionSyncCron {
 
   /**
    * Run every day at midnight to sync subscription dates
+   * NOTE: Expiration handling is done by CronService.removeExpiredSubscriptions()
    */
   @Cron('0 0 * * *') // Daily at midnight
   async syncSubscriptionDates() {
     this.logger.log('🔄 Starting daily subscription sync...');
-    
+
     try {
+      // Only sync dates from Stripe - don't handle expiration here
+      // Expiration is handled by CronService.removeExpiredSubscriptions()
       await this.syncFromRecentTransactions();
       await this.syncFromStripeAPI();
-      await this.checkAndFixExpiredSubscriptions();
-      
+
       this.logger.log('✅ Daily subscription sync completed');
     } catch (error) {
       this.logger.error('❌ Error in subscription sync cron:', error);

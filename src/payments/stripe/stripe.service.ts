@@ -1953,8 +1953,13 @@ export class StripeService {
     }
 
     // ✅ FIXED: Atomic and idempotent subscription update (prevents duplicates)
+    // ✅ FIXED: For recurring subscriptions, expiresAt should match currentPeriodEnd
     const { Types } = await import('mongoose');
     if (subscriptionId) {
+      // For recurring subscriptions, use currentPeriodEnd as the authoritative expiration date
+      // This ensures expiresAt and currentPeriodEnd stay in sync
+      const effectiveExpiresAt = currentPeriodEnd || expirationDate;
+
       // For recurring subscriptions - use stripeSubscriptionId as unique key
       // First try to update existing subscription with same stripeSubscriptionId
       const updateResult = await this.userModel.updateOne(
@@ -1965,8 +1970,8 @@ export class StripeService {
         {
           $set: {
             'subscriptions.$.plan': plan,
-            'subscriptions.$.expiresAt': expirationDate,
-            'subscriptions.$.currentPeriodEnd': currentPeriodEnd || expirationDate,
+            'subscriptions.$.expiresAt': effectiveExpiresAt,
+            'subscriptions.$.currentPeriodEnd': effectiveExpiresAt,
             'subscriptions.$.status': subscriptionStatus,
             'subscriptions.$.updatedAt': new Date(),
           },
@@ -1985,10 +1990,10 @@ export class StripeService {
             $push: {
               subscriptions: {
                 plan,
-                expiresAt: expirationDate,
+                expiresAt: effectiveExpiresAt,
                 stripeSubscriptionId: subscriptionId,
                 createdAt: new Date(),
-                currentPeriodEnd: currentPeriodEnd || expirationDate,
+                currentPeriodEnd: effectiveExpiresAt,
                 status: subscriptionStatus,
               },
             },

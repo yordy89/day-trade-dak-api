@@ -7,6 +7,7 @@ import { MeetingCronService } from '../services/meeting-cron.service';
 @Injectable()
 export class InternalCronService {
   private readonly logger = new Logger(InternalCronService.name);
+  private cronExecutions: Map<string, { lastRun: Date; success: boolean; result: any }> = new Map();
 
   constructor(
     private readonly cronService: CronService,
@@ -15,15 +16,54 @@ export class InternalCronService {
     private readonly meetingCronService: MeetingCronService,
   ) {}
 
+  /**
+   * Track cron execution for monitoring purposes
+   */
+  async trackExecution<T>(jobName: string, fn: () => Promise<T>): Promise<T> {
+    const startTime = new Date();
+    try {
+      const result = await fn();
+      this.cronExecutions.set(jobName, {
+        lastRun: startTime,
+        success: true,
+        result,
+      });
+      return result;
+    } catch (error) {
+      this.cronExecutions.set(jobName, {
+        lastRun: startTime,
+        success: false,
+        result: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get execution status for all tracked cron jobs
+   */
+  getExecutionStatus() {
+    const status: Record<string, any> = {};
+    this.cronExecutions.forEach((value, key) => {
+      status[key] = {
+        ...value,
+        minutesSinceLastRun: Math.floor((Date.now() - value.lastRun.getTime()) / 60000),
+      };
+    });
+    return status;
+  }
+
   async removeExpiredSubscriptions() {
     this.logger.log('Running removeExpiredSubscriptions via internal cron');
-    try {
-      await this.cronService.removeExpiredSubscriptions();
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Error in removeExpiredSubscriptions:', error);
-      return { success: false, error: error.message };
-    }
+    return this.trackExecution('expired-subscriptions', async () => {
+      try {
+        const result = await this.cronService.removeExpiredSubscriptions();
+        return { success: true, ...result };
+      } catch (error) {
+        this.logger.error('Error in removeExpiredSubscriptions:', error);
+        return { success: false, error: error.message };
+      }
+    });
   }
 
   async sendWeeklyRenewalReminders() {

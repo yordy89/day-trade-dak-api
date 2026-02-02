@@ -81,39 +81,78 @@ export class CronService {
 
   // ✅ Remove expired subscriptions every midnight
   // OPTIMIZED: Uses cursor-based iteration to avoid loading all users into memory
+  // FIXED: Now checks both expiresAt AND currentPeriodEnd with 6hr grace period
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async removeExpiredSubscriptions() {
-    const now = new Date();
-    this.logger.log('🔄 Running cleanup for expired subscriptions at ' + now.toISOString());
+    this.logger.log('Starting expired subscription cleanup...');
 
-    // Use cursor to iterate through users without loading all into memory
-    // Only fetch users who have subscriptions that might be expired
-    const cursor = this.userModel.find({
-      'subscriptions.expiresAt': { $lte: now }
-    }).cursor();
+    // Grace period: 6 hours buffer to handle timezone edge cases
+    const gracePeriodMs = 6 * 60 * 60 * 1000; // 6 hours
+    const now = new Date();
+    const cutoffDate = new Date(now.getTime() - gracePeriodMs);
 
     let processedCount = 0;
-    let expiredCount = 0;
+    let removedCount = 0;
+    let errorCount = 0;
 
-    for await (const user of cursor) {
-      try {
-        const expiredSubscriptions = user.subscriptions.filter(
-          (sub) => sub.expiresAt && sub.expiresAt <= now,
-        );
+    try {
+      // Query checks BOTH expiresAt AND currentPeriodEnd
+      // Also handles subscriptions with undefined/null status
+      const cursor = this.userModel.find({
+        $or: [
+          {
+            'subscriptions.expiresAt': { $lte: cutoffDate },
+            'subscriptions.status': { $in: ['active', null] }
+          },
+          {
+            'subscriptions.expiresAt': { $lte: cutoffDate },
+            'subscriptions.status': { $exists: false }
+          },
+          {
+            'subscriptions.currentPeriodEnd': { $lte: cutoffDate },
+            'subscriptions.status': { $in: ['active', null] }
+          },
+          {
+            'subscriptions.currentPeriodEnd': { $lte: cutoffDate },
+            'subscriptions.status': { $exists: false }
+          }
+        ]
+      }).cursor();
 
-        const activeSubscriptions = user.subscriptions.filter(
-          (sub) => !sub.expiresAt || sub.expiresAt > now,
-        );
+      for await (const user of cursor) {
+        processedCount++;
 
-        if (expiredSubscriptions.length > 0) {
-          const stripeIdsToRemove: string[] = [];
+        const expiredSubscriptions = user.subscriptions.filter((sub) => {
+          // Check if expired based on either field
+          const isExpiredByExpiresAt = sub.expiresAt && new Date(sub.expiresAt) <= cutoffDate;
+          const isExpiredByPeriodEnd = sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) <= cutoffDate;
 
-          for (const expiredSub of expiredSubscriptions) {
+          // Status must be active, undefined, or null (not already 'expired' or 'cancelled')
+          const statusAllowsRemoval = !sub.status || sub.status === 'active';
+
+          return (isExpiredByExpiresAt || isExpiredByPeriodEnd) && statusAllowsRemoval;
+        });
+
+        if (expiredSubscriptions.length === 0) continue;
+
+        const activeSubscriptions = user.subscriptions.filter((sub) => {
+          const isExpiredByExpiresAt = sub.expiresAt && new Date(sub.expiresAt) <= cutoffDate;
+          const isExpiredByPeriodEnd = sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) <= cutoffDate;
+          const statusAllowsRemoval = !sub.status || sub.status === 'active';
+          return !((isExpiredByExpiresAt || isExpiredByPeriodEnd) && statusAllowsRemoval);
+        });
+
+        const stripeIdsToRemove: string[] = [];
+
+        for (const expiredSub of expiredSubscriptions) {
+          try {
+            // Cancel in Stripe if exists
             if (expiredSub.stripeSubscriptionId) {
               await this.safelyCancelStripeSubscription(expiredSub.stripeSubscriptionId);
               stripeIdsToRemove.push(expiredSub.stripeSubscriptionId);
             }
 
+            // Record in history
             await this.subscriptionHistoryModel.create({
               userId: user._id,
               plan: expiredSub.plan,
@@ -123,32 +162,43 @@ export class CronService {
               currency: 'usd',
               effectiveDate: now,
               metadata: {
-                reason: 'Subscription expired',
-                cancelledInStripe: !!expiredSub.stripeSubscriptionId,
+                reason: 'Subscription expired - automatic cleanup',
+                expiresAt: expiredSub.expiresAt,
+                currentPeriodEnd: expiredSub.currentPeriodEnd,
               },
             });
+
+            removedCount++;
+            this.logger.log(
+              `Removed expired subscription: User=${user.email}, Plan=${expiredSub.plan}, ` +
+              `ExpiresAt=${expiredSub.expiresAt}, CurrentPeriodEnd=${expiredSub.currentPeriodEnd}`
+            );
+          } catch (error) {
+            errorCount++;
+            this.logger.error(`Error processing subscription for user ${user._id}:`, error);
           }
-
-          await this.userModel.updateOne(
-            { _id: user._id },
-            {
-              $set: { subscriptions: activeSubscriptions },
-              $pull: { activeSubscriptions: { $in: stripeIdsToRemove } },
-            },
-          );
-
-          expiredCount += expiredSubscriptions.length;
-          this.logger.log(
-            `⚠️ Removed ${expiredSubscriptions.length} expired subscriptions for user ${user._id}`,
-          );
         }
-        processedCount++;
-      } catch (error) {
-        this.logger.error(`Error processing user ${user._id}: ${error.message}`);
-      }
-    }
 
-    this.logger.log(`✅ Processed ${processedCount} users, expired ${expiredCount} subscriptions`);
+        // Update user document
+        await this.userModel.updateOne(
+          { _id: user._id },
+          {
+            $set: { subscriptions: activeSubscriptions },
+            $pull: { activeSubscriptions: { $in: stripeIdsToRemove } },
+          },
+        );
+      }
+
+      this.logger.log(
+        `Expired subscription cleanup complete: ` +
+        `Processed=${processedCount} users, Removed=${removedCount} subscriptions, Errors=${errorCount}`
+      );
+
+      return { processedCount, removedCount, errorCount };
+    } catch (error) {
+      this.logger.error('Critical error in removeExpiredSubscriptions:', error);
+      throw error;
+    }
   }
 
   // ✅ Send renewal reminders for weekly manual subscriptions

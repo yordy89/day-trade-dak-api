@@ -33,6 +33,14 @@ export class InternalCronController {
     };
   }
 
+  @Get('execution-status')
+  getExecutionStatus() {
+    return {
+      timestamp: new Date().toISOString(),
+      executions: this.internalCronService.getExecutionStatus(),
+    };
+  }
+
   @Post('expired-subscriptions')
   @HttpCode(200)
   async removeExpiredSubscriptions() {

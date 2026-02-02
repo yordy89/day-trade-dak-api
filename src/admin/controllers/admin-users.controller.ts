@@ -331,7 +331,7 @@ export class AdminUsersController {
   async updateUserSubscription(
     @Param('userId') userId: string,
     @Param('subscriptionId') subscriptionId: string,
-    @Body() updateData: { plan?: string; expiresAt?: string },
+    @Body() updateData: { plan?: string; expiresAt?: string; currentPeriodEnd?: string },
     @Request() req: RequestWithUser,
   ) {
     const result = await this.adminUsersService.updateUserSubscription(

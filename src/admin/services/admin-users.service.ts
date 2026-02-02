@@ -363,7 +363,7 @@ export class AdminUsersService {
   async updateUserSubscription(
     userId: string,
     subscriptionId: string,
-    updateData: { plan?: string; expiresAt?: string },
+    updateData: { plan?: string; expiresAt?: string; currentPeriodEnd?: string },
   ) {
     const user = await this.userModel.findById(userId);
     if (!user) {
@@ -372,24 +372,31 @@ export class AdminUsersService {
 
     // Since subscriptions don't have IDs, we'll use index
     const subscriptionIndex = parseInt(subscriptionId);
-    
+
     if (isNaN(subscriptionIndex) || !user.subscriptions || !user.subscriptions[subscriptionIndex]) {
       throw new NotFoundException('Subscription not found');
     }
 
+    const subscription = user.subscriptions[subscriptionIndex];
+
     // Update subscription
     if (updateData.plan) {
-      user.subscriptions[subscriptionIndex].plan = updateData.plan as SubscriptionPlan;
+      subscription.plan = updateData.plan as SubscriptionPlan;
     }
-    if (updateData.expiresAt !== undefined) {
-      user.subscriptions[subscriptionIndex].expiresAt = updateData.expiresAt
-        ? new Date(updateData.expiresAt)
-        : null;
+
+    // For recurring subscriptions (has currentPeriodEnd), update both fields together
+    if (updateData.currentPeriodEnd !== undefined) {
+      const newDate = updateData.currentPeriodEnd ? new Date(updateData.currentPeriodEnd) : null;
+      subscription.currentPeriodEnd = newDate;
+      subscription.expiresAt = newDate; // Keep both fields in sync
+    } else if (updateData.expiresAt !== undefined) {
+      // For non-recurring subscriptions, only update expiresAt
+      subscription.expiresAt = updateData.expiresAt ? new Date(updateData.expiresAt) : null;
     }
 
     await user.save();
 
-    return { success: true, subscription: user.subscriptions[subscriptionIndex] };
+    return { success: true, subscription };
   }
 
   async cancelUserSubscription(userId: string, subscriptionId: string) {
@@ -400,7 +407,7 @@ export class AdminUsersService {
 
     // Since subscriptions don't have IDs, we'll use index
     const subscriptionIndex = parseInt(subscriptionId);
-    
+
     if (isNaN(subscriptionIndex) || !user.subscriptions || !user.subscriptions[subscriptionIndex]) {
       throw new NotFoundException('Subscription not found');
     }
@@ -414,6 +421,13 @@ export class AdminUsersService {
       } catch (error) {
         console.error('Error canceling Stripe subscription:', error);
         // Continue with local cancellation even if Stripe fails
+      }
+
+      // Remove from activeSubscriptions array
+      if (user.activeSubscriptions) {
+        user.activeSubscriptions = user.activeSubscriptions.filter(
+          (id) => id !== subscription.stripeSubscriptionId
+        );
       }
     }
 
@@ -433,12 +447,31 @@ export class AdminUsersService {
 
     // Since subscriptions don't have IDs, we'll use index
     const subscriptionIndex = parseInt(subscriptionId);
-    
+
     if (isNaN(subscriptionIndex) || !user.subscriptions || !user.subscriptions[subscriptionIndex]) {
       throw new NotFoundException('Subscription not found');
     }
 
-    // Remove subscription from array
+    const subscription = user.subscriptions[subscriptionIndex];
+
+    // Cancel in Stripe first if exists
+    if (subscription.stripeSubscriptionId) {
+      try {
+        await this.stripe.subscriptions.cancel(subscription.stripeSubscriptionId);
+      } catch (error) {
+        console.error('Error canceling Stripe subscription:', error);
+        // Continue with deletion even if Stripe fails
+      }
+
+      // Remove from activeSubscriptions array
+      if (user.activeSubscriptions) {
+        user.activeSubscriptions = user.activeSubscriptions.filter(
+          (id) => id !== subscription.stripeSubscriptionId
+        );
+      }
+    }
+
+    // Remove subscription from subscriptions array
     user.subscriptions.splice(subscriptionIndex, 1);
 
     await user.save();

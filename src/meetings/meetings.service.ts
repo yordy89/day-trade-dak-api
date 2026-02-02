@@ -36,6 +36,50 @@ export class MeetingsService {
     private zoomWebhooksService: ZoomWebhooksService,
   ) {}
 
+  /**
+   * Check if user has an active, non-expired live subscription
+   * - For RECURRING: check currentPeriodEnd (Stripe's billing period)
+   * - For NON-RECURRING: check expiresAt (our expiration date)
+   * - Status must be 'active' (not 'cancelled' or 'expired')
+   */
+  private hasActiveLiveSubscription(user: UserDocument): boolean {
+    if (!user?.subscriptions) return false;
+
+    const validPlans = [
+      SubscriptionPlan.LIVE_WEEKLY_MANUAL,
+      SubscriptionPlan.LIVE_WEEKLY_RECURRING,
+    ];
+
+    return user.subscriptions.some((sub: any) => {
+      const plan = typeof sub === 'string' ? sub : sub.plan;
+
+      if (!validPlans.includes(plan as SubscriptionPlan)) {
+        return false;
+      }
+
+      if (typeof sub === 'string') {
+        return true; // Legacy format
+      }
+
+      // Check status - must be active
+      if (sub.status && sub.status !== 'active') {
+        return false;
+      }
+
+      const now = new Date();
+
+      if (sub.currentPeriodEnd) {
+        // RECURRING - check Stripe's billing period
+        return new Date(sub.currentPeriodEnd) > now;
+      } else if (sub.expiresAt) {
+        // NON-RECURRING - check our expiration
+        return new Date(sub.expiresAt) > now;
+      }
+
+      return true; // No expiration set
+    });
+  }
+
   async getLiveMeetings(userId: string) {
     // Get user with subscriptions
     const user = await this.userModel.findById(userId);
@@ -43,16 +87,8 @@ export class MeetingsService {
       throw new NotFoundException('User not found');
     }
 
-    // Check if user has access to live meetings
-    const hasLiveSubscription = user.subscriptions?.some((sub) => {
-      const plan = typeof sub === 'string' ? sub : sub.plan;
-      return [
-        SubscriptionPlan.LIVE_WEEKLY_MANUAL,
-        SubscriptionPlan.LIVE_WEEKLY_RECURRING,
-        SubscriptionPlan.MASTER_CLASES,
-        SubscriptionPlan.LIVE_RECORDED,
-      ].includes(plan as SubscriptionPlan);
-    });
+    // Check if user has access to live meetings (validates expiration)
+    const hasLiveSubscription = this.hasActiveLiveSubscription(user);
 
     // Check module permissions
     const hasLiveWeeklyModuleAccess =
@@ -479,14 +515,8 @@ export class MeetingsService {
     // Check if user has super admin role
     const isAdmin = user.role === Role.SUPER_ADMIN;
 
-    // Check if user has live subscription (only weekly subscriptions grant access)
-    const hasLiveSubscription = user.subscriptions?.some((sub) => {
-      const plan = typeof sub === 'string' ? sub : sub.plan;
-      return [
-        SubscriptionPlan.LIVE_WEEKLY_MANUAL,
-        SubscriptionPlan.LIVE_WEEKLY_RECURRING,
-      ].includes(plan as SubscriptionPlan);
-    });
+    // Check if user has live subscription (validates expiration)
+    const hasLiveSubscription = this.hasActiveLiveSubscription(user);
 
     // Check if user has special live meeting access flag
     const hasLiveMeetingAccess = user.allowLiveMeetingAccess;
@@ -874,14 +904,8 @@ export class MeetingsService {
     // Check if user has super admin role
     const isAdmin = user.role === Role.SUPER_ADMIN;
 
-    // Check if user has live subscription (only weekly subscriptions grant access)
-    const hasLiveSubscription = user.subscriptions?.some((sub) => {
-      const plan = typeof sub === 'string' ? sub : sub.plan;
-      return [
-        SubscriptionPlan.LIVE_WEEKLY_MANUAL,
-        SubscriptionPlan.LIVE_WEEKLY_RECURRING,
-      ].includes(plan as SubscriptionPlan);
-    });
+    // Check if user has live subscription (validates expiration)
+    const hasLiveSubscription = this.hasActiveLiveSubscription(user);
 
     // Check if user has special live meeting access flag
     const hasLiveMeetingAccess = user.allowLiveMeetingAccess;
@@ -891,7 +915,7 @@ export class MeetingsService {
       userId,
       ModuleType.LIVE_WEEKLY,
     );
-    
+
     this.logger.log(`User ${userId} - Module Access Check: ${hasModuleAccess}, Live Subscription: ${hasLiveSubscription}, Special Access: ${hasLiveMeetingAccess}`);
 
     // Check if meeting has subscription restrictions
