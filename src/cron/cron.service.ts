@@ -79,73 +79,82 @@ export class CronService {
     }
   }
 
+  /**
+   * Helper to determine if a subscription is expired.
+   * Differentiates between recurring (Stripe) and manual subscriptions:
+   * - RECURRING (has stripeSubscriptionId): Only check currentPeriodEnd
+   * - MANUAL (no stripeSubscriptionId): Check expiresAt primarily, currentPeriodEnd as fallback
+   */
+  private isSubscriptionExpired(sub: any, now: Date): boolean {
+    const expiresAt = sub.expiresAt ? new Date(sub.expiresAt) : null;
+    const currentPeriodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
+
+    // For RECURRING subscriptions (has stripeSubscriptionId):
+    // ONLY check currentPeriodEnd - it's the authoritative field from Stripe
+    if (sub.stripeSubscriptionId) {
+      if (currentPeriodEnd && currentPeriodEnd <= now) {
+        return true;
+      }
+      // If no currentPeriodEnd, don't mark as expired (webhook may not have updated it yet)
+      return false;
+    }
+
+    // For MANUAL subscriptions (no stripeSubscriptionId):
+    // Check expiresAt as primary, currentPeriodEnd as fallback
+    if (expiresAt && expiresAt <= now) return true;
+    if (!expiresAt && currentPeriodEnd && currentPeriodEnd <= now) return true;
+
+    return false;
+  }
+
   // ✅ Remove expired subscriptions every midnight
-  // OPTIMIZED: Uses cursor-based iteration to avoid loading all users into memory
-  // FIXED: Now checks both expiresAt AND currentPeriodEnd with 6hr grace period
+  // FIXED: Uses same logic as admin-maintenance.service.ts for consistency
+  // Differentiates between recurring (Stripe) and manual subscriptions
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async removeExpiredSubscriptions() {
     this.logger.log('Starting expired subscription cleanup...');
 
-    // Grace period: 6 hours buffer to handle timezone edge cases
-    const gracePeriodMs = 6 * 60 * 60 * 1000; // 6 hours
     const now = new Date();
-    const cutoffDate = new Date(now.getTime() - gracePeriodMs);
-
     let processedCount = 0;
     let removedCount = 0;
     let errorCount = 0;
 
     try {
-      // Query checks BOTH expiresAt AND currentPeriodEnd
-      // Also handles subscriptions with undefined/null status
+      // Broad query to find candidate users with any potentially expired subscriptions
+      // The actual expiration check is done in JavaScript with proper recurring vs manual logic
       const cursor = this.userModel.find({
         $or: [
-          {
-            'subscriptions.expiresAt': { $lte: cutoffDate },
-            'subscriptions.status': { $in: ['active', null] }
-          },
-          {
-            'subscriptions.expiresAt': { $lte: cutoffDate },
-            'subscriptions.status': { $exists: false }
-          },
-          {
-            'subscriptions.currentPeriodEnd': { $lte: cutoffDate },
-            'subscriptions.status': { $in: ['active', null] }
-          },
-          {
-            'subscriptions.currentPeriodEnd': { $lte: cutoffDate },
-            'subscriptions.status': { $exists: false }
-          }
+          { 'subscriptions.expiresAt': { $lte: now } },
+          { 'subscriptions.currentPeriodEnd': { $lte: now } },
         ]
       }).cursor();
 
       for await (const user of cursor) {
         processedCount++;
 
-        const expiredSubscriptions = user.subscriptions.filter((sub) => {
-          // Check if expired based on either field
-          const isExpiredByExpiresAt = sub.expiresAt && new Date(sub.expiresAt) <= cutoffDate;
-          const isExpiredByPeriodEnd = sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) <= cutoffDate;
-
-          // Status must be active, undefined, or null (not already 'expired' or 'cancelled')
-          const statusAllowsRemoval = !sub.status || sub.status === 'active';
-
-          return (isExpiredByExpiresAt || isExpiredByPeriodEnd) && statusAllowsRemoval;
-        });
+        // Use the same logic as admin-maintenance.service.ts
+        const expiredSubscriptions = user.subscriptions.filter(
+          (sub) => this.isSubscriptionExpired(sub, now),
+        );
 
         if (expiredSubscriptions.length === 0) continue;
 
-        const activeSubscriptions = user.subscriptions.filter((sub) => {
-          const isExpiredByExpiresAt = sub.expiresAt && new Date(sub.expiresAt) <= cutoffDate;
-          const isExpiredByPeriodEnd = sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) <= cutoffDate;
-          const statusAllowsRemoval = !sub.status || sub.status === 'active';
-          return !((isExpiredByExpiresAt || isExpiredByPeriodEnd) && statusAllowsRemoval);
-        });
+        const activeSubscriptions = user.subscriptions.filter(
+          (sub) => !this.isSubscriptionExpired(sub, now),
+        );
 
         const stripeIdsToRemove: string[] = [];
 
         for (const expiredSub of expiredSubscriptions) {
           try {
+            // Skip subscriptions without a plan (data corruption)
+            if (!expiredSub.plan) {
+              this.logger.warn(
+                `Skipping subscription without plan for user ${user.email}`,
+              );
+              continue;
+            }
+
             // Cancel in Stripe if exists
             if (expiredSub.stripeSubscriptionId) {
               await this.safelyCancelStripeSubscription(expiredSub.stripeSubscriptionId);
@@ -179,7 +188,7 @@ export class CronService {
           }
         }
 
-        // Update user document
+        // Update user document - remove expired, keep active
         await this.userModel.updateOne(
           { _id: user._id },
           {
