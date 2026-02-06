@@ -90,6 +90,7 @@ export class EventRegistrationsService {
             amount: createEventRegistrationDto.amountPaid || 0,
             currency: 'USD',
             additionalInfo: createEventRegistrationDto.additionalInfo,
+            includesSaturdayDinner: event.metadata?.includesSaturdayDinner || false,
           });
         }
       } else {
@@ -298,6 +299,7 @@ export class EventRegistrationsService {
         paymentMethod: 'card', // This should come from the checkout session if available
         adultPrice: 75,
         childPrice: 48,
+        includesSaturdayDinner: event?.metadata?.includesSaturdayDinner || false,
       },
     );
 

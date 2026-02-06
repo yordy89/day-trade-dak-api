@@ -26,6 +26,7 @@ export interface EventRegistrationData {
   hotelAddress?: string;
   isOnline?: boolean;
   meetingLink?: string;
+  includesSaturdayDinner?: boolean;
   additionalInfo?: {
     phoneNumber?: string;
     paymentMethod?: string;
@@ -403,6 +404,7 @@ const defaultEventRegistrationTemplate = (
     additionalChildren = 0,
     hotelName,
     hotelAddress,
+    includesSaturdayDinner = false,
   } = data;
 
   const { emoji, color, title: eventTypeTitle } = getEventTypeInfo(eventType);
@@ -566,8 +568,8 @@ const defaultEventRegistrationTemplate = (
       }
       <li>💻 Trae tu laptop y libreta para tomar notas</li>
       <li>🏨 El alojamiento NO está incluido - reserva con anticipación</li>
-      <li>🍽️ Solo la cena del sábado está incluida</li>
-      ${additionalAdults > 0 || additionalChildren > 0 ? '<li>👥 Tus invitados adicionales SOLO podrán asistir a la cena del sábado</li>' : ''}
+      ${includesSaturdayDinner ? '<li>🍽️ Solo la cena del sábado está incluida</li>' : ''}
+      ${includesSaturdayDinner && (additionalAdults > 0 || additionalChildren > 0) ? '<li>👥 Tus invitados adicionales SOLO podrán asistir a la cena del sábado</li>' : ''}
       <li>✅ Este correo es tu comprobante de registro</li>
     </ul>
 

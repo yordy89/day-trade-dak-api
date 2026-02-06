@@ -543,6 +543,7 @@ export class EmailService {
       paymentMethod?: 'card' | 'klarna' | 'afterpay';
       adultPrice?: number;
       childPrice?: number;
+      includesSaturdayDinner?: boolean;
     },
   ) {
     const subject = 'Confirmación - Invitados Adicionales Agregados';
@@ -571,6 +572,7 @@ export class EmailService {
       totalAmount: details.totalAmount,
       paymentMethod: details.paymentMethod || 'card',
       manageRegistrationUrl: `${process.env.FRONTEND_URL || 'https://app.daytradedak.com'}/community-event/manage-registration`,
+      includesSaturdayDinner: details.includesSaturdayDinner || false,
     };
 
     const html = additionalAttendeesTemplate(emailData);

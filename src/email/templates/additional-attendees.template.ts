@@ -13,6 +13,7 @@ export interface AdditionalAttendeesData {
   totalAmount: number;
   paymentMethod: 'card' | 'klarna' | 'afterpay';
   manageRegistrationUrl: string;
+  includesSaturdayDinner?: boolean;
 }
 
 const formatCurrency = (amount: number): string => {
@@ -50,6 +51,7 @@ export const additionalAttendeesTemplate = (
     totalAmount,
     paymentMethod,
     manageRegistrationUrl,
+    includesSaturdayDinner = false,
   } = data;
 
   const formattedDate = eventDate ? formatDate(eventDate) : '';
@@ -240,6 +242,7 @@ export const additionalAttendeesTemplate = (
               </div>
               
               <!-- Important Notice -->
+              ${includesSaturdayDinner ? `
               <div style="background-color: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.2); border-radius: 8px; padding: 20px; margin-bottom: 30px;">
                 <p style="margin: 0;">
                   <strong style="color: #ffffff;">Información Importante:</strong>
@@ -248,6 +251,7 @@ export const additionalAttendeesTemplate = (
                   </span>
                 </p>
               </div>
+              ` : ''}
               
               <!-- CTA Button -->
               <table border="0" cellspacing="0" cellpadding="0" style="margin: 30px auto;">

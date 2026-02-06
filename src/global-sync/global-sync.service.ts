@@ -360,6 +360,7 @@ export class GlobalSyncService {
         amount: payload.amountPaid || 0,
         currency: payload.currency || 'USD',
         additionalInfo: payload.additionalInfo,
+        includesSaturdayDinner: event.metadata?.includesSaturdayDinner || false,
       });
 
       this.logger.log(

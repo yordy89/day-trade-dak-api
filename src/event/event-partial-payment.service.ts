@@ -866,6 +866,7 @@ export class EventPartialPaymentService {
           phoneNumber: registration.phoneNumber,
           ...registration.additionalInfo,
         },
+        includesSaturdayDinner: event?.metadata?.includesSaturdayDinner || false,
       });
 
       console.log(`✅ Full event registration email sent to ${registration.email}`);

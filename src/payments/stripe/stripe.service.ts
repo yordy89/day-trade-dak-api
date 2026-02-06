@@ -1607,6 +1607,7 @@ export class StripeService {
               currency: session.currency,
               additionalAdults: parsedAdditionalInfo?.additionalAttendees?.adults || 0,
               additionalChildren: parsedAdditionalInfo?.additionalAttendees?.children || 0,
+              includesSaturdayDinner: event.metadata?.includesSaturdayDinner || false,
             });
           }
 
