@@ -30,12 +30,15 @@ export class CommunityGalleryController {
   constructor(private readonly galleryService: CommunityGalleryService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get all gallery items (public)' })
-  async findAll(@Query('type') type?: GalleryItemType) {
-    if (type) {
-      return this.galleryService.findByType(type);
-    }
-    return this.galleryService.findAll();
+  @ApiOperation({ summary: 'Get all gallery items (public) with pagination' })
+  async findAll(
+    @Query('type') type?: GalleryItemType,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = parseInt(page || '1', 10);
+    const limitNum = parseInt(limit || '20', 10);
+    return this.galleryService.findAllPaginated(type, pageNum, limitNum);
   }
 
   @Get('admin')

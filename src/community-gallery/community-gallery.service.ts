@@ -45,6 +45,26 @@ export class CommunityGalleryService {
     return this.galleryModel.find(query).sort({ order: 1, createdAt: -1 }).exec();
   }
 
+  async findAllPaginated(
+    type?: GalleryItemType,
+    page = 1,
+    limit = 20,
+  ): Promise<{ items: GalleryItem[]; total: number; page: number; pages: number; hasMore: boolean }> {
+    const query: any = { isActive: true };
+    if (type) {
+      query.type = type;
+    }
+
+    const skip = (page - 1) * limit;
+    const [items, total] = await Promise.all([
+      this.galleryModel.find(query).sort({ order: 1, createdAt: -1 }).skip(skip).limit(limit).exec(),
+      this.galleryModel.countDocuments(query),
+    ]);
+
+    const pages = Math.ceil(total / limit);
+    return { items, total, page, pages, hasMore: page < pages };
+  }
+
   async findByType(type: GalleryItemType, includeInactive = false): Promise<GalleryItem[]> {
     const query = includeInactive ? { type } : { type, isActive: true };
     return this.galleryModel.find(query).sort({ order: 1, createdAt: -1 }).exec();
