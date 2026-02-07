@@ -8,6 +8,13 @@ export enum GalleryItemType {
   VIDEO = 'video',
 }
 
+export enum HlsStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+}
+
 @Schema({ timestamps: true })
 export class GalleryItem {
   @Prop({ required: true, enum: GalleryItemType })
@@ -48,6 +55,16 @@ export class GalleryItem {
 
   @Prop()
   duration?: number; // for videos, in seconds
+
+  // HLS video support
+  @Prop({ enum: HlsStatus })
+  hlsStatus?: HlsStatus;
+
+  @Prop()
+  hlsUrl?: string; // URL to master.m3u8 when HLS is ready
+
+  @Prop()
+  hlsKey?: string; // S3 key prefix for HLS files
 }
 
 export const GalleryItemSchema = SchemaFactory.createForClass(GalleryItem);
@@ -55,3 +72,4 @@ export const GalleryItemSchema = SchemaFactory.createForClass(GalleryItem);
 // Index for efficient queries
 GalleryItemSchema.index({ isActive: 1, order: 1 });
 GalleryItemSchema.index({ type: 1, isActive: 1 });
+GalleryItemSchema.index({ hlsStatus: 1 });

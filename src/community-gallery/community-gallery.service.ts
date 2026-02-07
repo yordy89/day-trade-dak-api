@@ -5,6 +5,8 @@ import { GalleryItem, GalleryItemDocument, GalleryItemType } from './gallery-ite
 import { CreateGalleryItemDto, UpdateGalleryItemDto } from './dto/create-gallery-item.dto';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '@nestjs/common';
 
@@ -14,11 +16,13 @@ export class CommunityGalleryService {
   private s3: S3Client;
   private bucketName: string;
   private cloudFrontDomain: string;
-  private readonly FOLDER = 'community-gallery';
+  private readonly PHOTOS_FOLDER = 'comunidad/fotos';
+  private readonly VIDEOS_FOLDER = 'comunidad/videos';
 
   constructor(
     @InjectModel(GalleryItem.name) private galleryModel: Model<GalleryItemDocument>,
     private configService: ConfigService,
+    @InjectQueue('video-processing') private readonly videoQueue: Queue,
   ) {
     this.s3 = new S3Client({
       region: this.configService.get<string>('AWS_REGION'),
@@ -27,8 +31,13 @@ export class CommunityGalleryService {
         secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
       },
     });
+    // Use main resources bucket with comunidad folder
     this.bucketName = this.configService.get<string>('AWS_S3_BUCKET_NAME');
     this.cloudFrontDomain = this.configService.get<string>('CLOUDFRONT_DOMAIN');
+  }
+
+  private getPublicUrl(key: string): string {
+    return `https://${this.cloudFrontDomain}/${key}`;
   }
 
   async findAll(includeInactive = false): Promise<GalleryItem[]> {
@@ -71,8 +80,12 @@ export class CommunityGalleryService {
 
     // Generate unique filename
     const extension = file.originalname.split('.').pop();
-    const filename = `${uuidv4()}.${extension}`;
-    const key = `${this.FOLDER}/${dto.type}s/${filename}`;
+    const fileId = uuidv4();
+    const filename = `${fileId}.${extension}`;
+    
+    // Use separate folders for photos and videos
+    const folder = isImage ? this.PHOTOS_FOLDER : this.VIDEOS_FOLDER;
+    const key = `${folder}/${filename}`;
 
     // Upload to S3
     try {
@@ -83,7 +96,7 @@ export class CommunityGalleryService {
         ContentType: file.mimetype,
       }));
 
-      this.logger.log(`Uploaded file to S3: ${key}`);
+      this.logger.log(`Uploaded file to S3: ${this.bucketName}/${key}`);
     } catch (error) {
       this.logger.error(`Failed to upload file to S3: ${error.message}`);
       throw new BadRequestException('Failed to upload file');
@@ -93,8 +106,30 @@ export class CommunityGalleryService {
     const maxOrderItem = await this.galleryModel.findOne().sort({ order: -1 }).exec();
     const nextOrder = (maxOrderItem?.order ?? -1) + 1;
 
+    // For videos, queue HLS processing
+    let url = this.getPublicUrl(key);
+    let hlsStatus = null;
+    
+    if (isVideo) {
+      // Queue video for HLS transcoding
+      try {
+        await this.videoQueue.add('community-gallery-hls', {
+          fileId,
+          sourceBucket: this.bucketName,
+          sourceKey: key,
+          outputBucket: this.bucketName,
+          outputPrefix: `${this.VIDEOS_FOLDER}/${fileId}`,
+          originalFilename: file.originalname,
+        });
+        this.logger.log(`Queued video for HLS processing: ${fileId}`);
+        hlsStatus = 'processing';
+      } catch (error) {
+        this.logger.warn(`Failed to queue HLS processing: ${error.message}. Video will be available as MP4.`);
+        hlsStatus = 'failed';
+      }
+    }
+
     // Create database entry
-    const url = `https://${this.cloudFrontDomain}/${key}`;
     const galleryItem = new this.galleryModel({
       type: dto.type,
       url,
@@ -104,6 +139,8 @@ export class CommunityGalleryService {
       order: dto.order ?? nextOrder,
       mimeType: file.mimetype,
       size: file.size,
+      hlsStatus, // Track HLS processing status for videos
+      hlsUrl: null, // Will be updated when HLS is ready
     });
 
     return galleryItem.save();
