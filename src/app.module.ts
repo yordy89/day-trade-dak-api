@@ -55,6 +55,7 @@ import { TradingJournalModule } from './trading-journal/trading-journal.module';
 import { GlobalSyncModule } from './global-sync/global-sync.module';
 import { InternalCronModule } from './internal-cron/internal-cron.module';
 import { ChatbotModule } from './chatbot/chatbot.module';
+import { CommunityGalleryModule } from './community-gallery/community-gallery.module';
 
 @Module({
   controllers: [TestUploadController],
@@ -148,6 +149,7 @@ import { ChatbotModule } from './chatbot/chatbot.module';
     GlobalSyncModule,
     InternalCronModule,
     ChatbotModule,
+    CommunityGalleryModule,
   ],
   providers: [
     {
