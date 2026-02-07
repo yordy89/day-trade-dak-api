@@ -5,6 +5,7 @@ import { BullModule } from '@nestjs/bull';
 import { CommunityGalleryController } from './community-gallery.controller';
 import { CommunityGalleryService } from './community-gallery.service';
 import { GalleryItem, GalleryItemSchema } from './gallery-item.schema';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { GalleryItem, GalleryItemSchema } from './gallery-item.schema';
     BullModule.registerQueue({
       name: 'video-processing',
     }),
+    UsersModule,
   ],
   controllers: [CommunityGalleryController],
   providers: [CommunityGalleryService],
