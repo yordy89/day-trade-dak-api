@@ -26,6 +26,9 @@ export interface PermissionSet {
   permissions: boolean;
   contactMessages: boolean;
   modulePermissions: boolean;
+  tradingJournal: boolean;
+  chatbot: boolean;
+  communityGallery: boolean;
 }
 
 // Define the schema for the permissions object
@@ -51,6 +54,9 @@ const PermissionSetSchema = {
   permissions: { type: Boolean, default: false },
   contactMessages: { type: Boolean, default: false },
   modulePermissions: { type: Boolean, default: false },
+  tradingJournal: { type: Boolean, default: false },
+  chatbot: { type: Boolean, default: false },
+  communityGallery: { type: Boolean, default: false },
 };
 
 @Schema({ timestamps: true })
@@ -85,6 +91,9 @@ export const DEFAULT_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   contactMessages: true,
   modulePermissions: false, // Admins don't get module permissions by default
   affiliates: false, // Admins don't get affiliates permission by default
+  tradingJournal: false, // Admins don't get trading journal by default
+  chatbot: false, // Admins don't get chatbot by default
+  communityGallery: false, // Admins don't get community gallery by default
 };
 
 export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
@@ -109,4 +118,7 @@ export const DEFAULT_SUPER_ADMIN_PERMISSIONS: Partial<PermissionSet> = {
   permissions: true, // Only super admins can manage permissions
   contactMessages: true,
   modulePermissions: true, // Super admins have module permissions
+  tradingJournal: true, // Super admins have trading journal access
+  chatbot: true, // Super admins have chatbot access
+  communityGallery: true, // Super admins have community gallery access
 };

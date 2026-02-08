@@ -106,4 +106,19 @@ export class UpdatePermissionDto {
   @IsOptional()
   @IsBoolean()
   affiliates?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  tradingJournal?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  chatbot?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  communityGallery?: boolean;
 }
