@@ -287,6 +287,9 @@ export class PermissionsService {
       permissions: false,
       contactMessages: false,
       modulePermissions: false,
+      tradingJournal: false,
+      chatbot: false,
+      communityGallery: false,
     };
 
     switch (role) {
@@ -323,6 +326,9 @@ export class PermissionsService {
       permissions: false,
       contactMessages: false,
       modulePermissions: false,
+      tradingJournal: false,
+      chatbot: false,
+      communityGallery: false,
     };
     
     // Merge provided permissions
