@@ -306,6 +306,25 @@ export class TradingJournalController {
     return this.tradingJournalService.getStudentsWithJournals(eventId);
   }
 
+  @Post('admin/trades/bulk-review')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: 'Bulk mark trades as reviewed (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Trades marked as reviewed' })
+  async bulkMarkAsReviewed(
+    @Request() req,
+    @Body() body: {
+      tradeIds?: string[];
+      studentId?: string;
+      all?: boolean;
+      result?: 'winners' | 'losers';
+    },
+  ) {
+    return this.tradingJournalService.bulkMarkAsReviewed(
+      req.user._id.toString(),
+      body,
+    );
+  }
+
   @Get('admin/student/:studentId/trades')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Get trades for a specific student (Admin only)' })

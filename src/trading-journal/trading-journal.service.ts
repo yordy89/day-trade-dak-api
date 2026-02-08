@@ -723,6 +723,59 @@ export class TradingJournalService {
     return this.findAllTrades(studentId, filters);
   }
 
+  /**
+   * Bulk mark trades as reviewed
+   */
+  async bulkMarkAsReviewed(
+    mentorId: string,
+    options: {
+      tradeIds?: string[];
+      studentId?: string;
+      all?: boolean;
+      result?: 'winners' | 'losers';
+    },
+  ): Promise<{ updatedCount: number; message: string }> {
+    const query: any = { isReviewed: false };
+
+    // If specific trade IDs provided
+    if (options.tradeIds && options.tradeIds.length > 0) {
+      query._id = { $in: options.tradeIds.map((id) => new Types.ObjectId(id)) };
+    }
+    // If student ID provided
+    else if (options.studentId) {
+      query.userId = new Types.ObjectId(options.studentId);
+    }
+    // If marking all (no specific filter)
+    else if (!options.all) {
+      throw new BadRequestException(
+        'Must provide tradeIds, studentId, or set all=true',
+      );
+    }
+
+    // Apply result filter if provided
+    if (options.result === 'winners') {
+      query.isWinner = true;
+    } else if (options.result === 'losers') {
+      query.isWinner = false;
+    }
+
+    // Only mark closed trades (open trades can't be reviewed)
+    query.isOpen = false;
+
+    const result = await this.tradeModel.updateMany(query, {
+      $set: {
+        isReviewed: true,
+        reviewedBy: new Types.ObjectId(mentorId),
+        reviewedAt: new Date(),
+      },
+    });
+
+    return {
+      updatedCount: result.modifiedCount,
+      message: `Marked ${result.modifiedCount} trades as reviewed`,
+    };
+  }
+
   async getStudentsWithJournals(eventId?: string) {
     // If eventId is provided, get ALL registered users for that event
     // and show them with their trade stats (if any)
